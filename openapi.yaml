@@ -1,0 +1,107 @@
+# Generated with protoc-gen-openapi
+# https://github.com/google/gnostic/tree/master/cmd/protoc-gen-openapi
+
+openapi: 3.0.3
+info:
+    title: App API
+    version: 0.0.1
+paths:
+    /app/info:
+        get:
+            tags:
+                - App
+            operationId: App_GetApplicationInfo
+            parameters:
+                - name: clientId
+                  in: query
+                  schema:
+                    type: string
+                - name: appId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.GetApplicationInfoReply'
+    /app/list:
+        get:
+            tags:
+                - App
+            operationId: App_GetAppList
+            parameters:
+                - name: page
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: pageSize
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.GetAppListReply'
+components:
+    schemas:
+        app_center.v1.app.GetAppListReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+        app_center.v1.app.GetApplicationInfoReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app.GetApplicationInfoReply_Application'
+                traceId:
+                    type: string
+        app_center.v1.app.GetApplicationInfoReply_Application:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                clientSecret:
+                    type: string
+                stableVersion:
+                    type: integer
+                    format: int32
+                grayVersion:
+                    type: integer
+                    format: int32
+                betaVersion:
+                    type: integer
+                    format: int32
+                grayPercentage:
+                    type: number
+                    format: double
+                name:
+                    type: string
+                status:
+                    type: string
+                admin:
+                    type: string
+                collaborators:
+                    type: array
+                    items:
+                        type: string
+                id:
+                    type: string
+tags:
+    - name: App

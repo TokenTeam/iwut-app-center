@@ -1,0 +1,25 @@
+server:
+  http:
+    addr: 0.0.0.0:8001
+    timeout: 1s
+  grpc:
+    addr: 0.0.0.0:9001
+    timeout: 1s
+data:
+  redis:
+    addr: "${redisUrl:localhost:6379}"
+    password: "${redisPass}"
+    db: ${redisDB:0}
+    prefix_key: "${redisBaseKey:AuthCenter}"
+  mongodb:
+    uri: "${mongoUrl:mongodb://localhost:27017/}"
+    username: "${mongoUser:appuser}"
+    password: "${mongoPass:apppass}"
+    database: "${mongoDB:appdb}"
+    auth_source: "${mongoAuthSource:appdb}"
+    connect_timeout: 10s
+    limitations:
+      user:
+        # per user per client (KB)
+        official_mem_limit: ${mongoUserOfficialMemLimit:16}
+        oauth2_mem_limit: ${mongoUserOAuthMemLimit:4096}
