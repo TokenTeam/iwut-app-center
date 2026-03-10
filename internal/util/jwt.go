@@ -46,14 +46,16 @@ type TokenKey struct{}
 type TokenValue struct {
 	BaseAuthClaims *BaseAuthClaims
 	OAuthClaims    *OAuthClaims
+	ServiceClaims  *ServiceClaims
 }
 type BaseAuthClaims struct {
-	Uid     string `json:"Uid"`
-	Iat     int64  `json:"Iat"`
-	Exp     int64  `json:"Exp"`
-	Iss     string `json:"Iss"`
-	Version int    `json:"Version"`
-	Type    string `json:"Type"`
+	Uid         string  `json:"Uid"`
+	Iat         int64   `json:"Iat"`
+	Exp         int64   `json:"Exp"`
+	Iss         string  `json:"Iss"`
+	Version     int     `json:"Version"`
+	Type        string  `json:"Type"`
+	DeveloperId *string `json:"DeveloperId"`
 }
 type OAuthClaims struct {
 	Jti   string   `json:"Jti"`
@@ -79,20 +81,6 @@ const (
 	OAuthJwt
 	ServiceRequest
 )
-
-func (j *JwtUtil) GetJwtTypeFromClaims(claims map[string]interface{}) JwtType {
-	if _, found := claims["version"]; found {
-		return OfficialJwt
-	}
-	return OAuthJwt
-}
-
-func (j *JwtUtil) IsAccessToken(claims BaseAuthClaims) bool {
-	return claims.Type == "access"
-}
-func (j *JwtUtil) IsRefreshToken(claims BaseAuthClaims) bool {
-	return claims.Type == "refresh"
-}
 
 // BaseAuthClaimsFromJSON parses a BaseAuthClaims instance from a JSON string.
 // The input JSON is expected to use capitalized keys like the example:
@@ -149,6 +137,9 @@ func (j *JwtUtil) GetBaseAuthClaims(ctx context.Context) (*BaseAuthClaims, error
 	if value.OAuthClaims != nil {
 		return nil, errors.New("token is OAuth type, requested BaseAuthClaims")
 	}
+	if value.ServiceClaims != nil {
+		return nil, errors.New("token is Service type, requested BaseAuthClaims")
+	}
 	return nil, errors.New("no token claims found in context")
 }
 func (j *JwtUtil) GetOAuthClaims(ctx context.Context) (*OAuthClaims, error) {
@@ -161,6 +152,25 @@ func (j *JwtUtil) GetOAuthClaims(ctx context.Context) (*OAuthClaims, error) {
 	}
 	if value.BaseAuthClaims != nil {
 		return nil, errors.New("token is BaseAuth type, requested OAuthClaims")
+	}
+	if value.ServiceClaims != nil {
+		return nil, errors.New("token is Service type, requested OAuthClaims")
+	}
+	return nil, errors.New("no token claims found in context")
+}
+func (j *JwtUtil) GetServiceClaims(ctx context.Context) (*ServiceClaims, error) {
+	value := j.TokenValueFrom(ctx)
+	if value == nil {
+		return nil, errors.New("no token claims found in context")
+	}
+	if value.ServiceClaims != nil {
+		return value.ServiceClaims, nil
+	}
+	if value.BaseAuthClaims != nil {
+		return nil, errors.New("token is BaseAuth type, requested ServiceClaims")
+	}
+	if value.ServiceClaims != nil {
+		return nil, errors.New("token is OAuth type, requested ServiceClaims")
 	}
 	return nil, errors.New("no token claims found in context")
 }

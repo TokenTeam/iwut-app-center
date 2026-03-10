@@ -5,6 +5,11 @@ server:
   grpc:
     addr: 0.0.0.0:9001
     timeout: 1s
+  name: "${serverName:AppCenter}"
+  version: "${serverVersion:1.0.0}"
+  frontend_url: "${frontendUrl:http://localhost:3001}"
+  jaeger_endpoint: "${jaegerEndpoint:localhost:4317}"
+  env: "${env:PROD}"
 data:
   redis:
     addr: "${redisUrl:localhost:6379}"
@@ -23,3 +28,8 @@ data:
         # per user per client (KB)
         official_mem_limit: ${mongoUserOfficialMemLimit:16}
         oauth2_mem_limit: ${mongoUserOAuthMemLimit:4096}
+service:
+  auth:
+    uri: "${authUrl:localhost:9000}"
+  config:
+    uri: "${configUrl:localhost:9002}"

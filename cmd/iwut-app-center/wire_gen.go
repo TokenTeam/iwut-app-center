@@ -25,20 +25,32 @@ import (
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, logger log.Logger) (*kratos.App, func(), error) {
+func wireApp(confServer *conf.Server, confData *conf.Data, confService *conf.Service, logger log.Logger) (*kratos.App, func(), error) {
 	dataData, cleanup, err := data.NewData(confData, logger)
 	if err != nil {
 		return nil, nil, err
 	}
-	appRepo := data.NewAppRepo(dataData, confData, logger)
+	configCenterUtil := util.NewConfigCenterUtil(confService, logger)
+	authCenterUtil, cleanup2, err := util.NewAuthCenterUtil(confService, logger)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	greyCalc := util.NewGreyCalc()
+	ruleParser := util.NewRuleParser(configCenterUtil)
+	appRepo := data.NewAppRepo(dataData, confData, configCenterUtil, authCenterUtil, greyCalc, ruleParser, logger)
 	appUsecase := biz.NewAppUsecase(appRepo)
-	appService := service.NewAppService(appUsecase)
 	jwtUtil := util.NewJwtUtil()
+	appService := service.NewAppService(appUsecase, jwtUtil)
+	testerRepo := data.NewTesterRepo(dataData, confData, confServer, appUsecase, logger)
+	testerUsecase := biz.NewTesterUsecase(testerRepo)
+	testerService := service.NewTesterService(testerUsecase, jwtUtil)
 	jwtInfoMiddleware := middleware.NewJwtInfoMiddleware(jwtUtil)
-	grpcServer := server.NewGRPCServer(confServer, appService, jwtInfoMiddleware, logger)
-	httpServer := server.NewHTTPServer(confServer, appService, jwtInfoMiddleware, logger)
+	grpcServer := server.NewGRPCServer(confServer, appService, testerService, jwtInfoMiddleware, logger)
+	httpServer := server.NewHTTPServer(confServer, appService, testerService, jwtInfoMiddleware, logger)
 	app := newApp(logger, grpcServer, httpServer)
 	return app, func() {
+		cleanup2()
 		cleanup()
 	}, nil
 }

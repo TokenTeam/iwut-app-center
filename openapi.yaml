@@ -3,9 +3,45 @@
 
 openapi: 3.0.3
 info:
-    title: App API
+    title: ""
     version: 0.0.1
 paths:
+    /app/create:
+        post:
+            tags:
+                - App
+            operationId: App_CreateApp
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.CreateAppRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.CreateAppReply'
+    /app/create-version:
+        post:
+            tags:
+                - App
+            operationId: App_CreateAppVersion
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.CreateAppVersionRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.CreateAppVersionReply'
     /app/info:
         get:
             tags:
@@ -13,10 +49,6 @@ paths:
             operationId: App_GetApplicationInfo
             parameters:
                 - name: clientId
-                  in: query
-                  schema:
-                    type: string
-                - name: appId
                   in: query
                   schema:
                     type: string
@@ -32,13 +64,60 @@ paths:
             tags:
                 - App
             operationId: App_GetAppList
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.GetAppListReply'
+    /app/update-redirect-uri:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppRedirectUri
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppRedirectUriRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppRedirectUriReply'
+    /app/update-rule:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppRule
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppRuleRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppRuleReply'
+    /app/version-info:
+        get:
+            tags:
+                - App
+            operationId: App_GetAppVersionInfo
             parameters:
-                - name: page
+                - name: clientId
                   in: query
                   schema:
-                    type: integer
-                    format: int32
-                - name: pageSize
+                    type: string
+                - name: version
                   in: query
                   schema:
                     type: integer
@@ -49,9 +128,177 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/app_center.v1.app.GetAppListReply'
+                                $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoReply'
+    /app/version-info-with-user-check:
+        post:
+            tags:
+                - App
+            operationId: App_GetAppVersionInfoWithUserCheck
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoWithUserCheckRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoWithUserCheckReply'
+    /tester/add:
+        get:
+            tags:
+                - Tester
+            operationId: Tester_AddTester
+            parameters:
+                - name: inviteId
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.tester.AddTesterReply'
+    /tester/test-link:
+        get:
+            tags:
+                - Tester
+            operationId: Tester_GetTestLink
+            parameters:
+                - name: clientId
+                  in: query
+                  schema:
+                    type: string
+                - name: version
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: expireTime
+                  in: query
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.tester.GetTestLinkReply'
 components:
     schemas:
+        app_center.v1.app.ApplicationVersion:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                internalVersion:
+                    type: integer
+                    format: int32
+                version:
+                    type: string
+                basicScope:
+                    type: array
+                    items:
+                        type: string
+                optionalScope:
+                    type: array
+                    items:
+                        type: string
+                displayName:
+                    type: string
+                description:
+                    type: string
+                url:
+                    type: string
+                icon:
+                    type: string
+                status:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                deletedAt:
+                    type: string
+                    format: date-time
+        app_center.v1.app.CreateAppReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app.CreateAppReply_CreateAppReplyData'
+                traceId:
+                    type: string
+        app_center.v1.app.CreateAppReply_CreateAppReplyData:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                clientSecret:
+                    type: string
+                name:
+                    type: string
+                admin:
+                    type: string
+                id:
+                    type: string
+        app_center.v1.app.CreateAppRequest:
+            type: object
+            properties:
+                name:
+                    type: string
+        app_center.v1.app.CreateAppVersionReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app.CreateAppVersionReply_CreateAppVersionReplyData'
+                traceId:
+                    type: string
+        app_center.v1.app.CreateAppVersionReply_CreateAppVersionReplyData:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                internalVersion:
+                    type: integer
+                    format: int32
+        app_center.v1.app.CreateAppVersionRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                basicScope:
+                    type: array
+                    items:
+                        type: string
+                optionalScope:
+                    type: array
+                    items:
+                        type: string
+                version:
+                    type: string
+                displayName:
+                    type: string
+                description:
+                    type: string
+                url:
+                    type: string
+                icon:
+                    type: string
         app_center.v1.app.GetAppListReply:
             type: object
             properties:
@@ -59,6 +306,98 @@ components:
                     type: integer
                     format: int32
                 message:
+                    type: string
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/app_center.v1.app.GetAppListReply_ApplicationVersion'
+                traceId:
+                    type: string
+            description: |-
+                message GetAppListRequest {
+                  int32 page = 1;
+                  int32 pageSize = 2;
+
+                }
+        app_center.v1.app.GetAppListReply_ApplicationVersion:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                internalVersion:
+                    type: integer
+                    format: int32
+                version:
+                    type: string
+                basicScope:
+                    type: array
+                    items:
+                        type: string
+                optionalScope:
+                    type: array
+                    items:
+                        type: string
+                displayName:
+                    type: string
+                description:
+                    type: string
+                url:
+                    type: string
+                icon:
+                    type: string
+                status:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                name:
+                    type: string
+                admin:
+                    type: string
+                collaborators:
+                    type: array
+                    items:
+                        type: string
+        app_center.v1.app.GetAppVersionInfoReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app.ApplicationVersion'
+                traceId:
+                    type: string
+        app_center.v1.app.GetAppVersionInfoWithUserCheckReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData'
+                traceId:
+                    type: string
+        app_center.v1.app.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData:
+            type: object
+            properties:
+                appVersion:
+                    $ref: '#/components/schemas/app_center.v1.app.ApplicationVersion'
+                allowed:
+                    type: boolean
+        app_center.v1.app.GetAppVersionInfoWithUserCheckRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                userId:
                     type: string
         app_center.v1.app.GetApplicationInfoReply:
             type: object
@@ -82,13 +421,16 @@ components:
                 stableVersion:
                     type: integer
                     format: int32
-                grayVersion:
+                greyVersion:
                     type: integer
                     format: int32
                 betaVersion:
                     type: integer
                     format: int32
-                grayPercentage:
+                greyShuffleCode:
+                    type: integer
+                    format: int32
+                greyPercentage:
                     type: number
                     format: double
                 name:
@@ -101,7 +443,99 @@ components:
                     type: array
                     items:
                         type: string
+                nextVersion:
+                    type: integer
+                    format: int32
                 id:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                deletedAt:
+                    type: string
+                    format: date-time
+                redirectUri:
+                    type: array
+                    items:
+                        type: string
+        app_center.v1.app.UpdateAppRedirectUriReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppRedirectUriRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                redirectUri:
+                    type: array
+                    items:
+                        type: string
+        app_center.v1.app.UpdateAppRuleReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppRuleRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                rule:
+                    $ref: '#/components/schemas/app_center.v1.app.UpdateAppRuleRequest_Rule'
+        app_center.v1.app.UpdateAppRuleRequest_Rule:
+            type: object
+            properties:
+                operator:
+                    type: string
+                rules:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/app_center.v1.app.UpdateAppRuleRequest_Rule'
+                Field:
+                    type: string
+                DefaultField:
+                    type: string
+                value:
+                    type: string
+        app_center.v1.tester.AddTesterReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.tester.GetTestLinkReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.tester.GetTestLinkReply_GetTaskLinkData'
+                traceId:
+                    type: string
+        app_center.v1.tester.GetTestLinkReply_GetTaskLinkData:
+            type: object
+            properties:
+                testLink:
                     type: string
 tags:
     - name: App
+    - name: Tester

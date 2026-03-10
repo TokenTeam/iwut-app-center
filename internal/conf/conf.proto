@@ -8,6 +8,7 @@ import "google/protobuf/duration.proto";
 message Bootstrap {
   Server server = 1;
   Data data = 2;
+  Service service = 3;
 }
 
 message Server {
@@ -23,6 +24,11 @@ message Server {
   }
   HTTP http = 1;
   GRPC grpc = 2;
+  string name = 3;
+  string version = 4;
+  string frontend_url = 5;
+  string jaeger_endpoint = 6;
+  string env = 7;
 }
 
 message Data {
@@ -50,4 +56,15 @@ message Data {
   }
   Redis redis = 1;
   MongoDB mongodb = 2;
+}
+
+message Service {
+  message Auth {
+    string uri = 1;
+  }
+  message Config {
+    string uri = 1;
+  }
+  Auth auth = 1;
+  Config config = 2;
 }

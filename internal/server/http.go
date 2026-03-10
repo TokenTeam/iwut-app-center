@@ -2,6 +2,7 @@ package server
 
 import (
 	"iwut-app-center/api/gen/go/app_center/v1/app"
+	"iwut-app-center/api/gen/go/app_center/v1/tester"
 	"iwut-app-center/internal/conf"
 	middleware "iwut-app-center/internal/middleware"
 	"iwut-app-center/internal/service"
@@ -70,7 +71,7 @@ func CreatedErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // NewHTTPServer new an HTTP server.
-func NewHTTPServer(c *conf.Server, appService *service.AppService, jwtInfo *middleware.JwtInfoMiddleware, logger log.Logger) *http.Server {
+func NewHTTPServer(c *conf.Server, appService *service.AppService, testerService *service.TesterService, jwtInfo *middleware.JwtInfoMiddleware, logger log.Logger) *http.Server {
 	var opts = []http.ServerOption{
 		http.Middleware(
 			recovery.Recovery(),
@@ -91,6 +92,7 @@ func NewHTTPServer(c *conf.Server, appService *service.AppService, jwtInfo *midd
 	}
 	srv := http.NewServer(opts...)
 	app.RegisterAppHTTPServer(srv, appService)
+	tester.RegisterTesterHTTPServer(srv, testerService)
 
 	return srv
 }

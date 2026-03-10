@@ -18,7 +18,7 @@ import (
 )
 
 // ProviderSet is data providers.
-var ProviderSet = wire.NewSet(NewAppRepo, NewData)
+var ProviderSet = wire.NewSet(NewAppRepo, NewData, NewTesterRepo)
 
 var (
 	RedisPrefixKey string
@@ -38,8 +38,12 @@ func NewData(c *conf.Data, logger log.Logger) (*Data, func(), error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := ensureUserEmailUniqueIndex(ctx, mongoClient.Database(c.GetMongodb().GetDatabase()).Collection("user")); err != nil {
-		(log.NewHelper(logger)).Warnf("ensure email unique index failed: %v", err)
+	//if err := ensureUserEmailUniqueIndex(ctx, mongoClient.Database(c.GetMongodb().GetDatabase()).Collection("user")); err != nil {
+	//	(log.NewHelper(logger)).Warnf("ensure email unique index failed: %v", err)
+	//}
+	// create compound index on application_versions for quick search by status and tester
+	if err := testUserQuickSearchIndex(ctx, mongoClient.Database(c.GetMongodb().GetDatabase()).Collection("application_version")); err != nil {
+		(log.NewHelper(logger)).Warnf("ensure application_version status/tester index failed: %v", err)
 	}
 	redisClient, err := initRedis(c)
 	if err != nil {
@@ -78,22 +82,6 @@ func NewData(c *conf.Data, logger log.Logger) (*Data, func(), error) {
 				errCh <- fmt.Errorf("failed to close redis client: %w", err)
 			}
 		}()
-
-		//// 并发关闭 mysql (通过 GORM 获取底层 *sql.DB 并 Close)
-		//wg.Add(1)
-		//go func() {
-		//	defer wg.Done()
-		//	if mysqlClient != nil {
-		//		sqlDB, err := mysqlClient.DB()
-		//		if err != nil {
-		//			errCh <- fmt.Errorf("failed to get underlying sql.DB from gorm: %w", err)
-		//			return
-		//		}
-		//		if err := sqlDB.Close(); err != nil {
-		//			errCh <- fmt.Errorf("failed to close mysql client: %w", err)
-		//		}
-		//	}
-		//}()
 
 		wg.Wait()
 		close(errCh)
@@ -155,18 +143,37 @@ func initMongo(c *conf.Data) (*mongo.Client, error) {
 	return client, nil
 }
 
-func ensureUserEmailUniqueIndex(ctx context.Context, col *mongo.Collection) error {
-	// Create an ascending index on `email` and mark it unique.
-	// create indexes as part of a controlled migration step if needed.
+//func ensureUserEmailUniqueIndex(ctx context.Context, col *mongo.Collection) error {
+//	// Create an ascending index on `email` and mark it unique.
+//	// create indexes as part of a controlled migration step if needed.
+//	idxOpts := options.Index()
+//	idxOpts.SetUnique(true)
+//	// optional: give the index a stable name
+//	idxOpts.SetName("idx_user_email_unique")
+//
+//	idx := mongo.IndexModel{
+//		Keys:    bson.D{{Key: "email", Value: 1}},
+//		Options: idxOpts,
+//	}
+//	_, err := col.Indexes().CreateOne(ctx, idx)
+//	return err
+//}
+
+func testUserQuickSearchIndex(ctx context.Context, col *mongo.Collection) error {
+	// Create a compound index on `status` and `tester` to accelerate queries
+	// that filter on status (string) and tester (string values inside array).
 	idxOpts := options.Index()
-	idxOpts.SetUnique(true)
-	// optional: give the index a stable name
-	idxOpts.SetName("idx_user_email_unique")
+	// give the index a clear, stable name
+	idxOpts.SetName("idx_application_version_status_tester")
 
 	idx := mongo.IndexModel{
-		Keys:    bson.D{{Key: "email", Value: 1}},
+		Keys: bson.D{
+			{Key: "status", Value: 1},
+			{Key: "tester", Value: 1},
+		},
 		Options: idxOpts,
 	}
+
 	_, err := col.Indexes().CreateOne(ctx, idx)
 	return err
 }

@@ -12,7 +12,7 @@ ifeq ($(GOHOSTOS), windows)
 	API_PROTO_FILES=$(shell $(Git_Bash) -c "find api/app_center -name *.proto")
 else
 	INTERNAL_PROTO_FILES=$(shell find internal -name *.proto)
-	API_PROTO_FILES=$(shell find api -name *.proto)
+	API_PROTO_FILES=$(shell find api/app_center -name *.proto)
 endif
 
 .PHONY: init
@@ -29,7 +29,7 @@ init:
 # generate internal proto
 config:
 	protoc --proto_path=./internal \
-	       --proto_path=./third_party \
+	       --proto_path=./api/third_party \
  	       --go_out=paths=source_relative:./internal \
 	       $(INTERNAL_PROTO_FILES)
 
@@ -48,6 +48,11 @@ api:
 # generate wire
 wire:
 	wire ./cmd/iwut-app-center
+
+.PHONY: dev-build
+# build
+dev-build:
+	mkdir -p bin/ && go build -ldflags "-X main.Version=$(VERSION)" -gcflags "all=-N -l" -o ./bin/ ./...
 
 .PHONY: build
 # build
