@@ -30,15 +30,17 @@ func wireApp(confServer *conf.Server, confData *conf.Data, confService *conf.Ser
 	if err != nil {
 		return nil, nil, err
 	}
-	configCenterUtil := util.NewConfigCenterUtil(confService, logger)
 	authCenterUtil, cleanup2, err := util.NewAuthCenterUtil(confService, logger)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
 	greyCalc := util.NewGreyCalc()
+	configCenterUtil := util.NewConfigCenterUtil(confService, logger)
 	ruleParser := util.NewRuleParser(configCenterUtil)
-	appRepo := data.NewAppRepo(dataData, confData, configCenterUtil, authCenterUtil, greyCalc, ruleParser, logger)
+	appVersionRepo := data.NewAppVersionRepo(dataData, confData, configCenterUtil, authCenterUtil, greyCalc, ruleParser, logger)
+	appVersionUsecase := biz.NewAppVersionUsecase(appVersionRepo)
+	appRepo := data.NewAppRepo(dataData, confData, authCenterUtil, greyCalc, ruleParser, appVersionUsecase, logger)
 	appUsecase := biz.NewAppUsecase(appRepo)
 	jwtUtil := util.NewJwtUtil()
 	appService := service.NewAppService(appUsecase, jwtUtil)

@@ -18,7 +18,7 @@ import (
 )
 
 // ProviderSet is data providers.
-var ProviderSet = wire.NewSet(NewAppRepo, NewData, NewTesterRepo)
+var ProviderSet = wire.NewSet(NewAppVersionRepo, NewAppRepo, NewData, NewTesterRepo)
 
 var (
 	RedisPrefixKey string

@@ -21,23 +21,23 @@ type appRepo struct {
 	data                         *Data
 	applicationCollection        *mongo.Collection
 	applicationVersionCollection *mongo.Collection
-	configCenterUtil             *util.ConfigCenterUtil
 	authCenterUtil               *util.AuthCenterUtil
 	ruleParser                   *util.RuleParser
 	greyCalc                     *util.GreyCalc
+	appVersionUsecase            *biz.AppVersionUsecase
 	log                          *log.Helper
 }
 
-func NewAppRepo(data *Data, c *conf.Data, configCenterUtil *util.ConfigCenterUtil, authCenterUtil *util.AuthCenterUtil, greyCalc *util.GreyCalc, ruleParser *util.RuleParser, logger log.Logger) biz.AppRepo {
+func NewAppRepo(data *Data, c *conf.Data, authCenterUtil *util.AuthCenterUtil, greyCalc *util.GreyCalc, ruleParser *util.RuleParser, appVersionUsecase *biz.AppVersionUsecase, logger log.Logger) biz.AppRepo {
 	dbName := c.GetMongodb().GetDatabase()
 	return &appRepo{
 		data:                         data,
 		applicationCollection:        data.mongo.Database(dbName).Collection("application"),
 		applicationVersionCollection: data.mongo.Database(dbName).Collection("application_version"),
-		configCenterUtil:             configCenterUtil,
 		authCenterUtil:               authCenterUtil,
 		ruleParser:                   ruleParser,
 		greyCalc:                     greyCalc,
+		appVersionUsecase:            appVersionUsecase,
 		log:                          log.NewHelper(logger),
 	}
 }
@@ -59,71 +59,6 @@ func (r *appRepo) GetApplicationInfo(ctx context.Context, clientId string) (*biz
 		return nil, err
 	}
 	return &result, nil
-}
-
-func (r *appRepo) GetApplicationVersionInfo(ctx context.Context, clientId string, version int32) (*biz.ApplicationVersionInfo, error) {
-	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
-
-	result, err := r.getApplicationVersionInfo(ctx, clientId, version)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			l.Debugf("GetApplicationVersionInfo no document found for clientId: %s, version: %d", clientId, version)
-			return nil, errors.NotFound(string(v1.ErrorReason_CLIENT_VERSION_NOT_FOUNT), "client or version not found")
-		}
-		l.Errorf("GetApplicationVersionInfo error: %v", err)
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (r *appRepo) GetApplicationVersionInfoWithUserCheck(ctx context.Context, clientId string, version int32, uid string) (bool, *biz.ApplicationVersionInfo, error) {
-	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
-
-	applicationResult, err := r.GetApplicationInfo(ctx, clientId)
-	if err != nil {
-		return false, nil, err
-	}
-	if applicationResult == nil {
-		l.Errorf("GetApplicationVersionInfo no application found for clientId: %s", clientId)
-		return false, nil, errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
-	}
-	versionNotAllowed := false
-	if applicationResult.StableVersion != version && applicationResult.GreyVersion != version && applicationResult.BetaVersion != version {
-		versionNotAllowed = true
-	}
-
-	result, err := r.getApplicationVersionInfo(ctx, clientId, version)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			l.Debugf("GetApplicationVersionInfo no document found for clientId: %s, version: %d", clientId, version)
-			return false, nil, errors.NotFound(string(v1.ErrorReason_CLIENT_VERSION_NOT_FOUNT), "client or version not found")
-		}
-		l.Errorf("GetApplicationVersionInfo error: %v", err)
-		return false, nil, err
-	}
-	if versionNotAllowed {
-		return false, &result, nil
-	}
-	if applicationResult.BetaVersion == version {
-		if result.Tester != nil && lo.Contains(*result.Tester, uid) {
-			return true, &result, nil
-		}
-		return false, &result, nil
-	}
-	if useGrey, err := r.greyCalc.IsUseGrey(uid, applicationResult.GreyShuffleCode, applicationResult.GreyPercentage); err == nil {
-		if useGrey {
-			if applicationResult.GreyVersion == version {
-				return true, &result, nil
-			}
-			return false, &result, nil
-		}
-		if applicationResult.StableVersion == version {
-			return true, &result, nil
-		}
-		return false, &result, nil
-	} else {
-		return false, nil, err
-	}
 }
 
 func (r *appRepo) CreateApplication(parentCtx context.Context, admin string, name string) (*biz.Application, error) {
@@ -181,82 +116,6 @@ func (r *appRepo) CreateApplication(parentCtx context.Context, admin string, nam
 		return app, nil
 	}
 	return nil, errors.InternalServer(string(v1.ErrorReason_IMPOSSIBLE_ERROR), "failed to generate unique client ID after multiple attempts")
-}
-
-func (r *appRepo) CreateAppVersion(parentCtx context.Context, versionInfo biz.ApplicationVersionInfo) (*biz.ApplicationVersionInfo, error) {
-	l := log.NewHelper(log.WithContext(parentCtx, r.log.Logger()))
-
-	ctx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
-	nextVersion, err := r.existsClientIDAndGetNextVersion(ctx, versionInfo.ClientId)
-	cancel()
-	if err != nil {
-		return nil, err
-	}
-	versionInfo.InternalVersion = nextVersion
-
-	ctx, cancel = context.WithTimeout(parentCtx, 5*time.Second)
-	update := bson.M{"$inc": bson.M{"next_version": 1}}
-	_, err = r.applicationCollection.UpdateOne(ctx, bson.M{"client_id": versionInfo.ClientId}, update)
-	cancel()
-	if err != nil {
-		l.Errorf("CreateAppVersion error updating next version: %v", err)
-		return nil, err
-	}
-
-	ctx, cancel = context.WithTimeout(parentCtx, 5*time.Second)
-	allowedScope := r.configCenterUtil.GetAllowedScope()
-	cancel()
-	for _, scope := range versionInfo.BasicScope {
-		if _, ok := allowedScope[scope]; !ok {
-			l.Debugf("CreateAppVersion invalid scope: %s", scope)
-			return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_SCOPE), "invalid scope: "+scope)
-		}
-	}
-	for _, scope := range versionInfo.OptionalScope {
-		if _, ok := allowedScope[scope]; !ok {
-			l.Debugf("CreateAppVersion invalid scope: %s", scope)
-			return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_SCOPE), "invalid scope: "+scope)
-		}
-	}
-	if len(versionInfo.Version) > 50 {
-		l.Debugf("CreateAppVersion too large: %s", versionInfo.Version)
-		return nil, errors.BadRequest(string(v1.ErrorReason_VERSION_TOO_LONG), "version length must be less than 50")
-	}
-
-	if len(versionInfo.DisplayName) > 20 {
-		l.Debugf("CreateAppVersion too long display name: %s", versionInfo.DisplayName)
-		return nil, errors.BadRequest(string(v1.ErrorReason_NAME_TOO_LONG), "display name length must be less than 20")
-	}
-
-	if len(versionInfo.Description) > 200 {
-		l.Debugf("CreateAppVersion too long description: %s", versionInfo.Description)
-		return nil, errors.BadRequest(string(v1.ErrorReason_DESCRIPTION_TOO_LONG), "description length must be less than 200")
-	}
-
-	if !util.IsHttpURL(versionInfo.Url) {
-		l.Debugf("CreateAppVersion invalid url: %s", versionInfo.Url)
-		return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_URI), "invalid url: "+versionInfo.Url)
-	}
-
-	if !util.IsHttpURL(versionInfo.Icon) {
-		l.Debugf("CreateAppVersion invalid icon url: %s", versionInfo.Icon)
-		return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_URI), "invalid icon url: "+versionInfo.Icon)
-	}
-
-	versionInfo.Status = "DEACTIVATE"
-	versionInfo.Tester = nil
-	versionInfo.CreatedAt = time.Now()
-	versionInfo.DeletedAt = nil
-
-	ctx, cancel = context.WithTimeout(parentCtx, 5*time.Second)
-	defer cancel()
-
-	_, err = r.applicationVersionCollection.InsertOne(ctx, versionInfo)
-	if err != nil {
-		l.Errorf("CreateApplication error inserting application: %v", err)
-		return nil, err
-	}
-	return &versionInfo, nil
 }
 
 func (r *appRepo) GetAppList(parentCtx context.Context, uid string) ([]biz.AppListItem, error) {
@@ -386,7 +245,7 @@ func (r *appRepo) GetAppList(parentCtx context.Context, uid string) ([]biz.AppLi
 			}
 		}
 		if useGrey {
-			result, err := r.GetApplicationVersionInfo(ctx, app.ClientId, app.GreyVersion)
+			result, err := r.appVersionUsecase.Repo.GetApplicationVersionInfo(ctx, app.ClientId, app.GreyVersion)
 			if err != nil {
 				if errors.Is(err, mongo.ErrNoDocuments) {
 					l.Warnf("GetAppList no document found for clientId: %s, version: %d", app.ClientId, app.GreyVersion)
@@ -418,7 +277,7 @@ func (r *appRepo) GetAppList(parentCtx context.Context, uid string) ([]biz.AppLi
 			l.Warnf("GetAppList nil result for clientId: %s, version: %d", app.ClientId, app.GreyVersion)
 		}
 		// 无需灰度 / 灰度出错，用正常版本
-		result, err := r.GetApplicationVersionInfo(parentCtx, app.ClientId, app.StableVersion)
+		result, err := r.appVersionUsecase.Repo.GetApplicationVersionInfo(parentCtx, app.ClientId, app.StableVersion)
 		if err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
 				l.Warnf("GetAppList no document found for clientId: %s, stable version: %d", app.ClientId, app.StableVersion)
@@ -459,27 +318,18 @@ func (r *appRepo) UpdateApplicationRule(ctx context.Context, clientId string, ui
 		return errors.BadRequest(string(v1.ErrorReason_INVALID_RULE), "invalid rule")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("UpdateApplicationRule error checking developer permission for clientId: %s, uid: %s, error: %v", clientId, uid, err)
+			return err
+		}
+		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update application rule")
+	}
 
 	filter := bson.M{"client_id": clientId}
-	var result struct {
-		Admin         string   `bson:"admin"`
-		Collaborators []string `bson:"collaborators"`
-	}
-	err := r.applicationCollection.FindOne(ctx, filter).Decode(&result)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			l.Debugf("UpdateApplicationRule no document found for clientId: %s", clientId)
-			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
-		}
-		l.Errorf("UpdateApplicationRule error finding application: %v", err)
-		return err
-	}
-	if result.Admin != uid && !lo.Contains(result.Collaborators, uid) {
-		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update rule")
-	}
-	err = r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"rule": rule}}).Err()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err := r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"rule": rule}}).Err()
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			l.Debugf("UpdateApplicationRule no document found for clientId: %s during update", clientId)
@@ -489,6 +339,35 @@ func (r *appRepo) UpdateApplicationRule(ctx context.Context, clientId string, ui
 		return err
 	}
 	return nil
+}
+
+func (r *appRepo) RefreshApplicationSecret(ctx context.Context, clientId string, uid string) (string, error) {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("RefreshApplicationSecret error checking developer permission for clientId: %s, uid: %s, error: %v", clientId, uid, err)
+			return "", err
+		}
+		return "", errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to refresh application secret")
+	}
+	newSecret, err := util.GenerateString(40)
+	if err != nil {
+		l.Errorf("RefreshApplicationSecret error generating new secret for clientId: %s: %v", clientId, err)
+		return "", err
+	}
+	filter := bson.M{"client_id": clientId}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err = r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"client_secret": newSecret}}).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("RefreshApplicationSecret no document found for clientId: %s during secret refresh", clientId)
+			return "", errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("RefreshApplicationSecret error updating application secret for clientId: %s: %v", clientId, err)
+		return "", err
+	}
+	return newSecret, nil
 }
 
 func (r *appRepo) UpdateApplicationRedirectUri(ctx context.Context, clientId string, uid string, redirectUri []string) error {
@@ -501,27 +380,15 @@ func (r *appRepo) UpdateApplicationRedirectUri(ctx context.Context, clientId str
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	filter := bson.M{"client_id": clientId}
-	var result struct {
-		Admin         string   `bson:"admin"`
-		Collaborators []string `bson:"collaborators"`
-	}
-	err := r.applicationCollection.FindOne(ctx, filter).Decode(&result)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			l.Debugf("UpdateApplicationRedirectUri no document found for clientId: %s", clientId)
-			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("UpdateApplicationRedirectUri error checking developer permission for clientId: %s, uid: %s, error: %v", clientId, uid, err)
+			return err
 		}
-		l.Errorf("UpdateApplicationRedirectUri error finding application: %v", err)
-		return err
-	}
-	if result.Admin != uid && !lo.Contains(result.Collaborators, uid) {
 		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update redirect uri")
 	}
-	err = r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"redirect_uri": redirectUri}}).Err()
+	filter := bson.M{"client_id": clientId}
+	err := r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"redirect_uri": redirectUri}}).Err()
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			l.Debugf("UpdateApplicationRedirectUri no document found for clientId: %s during update", clientId)
@@ -533,23 +400,167 @@ func (r *appRepo) UpdateApplicationRedirectUri(ctx context.Context, clientId str
 	return nil
 }
 
-func (r *appRepo) existsClientIDAndGetNextVersion(ctx context.Context, clientId string) (int32, error) {
-	var result struct {
-		ClientId    string `bson:"client_id"`
-		NextVersion int32  `bson:"next_version"`
+func (r *appRepo) UpdateApplicationVersionStatus(ctx context.Context, clientId string, internalVersion int32, uid string, status string) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+
+	if status != biz.ApplicationVersionInfoStableStatus && status != biz.ApplicationVersionInfoGreyStatus && status != biz.ApplicationVersionInfoTestStatus && status != biz.ApplicationVersionInfoDeactivateStatus {
+		return errors.BadRequest(string(v1.ErrorReason_INVALID_STATUS), "invalid status: "+status)
+	}
+
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("UpdateApplicationVersionStatus error checking developer permission for clientId: %s, uid: %s, error: %v", clientId, uid, err)
+			return err
+		}
+		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update application version status")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	opts := options.FindOne().SetProjection(bson.M{"client_id": 1, "next_version": 1})
-	err := r.applicationCollection.FindOne(ctx, bson.M{"client_id": clientId}, opts).Decode(&result)
+	// 更新目标 ApplicationVersion Status
+	var applicationVersionInfoBeforeUpdate biz.ApplicationVersionInfo
+	filter := bson.M{"client_id": clientId, "internal_version": internalVersion}
+	sr := r.applicationVersionCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"status": status}})
+	if err := sr.Err(); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("UpdateApplicationVersionStatus no document found for clientId: %s, internalVersion: %d during update", clientId, internalVersion)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_VERSION_NOT_FOUNT), "client version not found")
+		}
+		l.Errorf("UpdateApplicationVersionStatus error updating application: %v", err)
+		return err
+	}
+	if err := sr.Decode(&applicationVersionInfoBeforeUpdate); err != nil {
+		l.Errorf("UpdateApplicationVersionStatus error decoding applicationVersionInfoBeforeUpdate update version info for clientId: %s, internalVersion: %d, error: %v", clientId, internalVersion, err)
+		return err
+	}
+	// 更新 Application 中的目标Status Version, 如果目标之前是其他状态 则清除原先状态的版本引用
+	var applicationInfoBeforeUpdate biz.Application
+	filter = bson.M{"client_id": clientId}
+	statusKeyMap := map[string]string{
+		biz.ApplicationVersionInfoStableStatus: "stable_version",
+		biz.ApplicationVersionInfoGreyStatus:   "grey_version",
+		biz.ApplicationVersionInfoTestStatus:   "beta_version",
+	}
+	oper, err := func(status string) (bson.M, error) {
+		if status == biz.ApplicationVersionInfoDeactivateStatus {
+			if key, ok := statusKeyMap[applicationVersionInfoBeforeUpdate.Status]; ok {
+				return bson.M{key: -1}, nil
+			}
+			if applicationVersionInfoBeforeUpdate.Status == biz.ApplicationVersionInfoDeactivateStatus {
+				return bson.M{}, nil
+			}
+			return nil, errors.InternalServer(string(v1.ErrorReason_IMPOSSIBLE_ERROR), "invalid application version status before update: "+applicationVersionInfoBeforeUpdate.Status)
+		}
+		var oper bson.M
+		if key, ok := statusKeyMap[status]; ok {
+			oper = bson.M{key: internalVersion}
+			if applicationVersionInfoBeforeUpdate.Status != biz.ApplicationVersionInfoDeactivateStatus {
+				if oldKey, ok := statusKeyMap[applicationVersionInfoBeforeUpdate.Status]; ok {
+					if _, ok := oper[oldKey]; !ok {
+						oper[oldKey] = -1
+					} else {
+						l.Warnf("UpdateApplicationVersionStatus unexpected old status key conflict for clientId: %s, internalVersion: %d, old status: %s", clientId, internalVersion, applicationVersionInfoBeforeUpdate.Status)
+					}
+				}
+			}
+			return oper, nil
+		}
+		return bson.M{}, nil
+	}(status)
+	if err != nil {
+		l.Errorf("UpdateApplicationVersionStatus error updating application: %v", err)
+		return err
+	}
+	sr = r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": oper})
+	if err := sr.Err(); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("UpdateApplicationVersionStatus no document found for clientId: %s during application update", clientId)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("UpdateApplicationVersionStatus error updating application for clientId: %s, internalVersion: %d, error: %v", clientId, internalVersion, err)
+		return err
+	}
+	if err := sr.Decode(&applicationInfoBeforeUpdate); err != nil {
+		l.Errorf("UpdateApplicationVersionStatus error decoding applicationInfoBeforeUpdate update version info for clientId: %s, internalVersion: %d, error: %v", clientId, internalVersion, err)
+		return err
+	}
+	// 检查是否存在版本冲突
+	conflictCheck := map[string]int32{
+		biz.ApplicationVersionInfoStableStatus: applicationInfoBeforeUpdate.StableVersion,
+		biz.ApplicationVersionInfoGreyStatus:   applicationInfoBeforeUpdate.GreyVersion,
+		biz.ApplicationVersionInfoTestStatus:   applicationInfoBeforeUpdate.BetaVersion,
+	}
+	if clearVersion, _ := conflictCheck[status]; clearVersion != -1 {
+		filter := bson.M{"client_id": clientId, "internal_version": clearVersion}
+		update := bson.M{"$set": bson.M{"status": biz.ApplicationVersionInfoDeactivateStatus}}
+		_, err := r.applicationVersionCollection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			l.Errorf("UpdateApplicationVersionStatus error deactivating conflicting version for clientId: %s, internalVersion: %d, error: %v", clientId, clearVersion, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *appRepo) UpdateApplicationGreyPercentage(ctx context.Context, clientId string, uid string, greyPercentage float64) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("UpdateApplicationGreyPercentage error updating application: %v", err)
+			return err
+		}
+		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update application grey percentage")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	greyPercentage = max(greyPercentage, 0)
+	greyPercentage = min(greyPercentage, 1)
+
+	filter := bson.M{
+		"client_id": clientId,
+	}
+	err := r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"grey_percentage": greyPercentage}}).Err()
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return 0, errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+			l.Debugf("UpdateApplicationGreyPercentage no document found for clientId: %s during update", clientId)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
 		}
-		return 0, err
+		l.Errorf("UpdateApplicationGreyPercentage error updating application: %v", err)
+		return err
 	}
-	return result.NextVersion, nil
+	return nil
 }
+
+func (r *appRepo) UpdateApplicationGreyShuffleCode(ctx context.Context, clientId string, uid string) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("UpdateApplicationGreyShuffleCode error updating application: %v", err)
+			return err
+		}
+		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update application grey shuffle code")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	shuffleCode := r.greyCalc.GetRandomGreyShuffleCode()
+	filter := bson.M{
+		"client_id": clientId,
+	}
+	err := r.applicationCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"grey_shuffle_code": shuffleCode}}).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("UpdateApplicationGreyShuffleCode no document found for clientId: %s during update", clientId)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("UpdateApplicationGreyShuffleCode error updating application: %v", err)
+		return err
+	}
+	return nil
+}
+
 func (r *appRepo) existsClientID(ctx context.Context, clientId string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -571,14 +582,7 @@ func (r *appRepo) exists(ctx context.Context, filter bson.M) (bool, error) {
 	}
 	return false, err
 }
-func (r *appRepo) getApplicationVersionInfo(ctx context.Context, clientId string, internalVersion int32) (biz.ApplicationVersionInfo, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	filter := bson.M{"client_id": clientId, "internal_version": internalVersion}
-	var result biz.ApplicationVersionInfo
-	err := r.applicationVersionCollection.FindOne(ctx, filter).Decode(&result)
-	return result, err
-}
+
 func (r *appRepo) setShuffleCode(ctx context.Context, clientId string, shuffleCode *uint32) (uint32, error) {
 	var code uint32
 	if shuffleCode == nil {
@@ -598,4 +602,25 @@ func (r *appRepo) clearApplicationGreyInfo(ctx context.Context, clientId string)
 	defer cancel()
 	err := r.applicationCollection.FindOneAndUpdate(ctx, bson.M{"client_id": clientId}, update).Err()
 	return err
+}
+func (r *appRepo) checkDeveloperPermission(ctx context.Context, clientId string, uid string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"client_id": clientId}
+	var result struct {
+		Admin         string   `bson:"admin"`
+		Collaborators []string `bson:"collaborators"`
+	}
+	err := r.applicationCollection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		return false, err
+	}
+	if result.Admin == uid || lo.Contains(result.Collaborators, uid) {
+		return true, nil
+	}
+	return false, nil
 }

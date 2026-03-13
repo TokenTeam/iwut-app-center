@@ -9,8 +9,8 @@ func TestGreyCalc_HitRateApprox_UUIDv7(t *testing.T) {
 	g := NewGreyCalc()
 	shuffleCode := g.GetRandomGreyShuffleCode()
 
-	greyRate := 0.30
-	const n = 1000
+	greyRate := 0.85
+	const n = 1000000
 
 	hits := 0
 	for i := 0; i < n; i++ {

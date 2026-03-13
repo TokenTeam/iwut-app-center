@@ -27,13 +27,13 @@ paths:
     /app/create-version:
         post:
             tags:
-                - App
-            operationId: App_CreateAppVersion
+                - AppVersion
+            operationId: AppVersion_CreateAppVersion
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/app_center.v1.app.CreateAppVersionRequest'
+                            $ref: '#/components/schemas/app_center.v1.app_version.CreateAppVersionRequest'
                 required: true
             responses:
                 "200":
@@ -41,7 +41,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/app_center.v1.app.CreateAppVersionReply'
+                                $ref: '#/components/schemas/app_center.v1.app_version.CreateAppVersionReply'
     /app/info:
         get:
             tags:
@@ -71,6 +71,78 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/app_center.v1.app.GetAppListReply'
+    /app/refresh-secret:
+        post:
+            tags:
+                - App
+            operationId: App_RefreshAppSecret
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.RefreshAppSecretRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.RefreshAppSecretReply'
+    /app/update-collaborators:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppVersionStatus
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppVersionStatusRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppVersionStatusReply'
+    /app/update-grey-percentage:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppGreyPercentage
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppGreyPercentageRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppGreyPercentageReply'
+    /app/update-grey-shuffle-code:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppGreyShuffleCode
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppGreyShuffleCodeRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppGreyShuffleCodeReply'
     /app/update-redirect-uri:
         post:
             tags:
@@ -110,8 +182,8 @@ paths:
     /app/version-info:
         get:
             tags:
-                - App
-            operationId: App_GetAppVersionInfo
+                - AppVersion
+            operationId: AppVersion_GetAppVersionInfo
             parameters:
                 - name: clientId
                   in: query
@@ -128,17 +200,17 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoReply'
+                                $ref: '#/components/schemas/app_center.v1.app_version.GetAppVersionInfoReply'
     /app/version-info-with-user-check:
         post:
             tags:
-                - App
-            operationId: App_GetAppVersionInfoWithUserCheck
+                - AppVersion
+            operationId: AppVersion_GetAppVersionInfoWithUserCheck
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoWithUserCheckRequest'
+                            $ref: '#/components/schemas/app_center.v1.app_version.GetAppVersionInfoWithUserCheckRequest'
                 required: true
             responses:
                 "200":
@@ -146,7 +218,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoWithUserCheckReply'
+                                $ref: '#/components/schemas/app_center.v1.app_version.GetAppVersionInfoWithUserCheckReply'
     /tester/add:
         get:
             tags:
@@ -192,40 +264,6 @@ paths:
                                 $ref: '#/components/schemas/app_center.v1.tester.GetTestLinkReply'
 components:
     schemas:
-        app_center.v1.app.ApplicationVersion:
-            type: object
-            properties:
-                clientId:
-                    type: string
-                internalVersion:
-                    type: integer
-                    format: int32
-                version:
-                    type: string
-                basicScope:
-                    type: array
-                    items:
-                        type: string
-                optionalScope:
-                    type: array
-                    items:
-                        type: string
-                displayName:
-                    type: string
-                description:
-                    type: string
-                url:
-                    type: string
-                icon:
-                    type: string
-                status:
-                    type: string
-                createdAt:
-                    type: string
-                    format: date-time
-                deletedAt:
-                    type: string
-                    format: date-time
         app_center.v1.app.CreateAppReply:
             type: object
             properties:
@@ -256,49 +294,6 @@ components:
             properties:
                 name:
                     type: string
-        app_center.v1.app.CreateAppVersionReply:
-            type: object
-            properties:
-                code:
-                    type: integer
-                    format: int32
-                message:
-                    type: string
-                data:
-                    $ref: '#/components/schemas/app_center.v1.app.CreateAppVersionReply_CreateAppVersionReplyData'
-                traceId:
-                    type: string
-        app_center.v1.app.CreateAppVersionReply_CreateAppVersionReplyData:
-            type: object
-            properties:
-                clientId:
-                    type: string
-                internalVersion:
-                    type: integer
-                    format: int32
-        app_center.v1.app.CreateAppVersionRequest:
-            type: object
-            properties:
-                clientId:
-                    type: string
-                basicScope:
-                    type: array
-                    items:
-                        type: string
-                optionalScope:
-                    type: array
-                    items:
-                        type: string
-                version:
-                    type: string
-                displayName:
-                    type: string
-                description:
-                    type: string
-                url:
-                    type: string
-                icon:
-                    type: string
         app_center.v1.app.GetAppListReply:
             type: object
             properties:
@@ -313,12 +308,6 @@ components:
                         $ref: '#/components/schemas/app_center.v1.app.GetAppListReply_ApplicationVersion'
                 traceId:
                     type: string
-            description: |-
-                message GetAppListRequest {
-                  int32 page = 1;
-                  int32 pageSize = 2;
-
-                }
         app_center.v1.app.GetAppListReply_ApplicationVersion:
             type: object
             properties:
@@ -358,47 +347,6 @@ components:
                     type: array
                     items:
                         type: string
-        app_center.v1.app.GetAppVersionInfoReply:
-            type: object
-            properties:
-                code:
-                    type: integer
-                    format: int32
-                message:
-                    type: string
-                data:
-                    $ref: '#/components/schemas/app_center.v1.app.ApplicationVersion'
-                traceId:
-                    type: string
-        app_center.v1.app.GetAppVersionInfoWithUserCheckReply:
-            type: object
-            properties:
-                code:
-                    type: integer
-                    format: int32
-                message:
-                    type: string
-                data:
-                    $ref: '#/components/schemas/app_center.v1.app.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData'
-                traceId:
-                    type: string
-        app_center.v1.app.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData:
-            type: object
-            properties:
-                appVersion:
-                    $ref: '#/components/schemas/app_center.v1.app.ApplicationVersion'
-                allowed:
-                    type: boolean
-        app_center.v1.app.GetAppVersionInfoWithUserCheckRequest:
-            type: object
-            properties:
-                clientId:
-                    type: string
-                version:
-                    type: integer
-                    format: int32
-                userId:
-                    type: string
         app_center.v1.app.GetApplicationInfoReply:
             type: object
             properties:
@@ -458,6 +406,61 @@ components:
                     type: array
                     items:
                         type: string
+        app_center.v1.app.RefreshAppSecretReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app.RefreshAppSecretReply_RefreshAppSecretReplyData'
+                traceId:
+                    type: string
+        app_center.v1.app.RefreshAppSecretReply_RefreshAppSecretReplyData:
+            type: object
+            properties:
+                clientSecret:
+                    type: string
+        app_center.v1.app.RefreshAppSecretRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+        app_center.v1.app.UpdateAppGreyPercentageReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppGreyPercentageRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                greyPercentage:
+                    type: number
+                    format: double
+        app_center.v1.app.UpdateAppGreyShuffleCodeReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppGreyShuffleCodeRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
         app_center.v1.app.UpdateAppRedirectUriReply:
             type: object
             properties:
@@ -509,6 +512,144 @@ components:
                     type: string
                 value:
                     type: string
+        app_center.v1.app.UpdateAppVersionStatusReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppVersionStatusRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                status:
+                    type: string
+        app_center.v1.app_version.ApplicationVersion:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                internalVersion:
+                    type: integer
+                    format: int32
+                version:
+                    type: string
+                basicScope:
+                    type: array
+                    items:
+                        type: string
+                optionalScope:
+                    type: array
+                    items:
+                        type: string
+                displayName:
+                    type: string
+                description:
+                    type: string
+                url:
+                    type: string
+                icon:
+                    type: string
+                status:
+                    type: string
+                createdAt:
+                    type: string
+                    format: date-time
+                deletedAt:
+                    type: string
+                    format: date-time
+        app_center.v1.app_version.CreateAppVersionReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app_version.CreateAppVersionReply_CreateAppVersionReplyData'
+                traceId:
+                    type: string
+        app_center.v1.app_version.CreateAppVersionReply_CreateAppVersionReplyData:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                internalVersion:
+                    type: integer
+                    format: int32
+        app_center.v1.app_version.CreateAppVersionRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                basicScope:
+                    type: array
+                    items:
+                        type: string
+                optionalScope:
+                    type: array
+                    items:
+                        type: string
+                version:
+                    type: string
+                displayName:
+                    type: string
+                description:
+                    type: string
+                url:
+                    type: string
+                icon:
+                    type: string
+        app_center.v1.app_version.GetAppVersionInfoReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app_version.ApplicationVersion'
+                traceId:
+                    type: string
+        app_center.v1.app_version.GetAppVersionInfoWithUserCheckReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/app_center.v1.app_version.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData'
+                traceId:
+                    type: string
+        app_center.v1.app_version.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData:
+            type: object
+            properties:
+                appVersion:
+                    $ref: '#/components/schemas/app_center.v1.app_version.ApplicationVersion'
+                allowed:
+                    type: boolean
+        app_center.v1.app_version.GetAppVersionInfoWithUserCheckRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                userId:
+                    type: string
         app_center.v1.tester.AddTesterReply:
             type: object
             properties:
@@ -538,4 +679,5 @@ components:
                     type: string
 tags:
     - name: App
+    - name: AppVersion
     - name: Tester

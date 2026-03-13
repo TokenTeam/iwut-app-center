@@ -8,7 +8,6 @@ import (
 	"iwut-app-center/internal/util"
 
 	"github.com/go-kratos/kratos/v2/errors"
-	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -73,99 +72,6 @@ func (s *AppService) GetApplicationInfo(ctx context.Context, in *app.GetApplicat
 	}, util.Audit{}), nil
 }
 
-func (s *AppService) GetAppVersionInfo(ctx context.Context, in *app.GetAppVersionInfoRequest) (*app.GetAppVersionInfoReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.GetAppVersionInfoReply]("GetAppVersionInfo", nil)
-
-	_, err := s.jwtUtil.GetServiceClaims(ctx)
-	if err != nil {
-		_, err := s.jwtUtil.GetBaseAuthClaims(ctx)
-		if err != nil {
-			return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
-		}
-	}
-	versionInfo, err := s.appUsecase.Repo.GetApplicationVersionInfo(ctx, in.GetClientId(), in.GetVersion())
-	if err != nil {
-		return nil, errorProcess(ctx, err)
-	}
-	if versionInfo == nil {
-		return nil, errorProcess(ctx, errors.InternalServer(string(v1.ErrorReason_UNKNOWN_ERROR), "got nil application version without error"))
-	}
-	return successProcess(ctx, func(reqId string) *app.GetAppVersionInfoReply {
-		return &app.GetAppVersionInfoReply{
-			Code:    200,
-			Message: "Get application version info successfully",
-			Data: &app.ApplicationVersion{
-				ClientId:        versionInfo.ClientId,
-				InternalVersion: versionInfo.InternalVersion,
-				Version:         versionInfo.Version,
-				BasicScope:      versionInfo.BasicScope,
-				OptionalScope:   versionInfo.OptionalScope,
-				DisplayName:     versionInfo.DisplayName,
-				Description:     versionInfo.Description,
-				Url:             versionInfo.Url,
-				Icon:            versionInfo.Icon,
-				Status:          versionInfo.Status,
-				CreatedAt:       timestamppb.New(versionInfo.CreatedAt),
-				DeletedAt: func() *timestamppb.Timestamp {
-					if versionInfo.DeletedAt != nil {
-						return timestamppb.New(*versionInfo.DeletedAt)
-					}
-					return nil
-				}(),
-			},
-			TraceId: reqId,
-		}
-	}, util.Audit{}), nil
-}
-
-func (s *AppService) GetAppVersionInfoWithUserCheck(ctx context.Context, in *app.GetAppVersionInfoWithUserCheckRequest) (*app.GetAppVersionInfoWithUserCheckReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.GetAppVersionInfoWithUserCheckReply]("GetAppVersionInfoWithUserCheck", nil)
-
-	_, err := s.jwtUtil.GetServiceClaims(ctx)
-	if err != nil {
-		_, err := s.jwtUtil.GetBaseAuthClaims(ctx)
-		if err != nil {
-			return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
-		}
-	}
-	allowed, versionInfo, err := s.appUsecase.Repo.GetApplicationVersionInfoWithUserCheck(ctx, in.GetClientId(), in.GetVersion(), in.GetUserId())
-	if err != nil {
-		return nil, errorProcess(ctx, err)
-	}
-	if versionInfo == nil {
-		return nil, errorProcess(ctx, errors.InternalServer(string(v1.ErrorReason_UNKNOWN_ERROR), "got nil application version without error"))
-	}
-	return successProcess(ctx, func(reqId string) *app.GetAppVersionInfoWithUserCheckReply {
-		return &app.GetAppVersionInfoWithUserCheckReply{
-			Code:    200,
-			Message: "Get application version info with user check successfully",
-			Data: &app.GetAppVersionInfoWithUserCheckReply_GetAppVersionInfoWithUserCheckReplyData{
-				Allowed: allowed,
-				AppVersion: &app.ApplicationVersion{
-					ClientId:        versionInfo.ClientId,
-					InternalVersion: versionInfo.InternalVersion,
-					Version:         versionInfo.Version,
-					BasicScope:      versionInfo.BasicScope,
-					OptionalScope:   versionInfo.OptionalScope,
-					DisplayName:     versionInfo.DisplayName,
-					Description:     versionInfo.Description,
-					Url:             versionInfo.Url,
-					Icon:            versionInfo.Icon,
-					Status:          versionInfo.Status,
-					CreatedAt:       timestamppb.New(versionInfo.CreatedAt),
-					DeletedAt: func() *timestamppb.Timestamp {
-						if versionInfo.DeletedAt != nil {
-							return timestamppb.New(*versionInfo.DeletedAt)
-						}
-						return nil
-					}(),
-				},
-			},
-			TraceId: reqId,
-		}
-	}), nil
-}
-
 func (s *AppService) GetAppList(ctx context.Context, _ *emptypb.Empty) (*app.GetAppListReply, error) {
 	successProcess, errorProcess := util.GetProcesses[*app.GetAppListReply]("GetAppList", nil)
 
@@ -205,6 +111,7 @@ func (s *AppService) GetAppList(ctx context.Context, _ *emptypb.Empty) (*app.Get
 		}
 	}, util.Audit{}), nil
 }
+
 func (s *AppService) CreateApp(ctx context.Context, in *app.CreateAppRequest) (*app.CreateAppReply, error) {
 	successProcess, errorProcess := util.GetProcesses[*app.CreateAppReply]("CreateApp", nil)
 
@@ -232,49 +139,6 @@ func (s *AppService) CreateApp(ctx context.Context, in *app.CreateAppRequest) (*
 				Name:         application.Name,
 				Admin:        application.Admin,
 				Id:           application.Id(),
-			},
-			TraceId: reqId,
-		}
-	}, util.Audit{}), nil
-}
-
-func (s *AppService) CreateAppVersion(ctx context.Context, in *app.CreateAppVersionRequest) (*app.CreateAppVersionReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.CreateAppVersionReply]("CreateAppVersion", nil)
-
-	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
-	if err != nil {
-		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
-	}
-	application, err := s.appUsecase.Repo.GetApplicationInfo(ctx, in.GetClientId())
-	if err != nil {
-		return nil, errorProcess(ctx, err)
-	}
-	if application == nil {
-		return nil, errorProcess(ctx, errors.InternalServer(string(v1.ErrorReason_UNKNOWN_ERROR), "got nil application without error"))
-	}
-	if application.Admin != claim.Uid || lo.Contains(application.Collaborators, claim.Uid) {
-		return nil, errorProcess(ctx, errors.BadRequest(string(v1.ErrorReason_PERMISSION_DENIED), "only admin and collaborators can create new version"))
-	}
-	versionInfo, err := s.appUsecase.Repo.CreateAppVersion(ctx, biz.ApplicationVersionInfo{
-		ClientId:      in.GetClientId(),
-		BasicScope:    in.GetBasicScope(),
-		OptionalScope: in.GetOptionalScope(),
-		Version:       in.GetVersion(),
-		DisplayName:   in.GetDisplayName(),
-		Description:   in.GetDescription(),
-		Url:           in.GetUrl(),
-		Icon:          in.GetIcon(),
-	})
-	if err != nil {
-		return nil, errorProcess(ctx, err)
-	}
-	return successProcess(ctx, func(reqId string) *app.CreateAppVersionReply {
-		return &app.CreateAppVersionReply{
-			Code:    200,
-			Message: "Create application version successfully",
-			Data: &app.CreateAppVersionReply_CreateAppVersionReplyData{
-				ClientId:        versionInfo.ClientId,
-				InternalVersion: versionInfo.InternalVersion,
 			},
 			TraceId: reqId,
 		}
@@ -316,6 +180,89 @@ func (s *AppService) UpdateAppRedirectUri(ctx context.Context, in *app.UpdateApp
 		return &app.UpdateAppRedirectUriReply{
 			Code:    200,
 			Message: "Update application redirect uri successfully",
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+}
+
+func (s *AppService) UpdateAppVersionStatus(ctx context.Context, in *app.UpdateAppVersionStatusRequest) (*app.UpdateAppVersionStatusReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppVersionStatusReply]("UpdateAppVersionStatus", nil)
+
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	err = s.appUsecase.Repo.UpdateApplicationVersionStatus(ctx, in.GetClientId(), in.GetVersion(), claim.Uid, in.GetStatus())
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.UpdateAppVersionStatusReply {
+		return &app.UpdateAppVersionStatusReply{
+			Code:    200,
+			Message: "Update application version status successfully",
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+}
+
+func (s *AppService) RefreshAppSecret(ctx context.Context, in *app.RefreshAppSecretRequest) (*app.RefreshAppSecretReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.RefreshAppSecretReply]("RefreshAppSecret", nil)
+
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	secret, err := s.appUsecase.Repo.RefreshApplicationSecret(ctx, in.GetClientId(), claim.Uid)
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.RefreshAppSecretReply {
+		return &app.RefreshAppSecretReply{
+			Code:    200,
+			Message: "Refresh application secret successfully",
+			Data: &app.RefreshAppSecretReply_RefreshAppSecretReplyData{
+				ClientSecret: secret,
+			},
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+}
+
+func (s *AppService) UpdateAppGreyPercentage(ctx context.Context, in *app.UpdateAppGreyPercentageRequest) (*app.UpdateAppGreyPercentageReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppGreyPercentageReply]("UpdateAppGreyPercentage", nil)
+
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	err = s.appUsecase.Repo.UpdateApplicationGreyPercentage(ctx, in.GetClientId(), claim.Uid, in.GetGreyPercentage())
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.UpdateAppGreyPercentageReply {
+		return &app.UpdateAppGreyPercentageReply{
+			Code:    200,
+			Message: "Update application grey percentage successfully",
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+}
+
+func (s *AppService) UpdateAppGreyShuffleCode(ctx context.Context, in *app.UpdateAppGreyShuffleCodeRequest) (*app.UpdateAppGreyShuffleCodeReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppGreyShuffleCodeReply]("UpdateAppGreyShuffleCode", nil)
+
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	err = s.appUsecase.Repo.UpdateApplicationGreyShuffleCode(ctx, in.GetClientId(), claim.Uid)
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.UpdateAppGreyShuffleCodeReply {
+		return &app.UpdateAppGreyShuffleCodeReply{
+			Code:    200,
+			Message: "Update application grey shuffle code successfully",
 			TraceId: reqId,
 		}
 	}, util.Audit{}), nil

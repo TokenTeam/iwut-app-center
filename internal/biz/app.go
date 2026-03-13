@@ -8,13 +8,14 @@ import (
 
 type AppRepo interface {
 	GetApplicationInfo(ctx context.Context, clientId string) (*Application, error)
-	GetApplicationVersionInfo(ctx context.Context, clientId string, version int32) (*ApplicationVersionInfo, error)
-	GetApplicationVersionInfoWithUserCheck(ctx context.Context, clientId string, version int32, uid string) (bool, *ApplicationVersionInfo, error)
 	CreateApplication(ctx context.Context, admin string, name string) (*Application, error)
-	CreateAppVersion(ctx context.Context, versionInfo ApplicationVersionInfo) (*ApplicationVersionInfo, error)
 	GetAppList(ctx context.Context, uid string) ([]AppListItem, error)
 	UpdateApplicationRule(ctx context.Context, clientId string, uid string, rule *util.Rule) error
+	RefreshApplicationSecret(ctx context.Context, clientId string, uid string) (string, error)
 	UpdateApplicationRedirectUri(ctx context.Context, clientId string, uid string, redirectUri []string) error
+	UpdateApplicationVersionStatus(ctx context.Context, clientId string, internalVersion int32, uid string, status string) error
+	UpdateApplicationGreyPercentage(ctx context.Context, clientId string, uid string, greyPercentage float64) error
+	UpdateApplicationGreyShuffleCode(ctx context.Context, clientId string, uid string) error
 }
 type AppUsecase struct {
 	Repo AppRepo
@@ -45,24 +46,6 @@ type Application struct {
 	//	Id string // 计算属性！ 应用ID，格式为 admin.name
 }
 
-// ApplicationVersionInfo 这个名字不太好
-// 它想表达的意思是 某Application特定版本的信息
-type ApplicationVersionInfo struct {
-	ClientId        string     `bson:"client_id"`
-	InternalVersion int32      `bson:"internal_version"`
-	BasicScope      []string   `bson:"basic_scope"`
-	OptionalScope   []string   `bson:"optional_scope"`
-	Version         string     `bson:"version"`
-	DisplayName     string     `bson:"display_name"`
-	Description     string     `bson:"description"`
-	Url             string     `bson:"url"`    // 首次访问Url
-	Icon            string     `bson:"icon"`   // 图标Url
-	Status          string     `bson:"status"` // DEACTIVATE STABLE GREY TEST
-	Tester          *[]string  `bson:"tester"` // 测试用户列表，仅beta版本有意义
-	CreatedAt       time.Time  `bson:"created_at"`
-	DeletedAt       *time.Time `bson:"deleted_at"`
-}
-
 type AppListItem struct {
 	ApplicationVersionInfo
 	Name          string   `bson:"name"`
@@ -75,13 +58,9 @@ func (a *Application) Id() string {
 }
 
 const (
-	ApplicationStatusDeveloping            = "DEVELOPING"
-	ApplicationStatusAuditing              = "AUDITING"
-	ApplicationStatusPublished             = "PUBLISHED"
-	ApplicationStatusBanned                = "BANNED"
-	ApplicationStatusHidden                = "HIDDEN"
-	ApplicationVersionInfoSTABLEStatus     = "STABLE"
-	ApplicationVersionInfoGreyStatus       = "GREY"
-	ApplicationVersionInfoTestStatus       = "TEST"
-	ApplicationVersionInfoDeactivateStatus = "DEACTIVATE"
+	ApplicationStatusDeveloping = "DEVELOPING"
+	ApplicationStatusAuditing   = "AUDITING"
+	ApplicationStatusPublished  = "PUBLISHED"
+	ApplicationStatusBanned     = "BANNED"
+	ApplicationStatusHidden     = "HIDDEN"
 )
