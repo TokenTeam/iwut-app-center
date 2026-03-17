@@ -64,6 +64,9 @@ func (r *appRepo) GetApplicationInfo(ctx context.Context, clientId string) (*biz
 func (r *appRepo) CreateApplication(parentCtx context.Context, admin string, name string) (*biz.Application, error) {
 	l := log.NewHelper(log.WithContext(parentCtx, r.log.Logger()))
 
+	if util.IsASCIIAlphaNumDashUnderscore(name) == false || len(name) > 50 {
+		return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_APP_NAME), "invalid app name: must be 50 characters or less and contain only letters, numbers, dashes, or underscores")
+	}
 	if exist, err := r.existsAdminName(parentCtx, admin, name); err != nil || exist {
 		if err != nil {
 			l.Errorf("CreateApplication error checking existing admin and name: %v", err)
@@ -155,7 +158,7 @@ func (r *appRepo) GetAppList(parentCtx context.Context, uid string) ([]biz.AppLi
 	finalResult := make([]biz.AppListItem, 0, len(publishedApps))
 
 	fields := make(map[string]any)
-	appRule := make(map[string]func(map[string]string) (bool, error))
+	appRule := make(map[string]func(map[string]any) (bool, error))
 	for _, app := range publishedApps {
 		if app.StableVersion == -1 && app.GreyVersion == -1 && app.BetaVersion == -1 {
 			// 无version应用 跳过
@@ -200,7 +203,7 @@ func (r *appRepo) GetAppList(parentCtx context.Context, uid string) ([]biz.AppLi
 		l.Errorf("GetAppList error getting user profile for uid %s: %v", uid, err)
 		return nil, err
 	}
-	userProfileMap := make(map[string]string)
+	userProfileMap := make(map[string]any)
 	if userProfile != nil {
 		if userProfile.Attrs != nil {
 			lo.Assign(userProfileMap, userProfile.Attrs)
@@ -561,6 +564,133 @@ func (r *appRepo) UpdateApplicationGreyShuffleCode(ctx context.Context, clientId
 	return nil
 }
 
+func (r *appRepo) UpdateApplicationName(ctx context.Context, clientId string, uid string, name string) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+	if util.IsASCIIAlphaNumDashUnderscore(name) == false || len(name) > 50 {
+		return errors.BadRequest(string(v1.ErrorReason_INVALID_APP_NAME), "invalid app name: must be 50 characters or less and contain only letters, numbers, dashes, or underscores")
+	}
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("UpdateApplicationName error updating application: %v", err)
+			return err
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if exist, err := r.existsAdminName(ctx, uid, name); err != nil || exist {
+		if err != nil {
+			l.Errorf("UpdateApplicationName error checking existing admin and name: %v", err)
+			return err
+		}
+		return errors.BadRequest(string(v1.ErrorReason_APP_NAME_ALREADY_EXISTS), "app name already exists for this admin")
+	}
+	filter := bson.M{"client_id": clientId}
+	update := bson.M{"$set": bson.M{"name": name}}
+	err := r.applicationCollection.FindOneAndUpdate(ctx, filter, update).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("UpdateApplicationName no document found for clientId: %s during update", clientId)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("UpdateApplicationName error updating application: %v", err)
+		return err
+	}
+	return nil
+}
+
+func (r *appRepo) UpdateApplicationStatus(ctx context.Context, clientId string, uid string, status string) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+
+	optionalStatus := []string{biz.ApplicationStatusAuditing, biz.ApplicationStatusBanned, biz.ApplicationStatusPublished, biz.ApplicationStatusHidden, biz.ApplicationStatusDeveloping}
+	if !lo.Contains(optionalStatus, status) {
+		return errors.BadRequest(string(v1.ErrorReason_INVALID_STATUS), "invalid status: "+status)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var result struct {
+		Admin         string   `bson:"admin"`
+		Collaborators []string `bson:"collaborators"`
+		Status        string   `json:"status"`
+	}
+	if err := r.applicationCollection.FindOne(ctx, bson.M{"client_id": clientId}).Decode(&result); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("UpdateApplicationStatus no document found for clientId: %s during update", clientId)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("UpdateApplicationStatus error finding application for clientId: %s during update: %v", clientId, err)
+		return err
+	}
+	// 更新和原值相同
+	if status == result.Status {
+		return nil
+	}
+
+	if status == biz.ApplicationStatusBanned || result.Status == biz.ApplicationStatusBanned {
+		if ok, err := r.checkIsAdmin(ctx, uid); err != nil || !ok {
+			if err != nil {
+				l.Errorf("UpdateApplicationStatus error checking admin: %v", err)
+				return err
+			}
+			if status == biz.ApplicationStatusBanned {
+				return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to ban application")
+			}
+			if result.Status == biz.ApplicationStatusBanned {
+				return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to unban application")
+			}
+		}
+		return r.setApplicationStatus(ctx, clientId, status)
+	}
+	// 如果是开发者 / 协同者 允许调整
+	if result.Admin == uid || lo.Contains(result.Collaborators, uid) {
+		return r.setApplicationStatus(ctx, clientId, status)
+	}
+	if ok, err := r.checkIsAdmin(ctx, uid); err != nil || !ok {
+		// 如果不是admin 不允许调整
+		if err != nil {
+			l.Errorf("UpdateApplicationStatus error checking admin: %v", err)
+			return err
+		}
+		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update application status")
+	}
+	// 是admin 允许调整
+	return r.setApplicationStatus(ctx, clientId, status)
+}
+
+func (r *appRepo) UpdateApplicationCollaborators(ctx context.Context, clientId string, uid string, collaborators []string) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"client_id": clientId}
+	var result struct {
+		Admin string `bson:"admin"`
+	}
+
+	err := r.applicationCollection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("UpdateApplicationCollaborators error finding application: %v", err)
+		return err
+	}
+	if result.Admin != uid {
+		return errors.Forbidden(string(v1.ErrorReason_PERMISSION_DENIED), "no permission to update application collaborators")
+	}
+
+	update := bson.M{"$set": bson.M{"collaborators": collaborators}}
+	if err := r.applicationCollection.FindOneAndUpdate(ctx, filter, update).Err(); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		l.Errorf("UpdateApplicationCollaborators error updating application: %v", err)
+		return err
+	}
+	return err
+}
+
 func (r *appRepo) existsClientID(ctx context.Context, clientId string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -623,4 +753,30 @@ func (r *appRepo) checkDeveloperPermission(ctx context.Context, clientId string,
 		return true, nil
 	}
 	return false, nil
+}
+func (r *appRepo) checkIsAdmin(ctx context.Context, uid string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.authCenterUtil.GetUserClaimByUid(ctx, uid, []string{"is_admin"})
+	if err != nil {
+		return false, err
+	}
+	if val, ok := result["is_admin"]; !ok || val != true {
+		return false, nil
+	}
+	return true, nil
+}
+func (r *appRepo) setApplicationStatus(ctx context.Context, clientId string, status string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	filter := bson.M{"client_id": clientId}
+	update := bson.M{"$set": bson.M{"status": status}}
+	err := r.applicationCollection.FindOneAndUpdate(ctx, filter, update).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+	}
+	return err
 }

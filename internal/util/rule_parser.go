@@ -16,7 +16,7 @@ type Rule struct {
 
 type LogicFilterItem struct {
 	Keys       map[string]any
-	FilterFunc func(env map[string]string) (bool, error)
+	FilterFunc func(env map[string]any) (bool, error)
 }
 
 type MissingKeyError struct {
@@ -105,9 +105,9 @@ func GetExternalFieldKeyAndSimplify(rule *Rule) (map[string]any, error) {
 }
 
 // GetFilterFunc return: keys, filterFunc, error
-func (r *RuleParser) GetFilterFunc(rule *Rule, filterFuncId string) (map[string]any, func(map[string]string) (bool, error), error) {
+func (r *RuleParser) GetFilterFunc(rule *Rule, filterFuncId string) (map[string]any, func(map[string]any) (bool, error), error) {
 	if rule == nil {
-		return map[string]any{}, func(_ map[string]string) (bool, error) { return true, nil }, nil
+		return map[string]any{}, func(_ map[string]any) (bool, error) { return true, nil }, nil
 	}
 	if filterItem, ok := r.logicFuncBuffer[filterFuncId]; ok {
 		return filterItem.Keys, filterItem.FilterFunc, nil
@@ -137,7 +137,7 @@ func (r *RuleParser) ExpireFilterFunc(filterFuncId string) {
 	delete(r.logicFuncBuffer, filterFuncId)
 }
 
-func convertRuleToFunc(rule *Rule) (map[string]any, func(map[string]string) (bool, error), error) {
+func convertRuleToFunc(rule *Rule) (map[string]any, func(map[string]any) (bool, error), error) {
 	if rule == nil {
 		return nil, nil, fmt.Errorf("rule is nil")
 	}
@@ -152,7 +152,7 @@ func convertRuleToFunc(rule *Rule) (map[string]any, func(map[string]string) (boo
 		rule.Field = nil
 		rule.DefaultField = nil
 		rule.Value = nil
-		subFunctions := make([]func(map[string]string) (bool, error), 0, len(*rule.Rules))
+		subFunctions := make([]func(map[string]any) (bool, error), 0, len(*rule.Rules))
 
 		for _, r := range *rule.Rules {
 			subKeys, subFunc, err := convertRuleToFunc(&r)
@@ -164,7 +164,7 @@ func convertRuleToFunc(rule *Rule) (map[string]any, func(map[string]string) (boo
 			}
 			subFunctions = append(subFunctions, subFunc)
 		}
-		f := func(env map[string]string) (bool, error) {
+		f := func(env map[string]any) (bool, error) {
 			if rule.Operator == "AND" {
 				result := true
 				for _, subFunc := range subFunctions {
@@ -225,7 +225,7 @@ func convertRuleToFunc(rule *Rule) (map[string]any, func(map[string]string) (boo
 		)
 		if rule.Operator == "==" || rule.Operator == "!=" {
 			defaultReturnValue, defaultErr = operFunc(rule.DefaultField, rule.Value)
-			f := func(env map[string]string) (bool, error) {
+			f := func(env map[string]any) (bool, error) {
 				if val, ok := env[k]; ok {
 					return operFunc(val, rule.Value)
 				}
@@ -242,13 +242,20 @@ func convertRuleToFunc(rule *Rule) (map[string]any, func(map[string]string) (boo
 			return nil, nil, fmt.Errorf("field value is not a valid float: %s", *rule.Value)
 		}
 		defaultReturnValue, defaultErr = operFunc(ruleDefaultValue, ruleValue)
-		f := func(env map[string]string) (bool, error) {
+		f := func(env map[string]any) (bool, error) {
 			if val, ok := env[k]; ok {
-				valF, err := strconv.ParseFloat(val, 64)
-				if err != nil {
-					return false, fmt.Errorf("field value in env is not a valid float: %s", val)
+				switch val.(type) {
+				case float64:
+					return operFunc(val, ruleValue)
+				case string:
+					valF, err := strconv.ParseFloat(val.(string), 64)
+					if err != nil {
+						return false, fmt.Errorf("field value in env is not a valid float: %s", val)
+					}
+					return operFunc(valF, ruleValue)
+				default:
+					return false, fmt.Errorf("field value in env is not a valid type for comparison: %T", val)
 				}
-				return operFunc(valF, ruleValue)
 			}
 			return defaultReturnValue, defaultErr
 		}

@@ -38,7 +38,7 @@ func wireApp(confServer *conf.Server, confData *conf.Data, confService *conf.Ser
 	greyCalc := util.NewGreyCalc()
 	configCenterUtil := util.NewConfigCenterUtil(confService, logger)
 	ruleParser := util.NewRuleParser(configCenterUtil)
-	appVersionRepo := data.NewAppVersionRepo(dataData, confData, configCenterUtil, authCenterUtil, greyCalc, ruleParser, logger)
+	appVersionRepo := data.NewAppVersionRepo(dataData, confData, greyCalc, logger)
 	appVersionUsecase := biz.NewAppVersionUsecase(appVersionRepo)
 	appRepo := data.NewAppRepo(dataData, confData, authCenterUtil, greyCalc, ruleParser, appVersionUsecase, logger)
 	appUsecase := biz.NewAppUsecase(appRepo)

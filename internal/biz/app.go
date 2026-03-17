@@ -16,6 +16,9 @@ type AppRepo interface {
 	UpdateApplicationVersionStatus(ctx context.Context, clientId string, internalVersion int32, uid string, status string) error
 	UpdateApplicationGreyPercentage(ctx context.Context, clientId string, uid string, greyPercentage float64) error
 	UpdateApplicationGreyShuffleCode(ctx context.Context, clientId string, uid string) error
+	UpdateApplicationName(ctx context.Context, clientId string, uid string, name string) error
+	UpdateApplicationStatus(ctx context.Context, clientId string, uid string, status string) error
+	UpdateApplicationCollaborators(ctx context.Context, clientId string, uid string, collaborators []string) error
 }
 type AppUsecase struct {
 	Repo AppRepo

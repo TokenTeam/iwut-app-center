@@ -93,12 +93,12 @@ paths:
         post:
             tags:
                 - App
-            operationId: App_UpdateAppVersionStatus
+            operationId: App_UpdateAppCollaborators
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppVersionStatusRequest'
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppCollaboratorsRequest'
                 required: true
             responses:
                 "200":
@@ -106,7 +106,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppVersionStatusReply'
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppCollaboratorsReply'
     /app/update-grey-percentage:
         post:
             tags:
@@ -143,6 +143,24 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/app_center.v1.app.UpdateAppGreyShuffleCodeReply'
+    /app/update-name:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppName
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppNameRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppNameReply'
     /app/update-redirect-uri:
         post:
             tags:
@@ -179,6 +197,24 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/app_center.v1.app.UpdateAppRuleReply'
+    /app/update-status:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppStatus
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppStatusRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppStatusReply'
     /app/version-info:
         get:
             tags:
@@ -428,6 +464,25 @@ components:
             properties:
                 clientId:
                     type: string
+        app_center.v1.app.UpdateAppCollaboratorsReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppCollaboratorsRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                collaborators:
+                    type: array
+                    items:
+                        type: string
         app_center.v1.app.UpdateAppGreyPercentageReply:
             type: object
             properties:
@@ -460,6 +515,23 @@ components:
             type: object
             properties:
                 clientId:
+                    type: string
+        app_center.v1.app.UpdateAppNameReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppNameRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                name:
                     type: string
         app_center.v1.app.UpdateAppRedirectUriReply:
             type: object
@@ -512,6 +584,24 @@ components:
                     type: string
                 value:
                     type: string
+        app_center.v1.app.UpdateAppStatusReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app.UpdateAppStatusRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                status:
+                    type: integer
+                    format: enum
         app_center.v1.app.UpdateAppVersionStatusReply:
             type: object
             properties:

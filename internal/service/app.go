@@ -268,6 +268,75 @@ func (s *AppService) UpdateAppGreyShuffleCode(ctx context.Context, in *app.Updat
 	}, util.Audit{}), nil
 }
 
+func (s *AppService) UpdateAppName(ctx context.Context, in *app.UpdateAppNameRequest) (*app.UpdateAppNameReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppNameReply]("UpdateAppName", nil)
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	err = s.appUsecase.Repo.UpdateApplicationName(ctx, in.GetClientId(), claim.Uid, in.GetName())
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.UpdateAppNameReply {
+		return &app.UpdateAppNameReply{
+			Code:    200,
+			Message: "Update application name successfully",
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+}
+func (s *AppService) UpdateAppStatus(ctx context.Context, in *app.UpdateAppStatusRequest) (*app.UpdateAppStatusReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppStatusReply]("UpdateAppStatus", nil)
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	var status string
+	switch in.GetStatus() {
+	case app.UpdateAppStatusRequest_APP_STATUS_AUDITING:
+		status = biz.ApplicationStatusAuditing
+	case app.UpdateAppStatusRequest_APP_STATUS_BANNED:
+		status = biz.ApplicationStatusBanned
+	case app.UpdateAppStatusRequest_APP_STATUS_DEVELOPING:
+		status = biz.ApplicationStatusDeveloping
+	case app.UpdateAppStatusRequest_APP_STATUS_HIDDEN:
+		status = biz.ApplicationStatusHidden
+	case app.UpdateAppStatusRequest_APP_STATUS_PUBLISHED:
+		status = biz.ApplicationStatusPublished
+	}
+	err = s.appUsecase.Repo.UpdateApplicationStatus(ctx, in.GetClientId(), claim.Uid, status)
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.UpdateAppStatusReply {
+		return &app.UpdateAppStatusReply{
+			Code:    200,
+			Message: "Update application status successfully",
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+}
+func (s *AppService) UpdateAppCollaborators(ctx context.Context, in *app.UpdateAppCollaboratorsRequest) (*app.UpdateAppCollaboratorsReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppCollaboratorsReply]("UpdateAppCollaborators", nil)
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	err = s.appUsecase.Repo.UpdateApplicationCollaborators(ctx, in.GetClientId(), claim.Uid, in.GetCollaborators())
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app.UpdateAppCollaboratorsReply {
+		return &app.UpdateAppCollaboratorsReply{
+			Code:    200,
+			Message: "Update application collaborators successfully",
+			TraceId: reqId,
+		}
+	}, util.Audit{}), nil
+
+}
+
 func ruleConverter(in *app.UpdateAppRuleRequest_Rule) *util.Rule {
 	if in == nil {
 		return nil
