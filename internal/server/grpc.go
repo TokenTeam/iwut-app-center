@@ -2,6 +2,7 @@ package server
 
 import (
 	"iwut-app-center/api/gen/go/app_center/v1/app"
+	"iwut-app-center/api/gen/go/app_center/v1/app_version"
 	"iwut-app-center/api/gen/go/app_center/v1/tester"
 	"iwut-app-center/internal/conf"
 	middleware "iwut-app-center/internal/middleware"
@@ -15,7 +16,7 @@ import (
 )
 
 // NewGRPCServer new a gRPC server.
-func NewGRPCServer(c *conf.Server, appService *service.AppService, testerService *service.TesterService, jwtInfo *middleware.JwtInfoMiddleware, logger log.Logger) *grpc.Server {
+func NewGRPCServer(c *conf.Server, appService *service.AppService, appVersionService *service.AppVersionService, testerService *service.TesterService, jwtInfo *middleware.JwtInfoMiddleware, logger log.Logger) *grpc.Server {
 	var opts = []grpc.ServerOption{
 		grpc.Middleware(
 			recovery.Recovery(),
@@ -35,6 +36,7 @@ func NewGRPCServer(c *conf.Server, appService *service.AppService, testerService
 	}
 	srv := grpc.NewServer(opts...)
 	app.RegisterAppServer(srv, appService)
+	app_version.RegisterAppVersionServer(srv, appVersionService)
 	tester.RegisterTesterServer(srv, testerService)
 	return srv
 }
