@@ -14,14 +14,12 @@ import (
 type AppVersionService struct {
 	app_version.UnimplementedAppVersionServer
 	appVersionUsecase *biz.AppVersionUsecase
-	appUsecase        *biz.AppUsecase
 	jwtUtil           *util.JwtUtil
 }
 
-func NewAppVersionService(appVersionUsecase *biz.AppVersionUsecase, appUsecase *biz.AppUsecase, jwtUtil *util.JwtUtil) *AppVersionService {
+func NewAppVersionService(appVersionUsecase *biz.AppVersionUsecase, jwtUtil *util.JwtUtil) *AppVersionService {
 	return &AppVersionService{
 		appVersionUsecase: appVersionUsecase,
-		appUsecase:        appUsecase,
 		jwtUtil:           jwtUtil,
 	}
 }
@@ -36,7 +34,7 @@ func (s *AppVersionService) GetAppVersionInfo(ctx context.Context, in *app_versi
 			return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 		}
 	}
-	versionInfo, err := s.appVersionUsecase.Repo.GetApplicationVersionInfo(ctx, in.GetClientId(), in.GetVersion())
+	versionInfo, err := s.appVersionUsecase.GetApplicationVersionInfo(ctx, in.GetClientId(), in.GetVersion())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -81,7 +79,7 @@ func (s *AppVersionService) GetAppVersionInfoWithUserCheck(ctx context.Context, 
 			return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 		}
 	}
-	allowed, versionInfo, err := s.appVersionUsecase.Repo.GetApplicationVersionInfoWithUserCheck(ctx, in.GetClientId(), in.GetVersion(), in.GetUserId())
+	allowed, versionInfo, err := s.appVersionUsecase.GetApplicationVersionInfoWithUserCheck(ctx, in.GetClientId(), in.GetVersion(), in.GetUserId())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -126,7 +124,7 @@ func (s *AppVersionService) CreateAppVersion(ctx context.Context, in *app_versio
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	versionInfo, err := s.appVersionUsecase.Repo.CreateAppVersion(ctx, biz.ApplicationVersionInfo{
+	versionInfo, err := s.appVersionUsecase.CreateAppVersion(ctx, biz.ApplicationVersionInfo{
 		ClientId:      in.GetClientId(),
 		BasicScope:    in.GetBasicScope(),
 		OptionalScope: in.GetOptionalScope(),
@@ -159,7 +157,7 @@ func (s *AppVersionService) DeleteAppVersion(ctx context.Context, in *app_versio
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appVersionUsecase.Repo.DeleteAppVersion(ctx, in.GetClientId(), in.GetVersion(), claim.Uid)
+	err = s.appVersionUsecase.DeleteAppVersion(ctx, in.GetClientId(), in.GetVersion(), claim.Uid)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -171,16 +169,3 @@ func (s *AppVersionService) DeleteAppVersion(ctx context.Context, in *app_versio
 		}
 	}), nil
 }
-
-/*
-TODO
-basic_scope
-optional_scope
-version
-display_name
-description
-url
-icon
-status
-tester
-*/

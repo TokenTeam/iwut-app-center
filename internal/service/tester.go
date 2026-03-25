@@ -29,7 +29,7 @@ func (s *TesterService) GetTestLink(ctx context.Context, in *tester.GetTestLinkR
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
 
-	testLink, err := s.uc.Repo.GetTestLink(ctx, in.GetClientId(), in.GetVersion(), claim.Uid, time.Duration(in.GetExpireTime())*time.Second)
+	testLink, err := s.uc.GetTestLink(ctx, in.GetClientId(), in.GetVersion(), claim.Uid, time.Duration(in.GetExpireTime())*time.Second)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -47,7 +47,7 @@ func (s *TesterService) AddTester(ctx context.Context, in *tester.AddTesterReque
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
 
-	if err := s.uc.Repo.AddTester(ctx, in.GetInviteId(), claim.Uid); err != nil {
+	if err := s.uc.AddTester(ctx, in.GetInviteId(), claim.Uid); err != nil {
 		return nil, errorProcess(ctx, err)
 	}
 

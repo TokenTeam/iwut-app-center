@@ -31,13 +31,12 @@ func (s *AppService) GetApplicationInfo(ctx context.Context, in *app.GetApplicat
 	_, err := s.jwtUtil.GetServiceClaims(ctx)
 	if err != nil {
 		_, err := s.jwtUtil.GetBaseAuthClaims(ctx)
-		// 从一方面看 这个错误可能是因为调用方没有设置service 相关数据导致的 但是 我不想让外部用户看到如：”缺少服务调用指示的错误“
 		if err != nil {
 			return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 		}
 		isUserToken = true
 	}
-	application, err := s.appUsecase.Repo.GetApplicationInfo(ctx, in.GetClientId())
+	application, err := s.appUsecase.GetApplicationInfo(ctx, in.GetClientId())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -79,7 +78,7 @@ func (s *AppService) GetAppList(ctx context.Context, _ *emptypb.Empty) (*app.Get
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	appList, err := s.appUsecase.Repo.GetAppList(ctx, claim.Uid)
+	appList, err := s.appUsecase.GetAppList(ctx, claim.Uid)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -122,7 +121,7 @@ func (s *AppService) CreateApp(ctx context.Context, in *app.CreateAppRequest) (*
 	if claim.DeveloperId == nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_NOT_A_DEVELOPER), "not a developer"))
 	}
-	application, err := s.appUsecase.Repo.CreateApplication(ctx, claim.Uid, in.GetName())
+	application, err := s.appUsecase.CreateApplication(ctx, claim.Uid, in.GetName())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -152,7 +151,7 @@ func (s *AppService) UpdateAppRule(ctx context.Context, in *app.UpdateAppRuleReq
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationRule(ctx, in.GetClientId(), claim.Uid, ruleConverter(in.GetRule()))
+	err = s.appUsecase.UpdateApplicationRule(ctx, in.GetClientId(), claim.Uid, ruleConverter(in.GetRule()))
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -172,7 +171,7 @@ func (s *AppService) UpdateAppRedirectUri(ctx context.Context, in *app.UpdateApp
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationRedirectUri(ctx, in.GetClientId(), claim.Uid, in.GetRedirectUri())
+	err = s.appUsecase.UpdateApplicationRedirectUri(ctx, in.GetClientId(), claim.Uid, in.GetRedirectUri())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -192,7 +191,7 @@ func (s *AppService) UpdateAppVersionStatus(ctx context.Context, in *app.UpdateA
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationVersionStatus(ctx, in.GetClientId(), in.GetVersion(), claim.Uid, in.GetStatus())
+	err = s.appUsecase.UpdateApplicationVersionStatus(ctx, in.GetClientId(), in.GetVersion(), claim.Uid, in.GetStatus())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -212,7 +211,7 @@ func (s *AppService) RefreshAppSecret(ctx context.Context, in *app.RefreshAppSec
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	secret, err := s.appUsecase.Repo.RefreshApplicationSecret(ctx, in.GetClientId(), claim.Uid)
+	secret, err := s.appUsecase.RefreshApplicationSecret(ctx, in.GetClientId(), claim.Uid)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -235,7 +234,7 @@ func (s *AppService) UpdateAppGreyPercentage(ctx context.Context, in *app.Update
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationGreyPercentage(ctx, in.GetClientId(), claim.Uid, in.GetGreyPercentage())
+	err = s.appUsecase.UpdateApplicationGreyPercentage(ctx, in.GetClientId(), claim.Uid, in.GetGreyPercentage())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -255,7 +254,7 @@ func (s *AppService) UpdateAppGreyShuffleCode(ctx context.Context, in *app.Updat
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationGreyShuffleCode(ctx, in.GetClientId(), claim.Uid)
+	err = s.appUsecase.UpdateApplicationGreyShuffleCode(ctx, in.GetClientId(), claim.Uid)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -274,7 +273,7 @@ func (s *AppService) UpdateAppName(ctx context.Context, in *app.UpdateAppNameReq
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationName(ctx, in.GetClientId(), claim.Uid, in.GetName())
+	err = s.appUsecase.UpdateApplicationName(ctx, in.GetClientId(), claim.Uid, in.GetName())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -286,6 +285,7 @@ func (s *AppService) UpdateAppName(ctx context.Context, in *app.UpdateAppNameReq
 		}
 	}), nil
 }
+
 func (s *AppService) UpdateAppStatus(ctx context.Context, in *app.UpdateAppStatusRequest) (*app.UpdateAppStatusReply, error) {
 	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppStatusReply]()
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
@@ -305,7 +305,7 @@ func (s *AppService) UpdateAppStatus(ctx context.Context, in *app.UpdateAppStatu
 	case app.UpdateAppStatusRequest_APP_STATUS_PUBLISHED:
 		status = biz.ApplicationStatusPublished
 	}
-	err = s.appUsecase.Repo.UpdateApplicationStatus(ctx, in.GetClientId(), claim.Uid, status)
+	err = s.appUsecase.UpdateApplicationStatus(ctx, in.GetClientId(), claim.Uid, status)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -317,13 +317,14 @@ func (s *AppService) UpdateAppStatus(ctx context.Context, in *app.UpdateAppStatu
 		}
 	}), nil
 }
+
 func (s *AppService) UpdateAppCollaborators(ctx context.Context, in *app.UpdateAppCollaboratorsRequest) (*app.UpdateAppCollaboratorsReply, error) {
 	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppCollaboratorsReply]()
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
 	}
-	err = s.appUsecase.Repo.UpdateApplicationCollaborators(ctx, in.GetClientId(), claim.Uid, in.GetCollaborators())
+	err = s.appUsecase.UpdateApplicationCollaborators(ctx, in.GetClientId(), claim.Uid, in.GetCollaborators())
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -334,7 +335,6 @@ func (s *AppService) UpdateAppCollaborators(ctx context.Context, in *app.UpdateA
 			TraceId: reqId,
 		}
 	}), nil
-
 }
 
 func ruleConverter(in *app.UpdateAppRuleRequest_Rule) *util.Rule {

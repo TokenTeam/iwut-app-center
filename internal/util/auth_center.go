@@ -89,6 +89,7 @@ type ServiceClaim struct {
 }
 
 func (u *AuthCenterUtil) getUserInfoFromAuthCenter(ctx context.Context, uid string, keys []string) (*UserProfile, error) {
+	l := log.NewHelper(log.WithContext(ctx, u.log.Logger()))
 	if u.userClient == nil {
 		return nil, fmt.Errorf("user client is not initialized")
 	}
@@ -119,7 +120,7 @@ func (u *AuthCenterUtil) getUserInfoFromAuthCenter(ctx context.Context, uid stri
 	for key, value := range ud.GetAttrs().GetFields() {
 		attrs[key] = value.GetStringValue()
 		if attrs[key] == "" {
-			fmt.Printf("attrs[%s] is empty\n", key)
+			l.Warnf("attrs[%s] is empty\n", key)
 		}
 	}
 	ui := &UserProfile{

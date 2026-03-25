@@ -30,23 +30,23 @@ func wireApp(confServer *conf.Server, confData *conf.Data, confService *conf.Ser
 	if err != nil {
 		return nil, nil, err
 	}
+	appRepo := data.NewAppRepo(dataData, confData, logger)
+	appVersionRepo := data.NewAppVersionRepo(dataData, confData, logger)
 	authCenterUtil, cleanup2, err := util.NewAuthCenterUtil(confService, logger)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	greyCalc := util.NewGreyCalc()
 	configCenterUtil := util.NewConfigCenterUtil(confService, logger)
 	ruleParser := util.NewRuleParser(configCenterUtil)
-	appVersionRepo := data.NewAppVersionRepo(dataData, confData, greyCalc, logger)
-	appVersionUsecase := biz.NewAppVersionUsecase(appVersionRepo)
-	appRepo := data.NewAppRepo(dataData, confData, authCenterUtil, greyCalc, ruleParser, appVersionUsecase, logger)
-	appUsecase := biz.NewAppUsecase(appRepo)
+	greyCalc := util.NewGreyCalc()
+	appUsecase := biz.NewAppUsecase(appRepo, appVersionRepo, authCenterUtil, ruleParser, greyCalc, logger)
 	jwtUtil := util.NewJwtUtil()
 	appService := service.NewAppService(appUsecase, jwtUtil)
-	appVersionService := service.NewAppVersionService(appVersionUsecase, appUsecase, jwtUtil)
-	testerRepo := data.NewTesterRepo(dataData, confData, confServer, appUsecase, logger)
-	testerUsecase := biz.NewTesterUsecase(testerRepo)
+	appVersionUsecase := biz.NewAppVersionUsecase(appVersionRepo, appRepo, configCenterUtil, greyCalc, logger)
+	appVersionService := service.NewAppVersionService(appVersionUsecase, jwtUtil)
+	testerRepo := data.NewTesterRepo(dataData, confData, logger)
+	testerUsecase := biz.NewTesterUsecase(testerRepo, appRepo, appVersionRepo, confServer, logger)
 	testerService := service.NewTesterService(testerUsecase, jwtUtil)
 	jwtInfoMiddleware := middleware.NewJwtInfoMiddleware(jwtUtil)
 	grpcServer := server.NewGRPCServer(confServer, appService, appVersionService, testerService, jwtInfoMiddleware, logger)
