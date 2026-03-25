@@ -136,7 +136,7 @@ func newLogger(bc *conf.Bootstrap) log.Logger {
 	// 2. 将 Zap 包装为 Kratos 的 Logger
 	kratosZap := kzap.NewLogger(zLogger)
 
-	logger := log.With(kratosZap,
+	baseKVs := []any{
 		"ts", log.DefaultTimestamp,
 		"caller", log.DefaultCaller,
 		"service_id", id,
@@ -144,7 +144,9 @@ func newLogger(bc *conf.Bootstrap) log.Logger {
 		"service_version", Version,
 		"trace_id", tracing.TraceID(),
 		"span_id", tracing.SpanID(),
-	)
+	}
+	baseKVs = append(baseKVs, util.RequestTailProcess()...)
+	logger := log.With(kratosZap, baseKVs...)
 
 	if logLevel := bc.GetServer().GetEnv(); !strings.HasPrefix(strings.ToLower(logLevel), "dev") {
 		// PROD 环境：过滤日志级别并脱敏请求参数

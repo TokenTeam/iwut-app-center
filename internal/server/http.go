@@ -77,8 +77,8 @@ func NewHTTPServer(c *conf.Server, appService *service.AppService, appVersionSer
 		http.Middleware(
 			recovery.Recovery(),
 			tracing.Server(),
-			logging.Server(logger),
 			jwtInfo.GetJwtInfoMiddleware(),
+			logging.Server(logger),
 		),
 		http.ErrorEncoder(CreatedErrorEncoder),
 	}

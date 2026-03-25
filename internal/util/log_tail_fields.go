@@ -1,0 +1,74 @@
+package util
+
+import (
+	"context"
+
+	"github.com/go-kratos/kratos/v2/log"
+)
+
+func RequestTailProcess() []any {
+	return []any{
+		"user_id", log.Valuer(func(ctx context.Context) any {
+			userID := RequestUserIDFrom(ctx)
+			if userID == nil {
+				return ""
+			}
+			return *userID
+		}),
+		"client_id", log.Valuer(func(ctx context.Context) any {
+			clientID := RequestClientIDFrom(ctx)
+			if clientID == nil {
+				return ""
+			}
+			return *clientID
+		}),
+	}
+}
+
+func RequestUserIDFrom(ctx context.Context) *string {
+	if jwtUserID := RequestUserIDFromJWT(ctx); jwtUserID != nil {
+		return jwtUserID
+	}
+	return nil
+}
+
+func RequestClientIDFrom(ctx context.Context) *string {
+	if jwtClientID := RequestClientIDFromJWT(ctx); jwtClientID != nil {
+		return jwtClientID
+	}
+	return nil
+}
+
+func RequestUserIDFromJWT(ctx context.Context) *string {
+	if JwtUtilInstance == nil {
+		return nil
+	}
+	jwtValue := JwtUtilInstance.TokenValueFrom(ctx)
+	if jwtValue == nil {
+		return nil
+	}
+	if jwtValue.BaseAuthClaims != nil && jwtValue.BaseAuthClaims.Uid != "" {
+		uid := jwtValue.BaseAuthClaims.Uid
+		return &uid
+	}
+	if jwtValue.OAuthClaims != nil && jwtValue.OAuthClaims.Uid != "" {
+		uid := jwtValue.OAuthClaims.Uid
+		return &uid
+	}
+	return nil
+}
+
+func RequestClientIDFromJWT(ctx context.Context) *string {
+	if JwtUtilInstance == nil {
+		return nil
+	}
+	jwtValue := JwtUtilInstance.TokenValueFrom(ctx)
+	if jwtValue == nil {
+		return nil
+	}
+	if jwtValue.OAuthClaims != nil && jwtValue.OAuthClaims.Azp != "" {
+		azp := jwtValue.OAuthClaims.Azp
+		return &azp
+	}
+	return nil
+}

@@ -42,6 +42,24 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/app_center.v1.app_version.CreateAppVersionReply'
+    /app/delete-version:
+        post:
+            tags:
+                - AppVersion
+            operationId: AppVersion_DeleteAppVersion
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app_version.DeleteAppVersionRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app_version.DeleteAppVersionReply'
     /app/info:
         get:
             tags:
@@ -699,6 +717,24 @@ components:
                     type: string
                 icon:
                     type: string
+        app_center.v1.app_version.DeleteAppVersionReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app_version.DeleteAppVersionRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
         app_center.v1.app_version.GetAppVersionInfoReply:
             type: object
             properties:

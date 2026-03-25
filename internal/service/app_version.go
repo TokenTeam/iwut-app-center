@@ -8,7 +8,6 @@ import (
 	"iwut-app-center/internal/util"
 
 	"github.com/go-kratos/kratos/v2/errors"
-	"github.com/samber/lo"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -28,7 +27,7 @@ func NewAppVersionService(appVersionUsecase *biz.AppVersionUsecase, appUsecase *
 }
 
 func (s *AppVersionService) GetAppVersionInfo(ctx context.Context, in *app_version.GetAppVersionInfoRequest) (*app_version.GetAppVersionInfoReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app_version.GetAppVersionInfoReply]("GetAppVersionInfo", nil)
+	successProcess, errorProcess := util.GetProcesses[*app_version.GetAppVersionInfoReply]()
 
 	_, err := s.jwtUtil.GetServiceClaims(ctx)
 	if err != nil {
@@ -69,11 +68,11 @@ func (s *AppVersionService) GetAppVersionInfo(ctx context.Context, in *app_versi
 			},
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppVersionService) GetAppVersionInfoWithUserCheck(ctx context.Context, in *app_version.GetAppVersionInfoWithUserCheckRequest) (*app_version.GetAppVersionInfoWithUserCheckReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app_version.GetAppVersionInfoWithUserCheckReply]("GetAppVersionInfoWithUserCheck", nil)
+	successProcess, errorProcess := util.GetProcesses[*app_version.GetAppVersionInfoWithUserCheckReply]()
 
 	_, err := s.jwtUtil.GetServiceClaims(ctx)
 	if err != nil {
@@ -121,21 +120,11 @@ func (s *AppVersionService) GetAppVersionInfoWithUserCheck(ctx context.Context, 
 }
 
 func (s *AppVersionService) CreateAppVersion(ctx context.Context, in *app_version.CreateAppVersionRequest) (*app_version.CreateAppVersionReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app_version.CreateAppVersionReply]("CreateAppVersion", nil)
+	successProcess, errorProcess := util.GetProcesses[*app_version.CreateAppVersionReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
-	}
-	application, err := s.appUsecase.Repo.GetApplicationInfo(ctx, in.GetClientId())
-	if err != nil {
-		return nil, errorProcess(ctx, err)
-	}
-	if application == nil {
-		return nil, errorProcess(ctx, errors.InternalServer(string(v1.ErrorReason_UNKNOWN_ERROR), "got nil application without error"))
-	}
-	if application.Admin != claim.Uid || lo.Contains(application.Collaborators, claim.Uid) {
-		return nil, errorProcess(ctx, errors.BadRequest(string(v1.ErrorReason_PERMISSION_DENIED), "only admin and collaborators can create new version"))
 	}
 	versionInfo, err := s.appVersionUsecase.Repo.CreateAppVersion(ctx, biz.ApplicationVersionInfo{
 		ClientId:      in.GetClientId(),
@@ -146,7 +135,7 @@ func (s *AppVersionService) CreateAppVersion(ctx context.Context, in *app_versio
 		Description:   in.GetDescription(),
 		Url:           in.GetUrl(),
 		Icon:          in.GetIcon(),
-	})
+	}, claim.Uid)
 	if err != nil {
 		return nil, errorProcess(ctx, err)
 	}
@@ -160,5 +149,38 @@ func (s *AppVersionService) CreateAppVersion(ctx context.Context, in *app_versio
 			},
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
+
+func (s *AppVersionService) DeleteAppVersion(ctx context.Context, in *app_version.DeleteAppVersionRequest) (*app_version.DeleteAppVersionReply, error) {
+	successProcess, errorProcess := util.GetProcesses[*app_version.DeleteAppVersionReply]()
+
+	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
+	if err != nil {
+		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
+	}
+	err = s.appVersionUsecase.Repo.DeleteAppVersion(ctx, in.GetClientId(), in.GetVersion(), claim.Uid)
+	if err != nil {
+		return nil, errorProcess(ctx, err)
+	}
+	return successProcess(ctx, func(reqId string) *app_version.DeleteAppVersionReply {
+		return &app_version.DeleteAppVersionReply{
+			Code:    200,
+			Message: "Delete application version successfully",
+			TraceId: reqId,
+		}
+	}), nil
+}
+
+/*
+TODO
+basic_scope
+optional_scope
+version
+display_name
+description
+url
+icon
+status
+tester
+*/

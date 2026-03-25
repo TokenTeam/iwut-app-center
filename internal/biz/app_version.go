@@ -8,7 +8,8 @@ import (
 type AppVersionRepo interface {
 	GetApplicationVersionInfo(ctx context.Context, clientId string, version int32) (*ApplicationVersionInfo, error)
 	GetApplicationVersionInfoWithUserCheck(ctx context.Context, clientId string, version int32, uid string) (bool, *ApplicationVersionInfo, error)
-	CreateAppVersion(ctx context.Context, versionInfo ApplicationVersionInfo) (*ApplicationVersionInfo, error)
+	CreateAppVersion(ctx context.Context, versionInfo ApplicationVersionInfo, uid string) (*ApplicationVersionInfo, error)
+	DeleteAppVersion(ctx context.Context, clientId string, version int32, uid string) error
 }
 type AppVersionUsecase struct {
 	Repo AppVersionRepo

@@ -22,7 +22,7 @@ func NewTesterService(uc *biz.TesterUsecase, jwtUtil *util.JwtUtil) *TesterServi
 }
 
 func (s *TesterService) GetTestLink(ctx context.Context, in *tester.GetTestLinkRequest) (*tester.GetTestLinkReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*tester.GetTestLinkReply]("GetTestLink", nil)
+	successProcess, errorProcess := util.GetProcesses[*tester.GetTestLinkReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -36,11 +36,11 @@ func (s *TesterService) GetTestLink(ctx context.Context, in *tester.GetTestLinkR
 
 	return successProcess(ctx, func(reqId string) *tester.GetTestLinkReply {
 		return &tester.GetTestLinkReply{Code: 200, Message: "Get test link successfully", TraceId: reqId, Data: &tester.GetTestLinkReply_GetTaskLinkData{TestLink: testLink}}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *TesterService) AddTester(ctx context.Context, in *tester.AddTesterRequest) (*tester.AddTesterReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*tester.AddTesterReply]("AddTester", nil)
+	successProcess, errorProcess := util.GetProcesses[*tester.AddTesterReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -53,5 +53,5 @@ func (s *TesterService) AddTester(ctx context.Context, in *tester.AddTesterReque
 
 	return successProcess(ctx, func(reqId string) *tester.AddTesterReply {
 		return &tester.AddTesterReply{Code: 200, Message: "Add tester successfully", TraceId: reqId}
-	}, util.Audit{}), nil
+	}), nil
 }

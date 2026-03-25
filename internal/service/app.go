@@ -26,7 +26,7 @@ func NewAppService(appUsecase *biz.AppUsecase, jwtUtil *util.JwtUtil) *AppServic
 }
 
 func (s *AppService) GetApplicationInfo(ctx context.Context, in *app.GetApplicationInfoRequest) (*app.GetApplicationInfoReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.GetApplicationInfoReply]("GetApplicationInfo", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.GetApplicationInfoReply]()
 	isUserToken := false
 	_, err := s.jwtUtil.GetServiceClaims(ctx)
 	if err != nil {
@@ -69,11 +69,11 @@ func (s *AppService) GetApplicationInfo(ctx context.Context, in *app.GetApplicat
 			},
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) GetAppList(ctx context.Context, _ *emptypb.Empty) (*app.GetAppListReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.GetAppListReply]("GetAppList", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.GetAppListReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -109,11 +109,11 @@ func (s *AppService) GetAppList(ctx context.Context, _ *emptypb.Empty) (*app.Get
 			Data:    replyData,
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) CreateApp(ctx context.Context, in *app.CreateAppRequest) (*app.CreateAppReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.CreateAppReply]("CreateApp", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.CreateAppReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -142,11 +142,11 @@ func (s *AppService) CreateApp(ctx context.Context, in *app.CreateAppRequest) (*
 			},
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) UpdateAppRule(ctx context.Context, in *app.UpdateAppRuleRequest) (*app.UpdateAppRuleReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppRuleReply]("UpdateAppRule", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppRuleReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -162,11 +162,11 @@ func (s *AppService) UpdateAppRule(ctx context.Context, in *app.UpdateAppRuleReq
 			Message: "Update application rule successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) UpdateAppRedirectUri(ctx context.Context, in *app.UpdateAppRedirectUriRequest) (*app.UpdateAppRedirectUriReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppRedirectUriReply]("UpdateAppRedirectUri", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppRedirectUriReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -182,11 +182,11 @@ func (s *AppService) UpdateAppRedirectUri(ctx context.Context, in *app.UpdateApp
 			Message: "Update application redirect uri successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) UpdateAppVersionStatus(ctx context.Context, in *app.UpdateAppVersionStatusRequest) (*app.UpdateAppVersionStatusReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppVersionStatusReply]("UpdateAppVersionStatus", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppVersionStatusReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -202,11 +202,11 @@ func (s *AppService) UpdateAppVersionStatus(ctx context.Context, in *app.UpdateA
 			Message: "Update application version status successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) RefreshAppSecret(ctx context.Context, in *app.RefreshAppSecretRequest) (*app.RefreshAppSecretReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.RefreshAppSecretReply]("RefreshAppSecret", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.RefreshAppSecretReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -225,11 +225,11 @@ func (s *AppService) RefreshAppSecret(ctx context.Context, in *app.RefreshAppSec
 			},
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) UpdateAppGreyPercentage(ctx context.Context, in *app.UpdateAppGreyPercentageRequest) (*app.UpdateAppGreyPercentageReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppGreyPercentageReply]("UpdateAppGreyPercentage", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppGreyPercentageReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -245,11 +245,11 @@ func (s *AppService) UpdateAppGreyPercentage(ctx context.Context, in *app.Update
 			Message: "Update application grey percentage successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) UpdateAppGreyShuffleCode(ctx context.Context, in *app.UpdateAppGreyShuffleCodeRequest) (*app.UpdateAppGreyShuffleCodeReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppGreyShuffleCodeReply]("UpdateAppGreyShuffleCode", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppGreyShuffleCodeReply]()
 
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
@@ -265,11 +265,11 @@ func (s *AppService) UpdateAppGreyShuffleCode(ctx context.Context, in *app.Updat
 			Message: "Update application grey shuffle code successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 
 func (s *AppService) UpdateAppName(ctx context.Context, in *app.UpdateAppNameRequest) (*app.UpdateAppNameReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppNameReply]("UpdateAppName", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppNameReply]()
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
@@ -284,10 +284,10 @@ func (s *AppService) UpdateAppName(ctx context.Context, in *app.UpdateAppNameReq
 			Message: "Update application name successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 func (s *AppService) UpdateAppStatus(ctx context.Context, in *app.UpdateAppStatusRequest) (*app.UpdateAppStatusReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppStatusReply]("UpdateAppStatus", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppStatusReply]()
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
@@ -315,10 +315,10 @@ func (s *AppService) UpdateAppStatus(ctx context.Context, in *app.UpdateAppStatu
 			Message: "Update application status successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 }
 func (s *AppService) UpdateAppCollaborators(ctx context.Context, in *app.UpdateAppCollaboratorsRequest) (*app.UpdateAppCollaboratorsReply, error) {
-	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppCollaboratorsReply]("UpdateAppCollaborators", nil)
+	successProcess, errorProcess := util.GetProcesses[*app.UpdateAppCollaboratorsReply]()
 	claim, err := s.jwtUtil.GetBaseAuthClaims(ctx)
 	if err != nil {
 		return nil, errorProcess(ctx, errors.Unauthorized(string(v1.ErrorReason_INVALID_JWT), "invalid JWT token: "+err.Error()))
@@ -333,7 +333,7 @@ func (s *AppService) UpdateAppCollaborators(ctx context.Context, in *app.UpdateA
 			Message: "Update application collaborators successfully",
 			TraceId: reqId,
 		}
-	}, util.Audit{}), nil
+	}), nil
 
 }
 

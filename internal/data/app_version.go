@@ -106,8 +106,15 @@ func (r *appVersionRepo) GetApplicationVersionInfoWithUserCheck(parentCtx contex
 	}
 }
 
-func (r *appVersionRepo) CreateAppVersion(parentCtx context.Context, versionInfo biz.ApplicationVersionInfo) (*biz.ApplicationVersionInfo, error) {
+func (r *appVersionRepo) CreateAppVersion(parentCtx context.Context, versionInfo biz.ApplicationVersionInfo, uid string) (*biz.ApplicationVersionInfo, error) {
 	l := log.NewHelper(log.WithContext(parentCtx, r.log.Logger()))
+
+	if ok, err := r.checkDeveloperPermission(parentCtx, versionInfo.ClientId, uid); err != nil || !ok {
+		if err != nil {
+			l.Errorf("CreateAppVersion error checking developer permission for clientId: %d, uid: %s, error: %v", versionInfo.ClientId, uid, err)
+			return nil, err
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
 	nextVersion, err := r.existsClientIDAndGetNextVersion(ctx, versionInfo.ClientId)
@@ -182,6 +189,46 @@ func (r *appVersionRepo) CreateAppVersion(parentCtx context.Context, versionInfo
 	return &versionInfo, nil
 }
 
+func (r *appVersionRepo) DeleteAppVersion(ctx context.Context, clientId string, version int32, uid string) error {
+	l := log.NewHelper(log.WithContext(ctx, r.log.Logger()))
+
+	if ok, err := r.checkDeveloperPermission(ctx, clientId, uid); err != nil || !ok {
+		if err != nil {
+			var e *errors.Error
+			if errors.As(err, &e) {
+				return err
+			}
+			l.Errorf("CreateAppVersion error checking developer permission for clientId: %s, uid: %s, error: %v", clientId, uid, err)
+			return err
+		}
+	}
+
+	appVersion, err := r.getApplicationVersionInfo(ctx, clientId, version)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_VERSION_NOT_FOUNT), "client or version not found")
+		}
+		return err
+	}
+	if appVersion.Status != "DEACTIVATE" {
+		return errors.BadRequest(string(v1.ErrorReason_ONLY_DEACTIVATE_VERSION_CAN_BE_DELETED), "only deactivated version can be deleted")
+	}
+
+	filter := bson.M{"client_id": clientId, "internal_version": version}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err = r.applicationVersionCollection.FindOneAndUpdate(ctx, filter, bson.M{"$set": bson.M{"deleted_at": time.Now()}}).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			l.Debugf("DeleteAppVersion no document found for clientId: %s, version: %d", clientId, version)
+			return errors.NotFound(string(v1.ErrorReason_CLIENT_VERSION_NOT_FOUNT), "client or version not found")
+		}
+		l.Errorf("DeleteAppVersion error updating application: %v", err)
+		return err
+	}
+	return nil
+}
+
 func (r *appVersionRepo) existsClientIDAndGetNextVersion(ctx context.Context, clientId string) (int32, error) {
 	var result struct {
 		ClientId    string `bson:"client_id"`
@@ -207,4 +254,25 @@ func (r *appVersionRepo) getApplicationVersionInfo(ctx context.Context, clientId
 	var result biz.ApplicationVersionInfo
 	err := r.applicationVersionCollection.FindOne(ctx, filter).Decode(&result)
 	return result, err
+}
+func (r *appVersionRepo) checkDeveloperPermission(ctx context.Context, clientId string, uid string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	filter := bson.M{"client_id": clientId}
+	var result struct {
+		Admin         string   `bson:"admin"`
+		Collaborators []string `bson:"collaborators"`
+	}
+	err := r.applicationCollection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, errors.NotFound(string(v1.ErrorReason_CLIENT_NOT_FOUND), "client not found")
+		}
+		return false, err
+	}
+	if result.Admin == uid || lo.Contains(result.Collaborators, uid) {
+		return true, nil
+	}
+	return false, nil
 }

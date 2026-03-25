@@ -21,8 +21,8 @@ func NewGRPCServer(c *conf.Server, appService *service.AppService, appVersionSer
 		grpc.Middleware(
 			recovery.Recovery(),
 			tracing.Server(),
-			logging.Server(logger),
 			jwtInfo.GetJwtInfoMiddleware(),
+			logging.Server(logger),
 		),
 	}
 	if c.Grpc.Network != "" {
