@@ -55,6 +55,8 @@ func (s *AppVersionService) GetAppVersionInfo(ctx context.Context, in *app_versi
 				Description:     versionInfo.Description,
 				Url:             versionInfo.Url,
 				Icon:            versionInfo.Icon,
+				Color:           versionInfo.Color,
+				Label:           versionInfo.Label,
 				Status:          versionInfo.Status,
 				CreatedAt:       timestamppb.New(versionInfo.CreatedAt),
 				DeletedAt: func() *timestamppb.Timestamp {
@@ -102,6 +104,8 @@ func (s *AppVersionService) GetAppVersionInfoWithUserCheck(ctx context.Context, 
 					Description:     versionInfo.Description,
 					Url:             versionInfo.Url,
 					Icon:            versionInfo.Icon,
+					Color:           versionInfo.Color,
+					Label:           versionInfo.Label,
 					Status:          versionInfo.Status,
 					CreatedAt:       timestamppb.New(versionInfo.CreatedAt),
 					DeletedAt: func() *timestamppb.Timestamp {
@@ -133,6 +137,8 @@ func (s *AppVersionService) CreateAppVersion(ctx context.Context, in *app_versio
 		Description:   in.GetDescription(),
 		Url:           in.GetUrl(),
 		Icon:          in.GetIcon(),
+		Color:         in.GetColor(),
+		Label:         in.GetLabel(),
 	}, claim.Uid)
 	if err != nil {
 		return nil, errorProcess(ctx, err)

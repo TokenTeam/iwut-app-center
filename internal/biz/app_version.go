@@ -54,6 +54,8 @@ type ApplicationVersionInfo struct {
 	Description     string     `bson:"description"`
 	Url             string     `bson:"url"`
 	Icon            string     `bson:"icon"`
+	Color           string     `bson:"color"`
+	Label           string     `bson:"label"`
 	Status          string     `bson:"status"`
 	Tester          *[]string  `bson:"tester"`
 	CreatedAt       time.Time  `bson:"created_at"`
@@ -159,9 +161,6 @@ func (uc *AppVersionUsecase) CreateAppVersion(ctx context.Context, versionInfo A
 	}
 	if !util.IsHttpURL(versionInfo.Url) {
 		return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_URI), "invalid url: "+versionInfo.Url)
-	}
-	if !util.IsHttpURL(versionInfo.Icon) {
-		return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_URI), "invalid icon url: "+versionInfo.Icon)
 	}
 
 	// Set defaults

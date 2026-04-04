@@ -95,6 +95,8 @@ func (s *AppService) GetAppList(ctx context.Context, _ *emptypb.Empty) (*app.Get
 				Description:     appInfo.Description,
 				Url:             appInfo.Url,
 				Icon:            appInfo.Icon,
+				Color:           appInfo.Color,
+				Label:           appInfo.Label,
 				Status:          appInfo.Status,
 				CreatedAt:       timestamppb.New(appInfo.CreatedAt),
 				Name:            appInfo.Name,

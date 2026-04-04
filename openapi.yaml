@@ -388,7 +388,11 @@ components:
                     type: string
                 icon:
                     type: string
+                color:
+                    type: string
                 status:
+                    type: string
+                label:
                     type: string
                 createdAt:
                     type: string
@@ -674,6 +678,11 @@ components:
                 deletedAt:
                     type: string
                     format: date-time
+                color:
+                    type: string
+                    description: 这里没有返回 tester, 大且没用
+                label:
+                    type: string
         app_center.v1.app_version.CreateAppVersionReply:
             type: object
             properties:
@@ -716,6 +725,10 @@ components:
                 url:
                     type: string
                 icon:
+                    type: string
+                color:
+                    type: string
+                label:
                     type: string
         app_center.v1.app_version.DeleteAppVersionReply:
             type: object
