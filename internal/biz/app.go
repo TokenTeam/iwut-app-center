@@ -223,6 +223,7 @@ func (uc *AppUsecase) GetAppList(ctx context.Context, uid string) ([]AppListItem
 			result, err := uc.versionRepo.GetVersionIfUserIsTester(ctx, app.ClientId, app.BetaVersion, uid)
 			if err == nil && result != nil {
 				if result.DeletedAt != nil {
+					// 应用被删除时 清空test version 设置为-1
 					l.Warnf("GetAppList beta version deleted for clientId: %s, version: %d", app.ClientId, app.BetaVersion)
 					if clearErr := uc.repo.ClearVersionRef(ctx, app.ClientId, "beta_version"); clearErr != nil {
 						l.Errorf("GetAppList error clearing beta version ref for app %s: %v", app.ClientId, clearErr)

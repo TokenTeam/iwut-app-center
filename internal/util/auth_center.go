@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	v1 "iwut-app-center/api/gen/go/app_center/v1/error_reason"
 	"iwut-app-center/api/gen/go/auth_center/v1/auth"
 	"iwut-app-center/api/gen/go/auth_center/v1/user"
 	"iwut-app-center/internal/conf"
 	"time"
 
+	"github.com/go-kratos/kratos/v2/errors"
 	"github.com/go-kratos/kratos/v2/log"
 	otelgrpc "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -159,10 +161,13 @@ func (u *AuthCenterUtil) getUserClaimFromAuthCenter(ctx context.Context, uid str
 	if cd == nil {
 		return nil, fmt.Errorf("failed to get user claim from auth center service")
 	}
-	attrs, _, err := StructToAnyMap(cd)
-	if err != nil {
-		return nil, err
+	attrs := cd.AsMap()
+	for key := range attrs {
+		if !IsASCIIAlphaNumDashUnderscore(key) {
+			return nil, errors.BadRequest(string(v1.ErrorReason_INVALID_KEY_NAME), fmt.Sprintf("invalid key: %s", key))
+		}
 	}
+
 	return attrs, nil
 }
 
