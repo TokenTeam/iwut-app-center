@@ -233,6 +233,114 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/app_center.v1.app.UpdateAppStatusReply'
+    /app/update-version-description:
+        post:
+            tags:
+                - AppVersion
+            operationId: AppVersion_UpdateAppVersionDescription
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionDescriptionRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionDescriptionReply'
+    /app/update-version-display-name:
+        post:
+            tags:
+                - AppVersion
+            operationId: AppVersion_UpdateAppVersionDisplayName
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionDisplayNameRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionDisplayNameReply'
+    /app/update-version-icon:
+        post:
+            tags:
+                - AppVersion
+            operationId: AppVersion_UpdateAppVersionIcon
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionIconRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionIconReply'
+    /app/update-version-status:
+        post:
+            tags:
+                - App
+            operationId: App_UpdateAppVersionStatus
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app.UpdateAppVersionStatusRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app.UpdateAppVersionStatusReply'
+    /app/update-version-url:
+        post:
+            tags:
+                - AppVersion
+            operationId: AppVersion_UpdateAppVersionUrl
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionUrlRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionUrlReply'
+    /app/update-version-version:
+        post:
+            tags:
+                - AppVersion
+            operationId: AppVersion_UpdateAppVersionVersion
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionVersionRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.app_version.UpdateAppVersionVersionReply'
     /app/version-info:
         get:
             tags:
@@ -290,6 +398,46 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/app_center.v1.tester.AddTesterReply'
+    /tester/list:
+        get:
+            tags:
+                - Tester
+            operationId: Tester_ListTesters
+            parameters:
+                - name: clientId
+                  in: query
+                  schema:
+                    type: string
+                - name: version
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.tester.ListTestersReply'
+    /tester/remove:
+        post:
+            tags:
+                - Tester
+            operationId: Tester_RemoveTester
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/app_center.v1.tester.RemoveTesterRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/app_center.v1.tester.RemoveTesterReply'
     /tester/test-link:
         get:
             tags:
@@ -789,6 +937,106 @@ components:
                     format: int32
                 userId:
                     type: string
+        app_center.v1.app_version.UpdateAppVersionDescriptionReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionDescriptionRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                description:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionDisplayNameReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionDisplayNameRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                displayName:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionIconReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionIconRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                icon:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionUrlReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionUrlRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                url:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionVersionReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.app_version.UpdateAppVersionVersionRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                internalVersion:
+                    type: integer
+                    format: int32
+                version:
+                    type: string
         app_center.v1.tester.AddTesterReply:
             type: object
             properties:
@@ -815,6 +1063,47 @@ components:
             type: object
             properties:
                 testLink:
+                    type: string
+        app_center.v1.tester.ListTestersReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                data:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/app_center.v1.tester.ListTestersReply_TesterInfo'
+                traceId:
+                    type: string
+        app_center.v1.tester.ListTestersReply_TesterInfo:
+            type: object
+            properties:
+                userId:
+                    type: string
+                username:
+                    type: string
+        app_center.v1.tester.RemoveTesterReply:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                traceId:
+                    type: string
+        app_center.v1.tester.RemoveTesterRequest:
+            type: object
+            properties:
+                clientId:
+                    type: string
+                version:
+                    type: integer
+                    format: int32
+                userId:
                     type: string
 tags:
     - name: App
