@@ -98,6 +98,9 @@ UseCase code coordinates Domain and ports. Adapters perform external type conver
 - `go test ./...` is the minimum verification once a Go module exists.
 - Use `go test -race ./...` for code that introduces meaningful in-process concurrency.
 - MongoDB transaction and index behavior belongs to later integration-test work and cannot be proven with an in-memory fake.
+- Run `./scripts/test-mongo-integration.sh` for the current MongoDB work package;
+  it starts and removes an isolated transaction-capable replica set. Plain
+  `go test ./...` skips these tests when `MONGODB_INTEGRATION_URI` is absent.
 
 ## Generated code and secrets
 
