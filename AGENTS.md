@@ -21,30 +21,34 @@ Before implementation work, read these files in order:
 3. The UC named by the current task, including every referenced `BR-*`
 4. The ADRs referenced by the implementation entry point or current UC
 
-For the first work package, also read:
+For the current work package, also read:
 
 ```text
 ../../docs/app-center/domain-model.md
 ../../docs/app-center/use-cases/UC-APP-001-create-application.md
 ../../docs/app-center/adr/ADR-003-go-package-and-dependency-boundaries.md
+../../docs/app-center/adr/ADR-004-mongodb-transactions-and-schema-management.md
 ```
 
 Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions are authoritative in `ADR-*`. This file does not override them.
 
 ## Current work package
 
-The first work package implements only the Domain and UseCase portions of UC-APP-001:
+The first Domain and UseCase work package for UC-APP-001 is complete. The
+current work package implements only its MongoDB persistence boundary:
 
 ```text
-Application
-ApplicationName
-DeveloperApplicationQuota
-CreateApplication command handler
-Identity, Clock, UUIDv7 and persistence ports required by that handler
-Unit tests covering BR-APP-001 through BR-APP-007
+Application document mapping for applications_v2
+Creation quota mapping for application_creation_quotas
+CreateWithinQuota as one MongoDB transaction
+Explicit, repeatable migrations for collections, validators and indexes
+Integration tests using a real transaction-capable MongoDB topology
 ```
 
-Do not add MongoDB, Redis, Kratos, Proto, HTTP/gRPC, ApplicationVersion, Profile, Publication, Tester or Catalog in this work package.
+Do not add Redis, Kratos, Proto, HTTP/gRPC, ApplicationVersion, Profile,
+Publication, Tester or Catalog in this work package. Do not add generic CRUD
+repositories or silently run production migrations during normal service
+startup.
 
 ## Code boundaries
 
