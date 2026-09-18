@@ -38,37 +38,22 @@ func (fake *fakeClock) Now() time.Time {
 	return fake.now
 }
 
-type fakeQuotaPolicy struct {
-	events  *[]string
-	limit   int32
-	err     error
-	calls   int
-	adminID domain.AuthID
-}
-
-func (fake *fakeQuotaPolicy) LimitFor(_ context.Context, adminID domain.AuthID) (int32, error) {
-	fake.calls++
-	fake.adminID = adminID
-	appendEvent(fake.events, "quota")
-	return fake.limit, fake.err
-}
-
 type fakeApplicationRepository struct {
-	events      *[]string
-	err         error
-	calls       int
-	application *domain.Application
-	limit       int32
+	events       *[]string
+	err          error
+	calls        int
+	application  *domain.Application
+	initialLimit int32
 }
 
 func (fake *fakeApplicationRepository) CreateWithinQuota(
 	_ context.Context,
 	application *domain.Application,
-	limit int32,
+	initialLimit int32,
 ) error {
 	fake.calls++
 	fake.application = application
-	fake.limit = limit
+	fake.initialLimit = initialLimit
 	appendEvent(fake.events, "repository")
 	return fake.err
 }
@@ -82,13 +67,12 @@ func appendEvent(events *[]string, event string) {
 func TestCreateApplication_BR_APP_001_002_003_005_006_007_Success(t *testing.T) {
 	t.Parallel()
 
-	events := make([]string, 0, 4)
+	events := make([]string, 0, 3)
 	generatedAt := time.Date(2026, time.September, 19, 8, 9, 10, 11, time.FixedZone("CST", 8*60*60))
 	idGenerator := &fakeIDGenerator{events: &events, id: generatedApplicationID}
 	clock := &fakeClock{events: &events, now: generatedAt}
-	quotaPolicy := &fakeQuotaPolicy{events: &events, limit: 10}
 	repository := &fakeApplicationRepository{events: &events}
-	handler := NewCreateApplicationHandler(idGenerator, clock, quotaPolicy, repository)
+	handler := NewCreateApplicationHandler(idGenerator, clock, repository)
 
 	application, err := handler.Handle(
 		context.Background(),
@@ -114,13 +98,10 @@ func TestCreateApplication_BR_APP_001_002_003_005_006_007_Success(t *testing.T) 
 	if !application.CreatedAt().Equal(generatedAt) || application.CreatedAt().Location() != time.UTC {
 		t.Fatalf("CreatedAt() = %v, want generated instant in UTC", application.CreatedAt())
 	}
-	if quotaPolicy.adminID != application.AdminID() {
-		t.Fatalf("quota admin ID = %q, want %q", quotaPolicy.adminID, application.AdminID())
+	if repository.application != application || repository.initialLimit != domain.InitialDeveloperApplicationQuotaLimit || repository.calls != 1 {
+		t.Fatalf("repository call = (%p, %d, %d), want application, initial limit 10, exactly one call", repository.application, repository.initialLimit, repository.calls)
 	}
-	if repository.application != application || repository.limit != 10 || repository.calls != 1 {
-		t.Fatalf("repository call = (%p, %d, %d), want application, limit 10, exactly one call", repository.application, repository.limit, repository.calls)
-	}
-	if want := []string{"id", "clock", "quota", "repository"}; !reflect.DeepEqual(events, want) {
+	if want := []string{"id", "clock", "repository"}; !reflect.DeepEqual(events, want) {
 		t.Fatalf("dependency order = %v, want %v", events, want)
 	}
 }
@@ -146,15 +127,14 @@ func TestCreateApplication_BR_APP_002_OnlyApprovedDevelopersCanCreate(t *testing
 
 			idGenerator := &fakeIDGenerator{id: generatedApplicationID}
 			clock := &fakeClock{now: time.Now()}
-			quotaPolicy := &fakeQuotaPolicy{limit: 10}
 			repository := &fakeApplicationRepository{}
-			handler := NewCreateApplicationHandler(idGenerator, clock, quotaPolicy, repository)
+			handler := NewCreateApplicationHandler(idGenerator, clock, repository)
 
 			application, err := handler.Handle(context.Background(), testCase.identity, CreateApplicationCommand{Name: "app"})
 			if application != nil || !errors.Is(err, testCase.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil and %v", application, err, testCase.want)
 			}
-			if idGenerator.calls != 0 || clock.calls != 0 || quotaPolicy.calls != 0 || repository.calls != 0 {
+			if idGenerator.calls != 0 || clock.calls != 0 || repository.calls != 0 {
 				t.Fatal("dependencies were called for an unauthorized request")
 			}
 		})
@@ -166,9 +146,8 @@ func TestCreateApplication_BR_APP_003_InvalidNameStopsBeforeDependencies(t *test
 
 	idGenerator := &fakeIDGenerator{id: generatedApplicationID}
 	clock := &fakeClock{now: time.Now()}
-	quotaPolicy := &fakeQuotaPolicy{limit: 10}
 	repository := &fakeApplicationRepository{}
-	handler := NewCreateApplicationHandler(idGenerator, clock, quotaPolicy, repository)
+	handler := NewCreateApplicationHandler(idGenerator, clock, repository)
 
 	application, err := handler.Handle(
 		context.Background(),
@@ -178,7 +157,7 @@ func TestCreateApplication_BR_APP_003_InvalidNameStopsBeforeDependencies(t *test
 	if application != nil || !errors.Is(err, domain.ErrInvalidApplicationName) {
 		t.Fatalf("Handle() = (%v, %v), want nil and InvalidApplicationName", application, err)
 	}
-	if idGenerator.calls != 0 || clock.calls != 0 || quotaPolicy.calls != 0 || repository.calls != 0 {
+	if idGenerator.calls != 0 || clock.calls != 0 || repository.calls != 0 {
 		t.Fatal("dependencies were called for an invalid name")
 	}
 }
@@ -213,7 +192,6 @@ func TestCreateApplication_BR_APP_005_006_RepositoryOutcomesMapToBusinessErrors(
 			handler := NewCreateApplicationHandler(
 				&fakeIDGenerator{id: generatedApplicationID},
 				&fakeClock{now: time.Now()},
-				&fakeQuotaPolicy{limit: 10},
 				repository,
 			)
 
@@ -236,34 +214,23 @@ func TestCreateApplication_BR_APP_001_005_006_DependencyFailuresReturnNoPartialR
 	t.Parallel()
 
 	idFailure := errors.New("id generator unavailable")
-	quotaFailure := errors.New("quota policy unavailable")
 	repositoryFailure := errors.New("database unavailable")
 
 	testCases := []struct {
 		name        string
 		idGenerator *fakeIDGenerator
-		quotaPolicy *fakeQuotaPolicy
 		repository  *fakeApplicationRepository
 		cause       error
 	}{
 		{
 			name:        "ID generation",
 			idGenerator: &fakeIDGenerator{err: idFailure},
-			quotaPolicy: &fakeQuotaPolicy{limit: 10},
 			repository:  &fakeApplicationRepository{},
 			cause:       idFailure,
 		},
 		{
-			name:        "quota policy",
-			idGenerator: &fakeIDGenerator{id: generatedApplicationID},
-			quotaPolicy: &fakeQuotaPolicy{err: quotaFailure},
-			repository:  &fakeApplicationRepository{},
-			cause:       quotaFailure,
-		},
-		{
 			name:        "persistence",
 			idGenerator: &fakeIDGenerator{id: generatedApplicationID},
-			quotaPolicy: &fakeQuotaPolicy{limit: 10},
 			repository:  &fakeApplicationRepository{err: repositoryFailure},
 			cause:       repositoryFailure,
 		},
@@ -276,7 +243,6 @@ func TestCreateApplication_BR_APP_001_005_006_DependencyFailuresReturnNoPartialR
 			handler := NewCreateApplicationHandler(
 				testCase.idGenerator,
 				&fakeClock{now: time.Now()},
-				testCase.quotaPolicy,
 				testCase.repository,
 			)
 			application, err := handler.Handle(
@@ -302,7 +268,6 @@ func TestCreateApplication_BR_APP_001_InvalidGeneratedIDIsInternalFailure(t *tes
 	handler := NewCreateApplicationHandler(
 		&fakeIDGenerator{id: "not-a-uuid"},
 		&fakeClock{now: time.Now()},
-		&fakeQuotaPolicy{limit: 10},
 		repository,
 	)
 
@@ -323,12 +288,10 @@ func TestCreateApplication_BR_APP_001_007_InvalidClockValueIsInternalFailure(t *
 	t.Parallel()
 
 	clock := &fakeClock{}
-	quotaPolicy := &fakeQuotaPolicy{limit: 10}
 	repository := &fakeApplicationRepository{}
 	handler := NewCreateApplicationHandler(
 		&fakeIDGenerator{id: generatedApplicationID},
 		clock,
-		quotaPolicy,
 		repository,
 	)
 
@@ -343,8 +306,8 @@ func TestCreateApplication_BR_APP_001_007_InvalidClockValueIsInternalFailure(t *
 	if clock.calls != 1 {
 		t.Fatalf("clock calls = %d, want one", clock.calls)
 	}
-	if quotaPolicy.calls != 0 || repository.calls != 0 {
-		t.Fatalf("later dependency calls = (quota %d, repository %d), want zero", quotaPolicy.calls, repository.calls)
+	if repository.calls != 0 {
+		t.Fatalf("repository calls = %d, want zero", repository.calls)
 	}
 }
 
@@ -357,9 +320,6 @@ func TestCreateApplication_NilDependenciesReturnInternalFailure(t *testing.T) {
 	validClock := func() port.Clock {
 		return &fakeClock{now: time.Now()}
 	}
-	validQuotaPolicy := func() port.ApplicationQuotaPolicy {
-		return &fakeQuotaPolicy{limit: 10}
-	}
 	validRepository := func() port.ApplicationRepository {
 		return &fakeApplicationRepository{}
 	}
@@ -369,10 +329,9 @@ func TestCreateApplication_NilDependenciesReturnInternalFailure(t *testing.T) {
 		handler *CreateApplicationHandler
 	}{
 		{name: "nil handler"},
-		{name: "nil ID generator", handler: NewCreateApplicationHandler(nil, validClock(), validQuotaPolicy(), validRepository())},
-		{name: "nil clock", handler: NewCreateApplicationHandler(validIDGenerator(), nil, validQuotaPolicy(), validRepository())},
-		{name: "nil quota policy", handler: NewCreateApplicationHandler(validIDGenerator(), validClock(), nil, validRepository())},
-		{name: "nil repository", handler: NewCreateApplicationHandler(validIDGenerator(), validClock(), validQuotaPolicy(), nil)},
+		{name: "nil ID generator", handler: NewCreateApplicationHandler(nil, validClock(), validRepository())},
+		{name: "nil clock", handler: NewCreateApplicationHandler(validIDGenerator(), nil, validRepository())},
+		{name: "nil repository", handler: NewCreateApplicationHandler(validIDGenerator(), validClock(), nil)},
 	}
 
 	for _, testCase := range testCases {
@@ -388,29 +347,5 @@ func TestCreateApplication_NilDependenciesReturnInternalFailure(t *testing.T) {
 				t.Fatalf("Handle() = (%v, %v), want nil and Internal", application, err)
 			}
 		})
-	}
-}
-
-func TestCreateApplication_BR_APP_005_InvalidPolicyLimitIsInternalFailure(t *testing.T) {
-	t.Parallel()
-
-	repository := &fakeApplicationRepository{}
-	handler := NewCreateApplicationHandler(
-		&fakeIDGenerator{id: generatedApplicationID},
-		&fakeClock{now: time.Now()},
-		&fakeQuotaPolicy{limit: -1},
-		repository,
-	)
-
-	application, err := handler.Handle(
-		context.Background(),
-		DeveloperIdentity{AuthID: "auth-1", DeveloperStatus: DeveloperStatusApproved},
-		CreateApplicationCommand{Name: "app"},
-	)
-	if application != nil || !errors.Is(err, domain.ErrInternal) {
-		t.Fatalf("Handle() = (%v, %v), want nil and Internal", application, err)
-	}
-	if repository.calls != 0 {
-		t.Fatalf("repository calls = %d, want zero", repository.calls)
 	}
 }

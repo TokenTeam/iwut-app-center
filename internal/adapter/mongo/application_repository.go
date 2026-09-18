@@ -39,13 +39,13 @@ func NewApplicationRepository(database *drivermongo.Database) *ApplicationReposi
 func (repository *ApplicationRepository) CreateWithinQuota(
 	ctx context.Context,
 	application *domain.Application,
-	limit int32,
+	initialLimit int32,
 ) error {
 	if repository == nil || repository.database == nil {
 		return fmt.Errorf("create application within quota: MongoDB database is nil")
 	}
-	if limit < 0 {
-		return fmt.Errorf("create application within quota: limit must be non-negative")
+	if initialLimit < 0 {
+		return fmt.Errorf("create application within quota: initial limit must be non-negative")
 	}
 
 	document, err := applicationToDocument(application)
@@ -64,7 +64,7 @@ func (repository *ApplicationRepository) CreateWithinQuota(
 		SetWriteConcern(writeconcern.Majority())
 
 	_, err = session.WithTransaction(ctx, func(transactionContext context.Context) (any, error) {
-		return nil, repository.createWithinQuotaTransaction(transactionContext, document, limit)
+		return nil, repository.createWithinQuotaTransaction(transactionContext, document, initialLimit)
 	}, transactionOptions)
 	if err == nil {
 		return nil
@@ -84,7 +84,7 @@ func (repository *ApplicationRepository) CreateWithinQuota(
 func (repository *ApplicationRepository) createWithinQuotaTransaction(
 	ctx context.Context,
 	document applicationDocument,
-	limit int32,
+	initialLimit int32,
 ) error {
 	applications := repository.database.Collection(applicationsCollectionName)
 	quotas := repository.database.Collection(applicationCreationQuotasCollectionName)
@@ -102,7 +102,7 @@ func (repository *ApplicationRepository) createWithinQuotaTransaction(
 
 	initialQuota := applicationCreationQuotaDocument{
 		AdminID:   document.AdminID,
-		Limit:     limit,
+		Limit:     initialLimit,
 		UsedCount: 0,
 		Revision:  0,
 		UpdatedAt: document.CreatedAt,
@@ -121,11 +121,10 @@ func (repository *ApplicationRepository) createWithinQuotaTransaction(
 		ctx,
 		bson.D{
 			{Key: "adminId", Value: document.AdminID},
-			{Key: "usedCount", Value: bson.D{{Key: "$lt", Value: limit}}},
+			{Key: "$expr", Value: bson.D{{Key: "$lt", Value: bson.A{"$usedCount", "$limit"}}}},
 		},
 		bson.D{
 			{Key: "$set", Value: bson.D{
-				{Key: "limit", Value: limit},
 				{Key: "updatedAt", Value: document.CreatedAt},
 			}},
 			{Key: "$inc", Value: bson.D{

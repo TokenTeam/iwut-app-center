@@ -54,7 +54,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 		assertCollectionCount(t, database, applicationsCollectionName, 2)
 	})
 
-	t.Run("BR-APP-005 limit ten rejects eleventh and raised limit permits next", func(t *testing.T) {
+	t.Run("BR-APP-005 limit ten rejects eleventh and persisted raised limit permits next", func(t *testing.T) {
 		database := migratedIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		for index := 0; index < 10; index++ {
@@ -68,10 +68,54 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 		}
 		assertQuota(t, database, "auth-quota", 10, 10, 10)
 
-		if err := repository.CreateWithinQuota(t.Context(), integrationApplication(t, "auth-quota", "application_11"), 11); err != nil {
+		updateResult, err := database.Collection(applicationCreationQuotasCollectionName).UpdateOne(
+			t.Context(),
+			bson.D{{Key: "adminId", Value: "auth-quota"}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "limit", Value: int32(11)}}}},
+		)
+		if err != nil {
+			t.Fatalf("simulate future quota adjustment: %v", err)
+		}
+		if updateResult.MatchedCount != 1 || updateResult.ModifiedCount != 1 {
+			t.Fatalf("quota adjustment result = matched %d modified %d, want 1 and 1", updateResult.MatchedCount, updateResult.ModifiedCount)
+		}
+
+		if err := repository.CreateWithinQuota(
+			t.Context(),
+			integrationApplication(t, "auth-quota", "application_11"),
+			domain.InitialDeveloperApplicationQuotaLimit,
+		); err != nil {
 			t.Fatalf("create after raising limit: %v", err)
 		}
 		assertQuota(t, database, "auth-quota", 11, 11, 11)
+	})
+
+	t.Run("BR-APP-005 initial limit never overwrites an existing lower limit", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		repository := NewApplicationRepository(database)
+		quota := applicationCreationQuotaDocument{
+			AdminID: "auth-custom-quota", Limit: 1, UsedCount: 0, Revision: 0,
+			UpdatedAt: time.Date(2026, time.September, 19, 0, 0, 0, 0, time.UTC),
+		}
+		if _, err := database.Collection(applicationCreationQuotasCollectionName).InsertOne(t.Context(), quota); err != nil {
+			t.Fatalf("seed adjusted quota: %v", err)
+		}
+
+		if err := repository.CreateWithinQuota(
+			t.Context(),
+			integrationApplication(t, "auth-custom-quota", "first"),
+			domain.InitialDeveloperApplicationQuotaLimit,
+		); err != nil {
+			t.Fatalf("create within adjusted quota: %v", err)
+		}
+		if err := repository.CreateWithinQuota(
+			t.Context(),
+			integrationApplication(t, "auth-custom-quota", "second"),
+			domain.InitialDeveloperApplicationQuotaLimit,
+		); !errors.Is(err, port.ErrApplicationQuotaExceeded) {
+			t.Fatalf("second error = %v, want quota exceeded", err)
+		}
+		assertQuota(t, database, "auth-custom-quota", 1, 1, 1)
 	})
 
 	t.Run("BR-APP-001 creation initializes both next sequences", func(t *testing.T) {
