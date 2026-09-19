@@ -17,7 +17,7 @@ func NewApplication(
 	adminID AuthID,
 	createdAt time.Time,
 ) (*Application, error) {
-	if !id.valid() || !name.valid() || !adminID.valid() || createdAt.IsZero() {
+	if !id.IsValid() || !name.valid() || !adminID.IsValid() || createdAt.IsZero() {
 		return nil, NewInternalError(nil)
 	}
 

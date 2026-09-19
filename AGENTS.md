@@ -25,30 +25,36 @@ For the current work package, also read:
 
 ```text
 ../../docs/app-center/domain-model.md
-../../docs/app-center/use-cases/UC-APP-001-create-application.md
+../../docs/app-center/lifecycle-models.md
+../../docs/app-center/use-cases/UC-APP-002-create-application-version.md
+../../docs/app-center/use-cases/UC-APP-003-update-draft-application-version.md
+../../docs/app-center/use-cases/UC-APP-004-submit-application-version-review.md
+../../docs/app-center/adr/ADR-001-scope-catalog-cache.md
 ../../docs/app-center/adr/ADR-003-go-package-and-dependency-boundaries.md
 ../../docs/app-center/adr/ADR-004-mongodb-transactions-and-schema-management.md
+../../docs/app-center/adr/ADR-005-domain-errors-and-transport-mapping.md
 ```
 
 Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions are authoritative in `ADR-*`. This file does not override them.
 
 ## Current work package
 
-The first Domain and UseCase work package for UC-APP-001 is complete. The
-current work package implements only its MongoDB persistence boundary:
+UC-APP-001 Domain, UseCase and MongoDB persistence are complete. The current
+work package implements only UC-APP-002 Domain and UseCase core:
 
 ```text
-Application document mapping for applications_v2
-Creation quota mapping for application_creation_quotas
-CreateWithinQuota as one MongoDB transaction
-Explicit, repeatable migrations for collections, validators and indexes
-Integration tests using a real transaction-capable MongoDB topology
+ApplicationVersion value objects and initial DRAFT invariants
+CreateApplicationVersion orchestration and narrow ports
+Local requiredCapabilities validation, exact duplicate rejection and sorting
+ScopeCatalog port with deterministic fakes only in _test.go
+Domain and UseCase unit tests
 ```
 
-Do not add Redis, Kratos, Proto, HTTP/gRPC, ApplicationVersion, Profile,
-Publication, Tester or Catalog in this work package. Do not add generic CRUD
-repositories or silently run production migrations during normal service
-startup.
+Do not add the UC-APP-002 MongoDB repository/schema/migration, the Scope Catalog
+TTL/singleflight cache adapter, a real Auth client, Redis, Kratos, Proto,
+HTTP/gRPC, UC-APP-003+, Profile, Publication, Tester or Catalog queries in this
+work package. Test fakes must remain in `_test.go`. Do not add generic CRUD
+repositories.
 
 ## Code boundaries
 
@@ -60,6 +66,9 @@ internal/shared/
 internal/application/domain/
 internal/application/usecase/
 internal/application/port/
+internal/version/domain/
+internal/version/usecase/
+internal/version/port/
 internal/adapter/
 ```
 

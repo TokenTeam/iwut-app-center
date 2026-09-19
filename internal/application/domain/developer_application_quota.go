@@ -15,7 +15,7 @@ func NewDeveloperApplicationQuota(
 	limit int32,
 	usedCount int32,
 ) (DeveloperApplicationQuota, error) {
-	if !adminID.valid() || limit < 0 || usedCount < 0 || usedCount > limit {
+	if !adminID.IsValid() || limit < 0 || usedCount < 0 || usedCount > limit {
 		return DeveloperApplicationQuota{}, NewInternalError(nil)
 	}
 

@@ -33,7 +33,7 @@ func TestApplicationID_BR_APP_001_RequiresUUIDv7(t *testing.T) {
 				if err != nil {
 					t.Fatalf("ParseApplicationID() error = %v", err)
 				}
-				if !id.valid() {
+				if !id.IsValid() {
 					t.Fatal("parsed ID is not valid")
 				}
 				return

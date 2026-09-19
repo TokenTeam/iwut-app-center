@@ -6,21 +6,19 @@ import (
 
 	"iwut-app-center/internal/application/domain"
 	"iwut-app-center/internal/application/port"
+	"iwut-app-center/internal/shared"
 )
 
-type DeveloperStatus string
+type DeveloperStatus = shared.DeveloperStatus
 
 const (
-	DeveloperStatusPending   DeveloperStatus = "PENDING"
-	DeveloperStatusApproved  DeveloperStatus = "APPROVED"
-	DeveloperStatusRejected  DeveloperStatus = "REJECTED"
-	DeveloperStatusSuspended DeveloperStatus = "SUSPENDED"
+	DeveloperStatusPending   = shared.DeveloperStatusPending
+	DeveloperStatusApproved  = shared.DeveloperStatusApproved
+	DeveloperStatusRejected  = shared.DeveloperStatusRejected
+	DeveloperStatusSuspended = shared.DeveloperStatusSuspended
 )
 
-type DeveloperIdentity struct {
-	AuthID          domain.AuthID
-	DeveloperStatus DeveloperStatus
-}
+type DeveloperIdentity = shared.DeveloperIdentity
 
 type CreateApplicationCommand struct {
 	Name string
