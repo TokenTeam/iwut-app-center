@@ -14,8 +14,8 @@ import (
 const (
 	migrationLedgerCollectionName          = "app_center_schema_migrations"
 	applicationCreationMigrationID         = "0001_application_creation"
-	applicationIDUniqueIndexName           = "uq_applications_v2_id"
-	applicationAdminNameUniqueIndexName    = "uq_applications_v2_admin_id_name_key"
+	applicationIDUniqueIndexName           = "uq_applications_id"
+	applicationAdminNameUniqueIndexName    = "uq_applications_admin_id_name_key"
 	applicationQuotaAdminIDUniqueIndexName = "uq_application_creation_quotas_admin_id"
 )
 

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	applicationsCollectionName              = "applications_v2"
+	applicationsCollectionName              = "applications"
 	applicationCreationQuotasCollectionName = "application_creation_quotas"
 )
 
