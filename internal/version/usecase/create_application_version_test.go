@@ -85,6 +85,18 @@ func (fake *fakeVersionRepository) CreateDraft(
 	return domain.NewApplicationVersion(draft, 1)
 }
 
+func (fake *fakeVersionRepository) ReplaceDraft(
+	context.Context,
+	shared.ApplicationID,
+	domain.ApplicationVersionID,
+	shared.AuthID,
+	int64,
+	domain.DraftApplicationVersionReplacement,
+	time.Time,
+) (*domain.ApplicationVersion, error) {
+	return nil, errors.New("ReplaceDraft is not configured on create fake")
+}
+
 func appendVersionEvent(events *[]string, event string) {
 	if events != nil {
 		*events = append(*events, event)

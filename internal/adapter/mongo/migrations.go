@@ -18,6 +18,7 @@ const (
 	applicationAdminNameUniqueIndexName       = "uq_applications_admin_id_name_key"
 	applicationQuotaAdminIDUniqueIndexName    = "uq_application_creation_quotas_admin_id"
 	applicationVersionMigrationID             = "0002_application_version"
+	applicationVersionDraftUpdateMigrationID  = "0003_application_version_draft_update"
 	applicationVersionIDUniqueIndexName       = "uq_application_versions_version_id"
 	applicationVersionSequenceUniqueIndexName = "uq_application_versions_application_id_sequence"
 	applicationVersionLabelUniqueIndexName    = "uq_application_versions_application_id_version_label"
@@ -53,6 +54,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 	}{
 		{id: applicationCreationMigrationID, apply: migrator.applyApplicationCreationMigration},
 		{id: applicationVersionMigrationID, apply: migrator.applyApplicationVersionMigration},
+		{id: applicationVersionDraftUpdateMigrationID, apply: migrator.applyApplicationVersionDraftUpdateMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -128,7 +130,7 @@ func (migrator *Migrator) applyApplicationCreationMigration(ctx context.Context)
 }
 
 func (migrator *Migrator) applyApplicationVersionMigration(ctx context.Context) error {
-	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionValidator()); err != nil {
+	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionInitialValidator()); err != nil {
 		return err
 	}
 
@@ -158,6 +160,13 @@ func (migrator *Migrator) applyApplicationVersionMigration(ctx context.Context) 
 	})
 	if err != nil {
 		return fmt.Errorf("create application version indexes: %w", err)
+	}
+	return nil
+}
+
+func (migrator *Migrator) applyApplicationVersionDraftUpdateMigration(ctx context.Context) error {
+	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionValidator()); err != nil {
+		return fmt.Errorf("enable application version draft updates: %w", err)
 	}
 	return nil
 }
@@ -270,10 +279,43 @@ func applicationCreationQuotaValidator() bson.D {
 
 // applicationVersionValidator is a storage-level defense in depth. It enforces
 // facts MongoDB can express reliably (shape, byte limits, set relationships,
-// RPC ordering, and initial lifecycle/audit equality). Full URL address-class
+// RPC ordering, and lifecycle/audit shape). Full URL address-class
 // and Unicode domain validation remains in version/domain and in the document
 // mapper; this schema is not a replacement for those constructors.
 func applicationVersionValidator() bson.D {
+	return applicationVersionValidatorForLifecycle(false)
+}
+
+func applicationVersionInitialValidator() bson.D {
+	return applicationVersionValidatorForLifecycle(true)
+}
+
+func applicationVersionValidatorForLifecycle(initialOnly bool) bson.D {
+	reviewStatuses := bson.A{"DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "REVOKED"}
+	revisionSchema := bson.D{
+		{Key: "bsonType", Value: "long"},
+		{Key: "minimum", Value: int64(1)},
+	}
+	expressions := bson.A{
+		bson.D{{Key: "$gt", Value: bson.A{"$rpcApiMaxVersionExclusive", "$rpcApiMinVersion"}}},
+		bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$launchUrl"}}, 2048}}},
+		bson.D{{Key: "$eq", Value: bson.A{
+			bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$requiredScopes", "$optionalScopes"}}}}},
+			0,
+		}}},
+	}
+	if initialOnly {
+		reviewStatuses = bson.A{"DRAFT"}
+		revisionSchema = bson.D{
+			{Key: "bsonType", Value: "long"},
+			{Key: "enum", Value: bson.A{int64(1)}},
+		}
+		expressions = append(expressions,
+			bson.D{{Key: "$eq", Value: bson.A{"$createdBy", "$updatedBy"}}},
+			bson.D{{Key: "$eq", Value: bson.A{"$createdAt", "$updatedAt"}}},
+		)
+	}
+
 	return bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$jsonSchema", Value: bson.D{
 			{Key: "bsonType", Value: "object"},
@@ -313,28 +355,16 @@ func applicationVersionValidator() bson.D {
 				{Key: "optionalScopes", Value: stringSetSchema("")},
 				{Key: "reviewStatus", Value: bson.D{
 					{Key: "bsonType", Value: "string"},
-					{Key: "enum", Value: bson.A{"DRAFT"}},
+					{Key: "enum", Value: reviewStatuses},
 				}},
 				{Key: "createdBy", Value: nonEmptyStringSchema()},
 				{Key: "createdAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
-				{Key: "revision", Value: bson.D{
-					{Key: "bsonType", Value: "long"},
-					{Key: "enum", Value: bson.A{int64(1)}},
-				}},
+				{Key: "revision", Value: revisionSchema},
 				{Key: "updatedBy", Value: nonEmptyStringSchema()},
 				{Key: "updatedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
 			}},
 		}}},
-		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
-			bson.D{{Key: "$gt", Value: bson.A{"$rpcApiMaxVersionExclusive", "$rpcApiMinVersion"}}},
-			bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$launchUrl"}}, 2048}}},
-			bson.D{{Key: "$eq", Value: bson.A{
-				bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$requiredScopes", "$optionalScopes"}}}}},
-				0,
-			}}},
-			bson.D{{Key: "$eq", Value: bson.A{"$createdBy", "$updatedBy"}}},
-			bson.D{{Key: "$eq", Value: bson.A{"$createdAt", "$updatedAt"}}},
-		}}}}},
+		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: expressions}}}},
 	}}}
 }
 

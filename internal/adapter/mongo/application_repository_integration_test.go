@@ -268,7 +268,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 2)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -281,7 +281,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 	})
 }
 
-func TestMigratorIntegration_UpgradesExisting0001DatabaseTo0002(t *testing.T) {
+func TestMigratorIntegration_UpgradesExisting0001DatabaseToCurrent(t *testing.T) {
 	client := integrationClient(t)
 	database := integrationDatabase(t, client)
 	migrator := NewMigrator(database)
@@ -299,9 +299,9 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseTo0002(t *testing.T) {
 	}
 
 	if err := migrator.Migrate(t.Context()); err != nil {
-		t.Fatalf("upgrade to 0002: %v", err)
+		t.Fatalf("upgrade to current: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 2)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,

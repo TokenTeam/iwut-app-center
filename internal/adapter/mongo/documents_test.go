@@ -126,10 +126,10 @@ func TestApplicationVersionDocumentMapper_StoredValidationFailureIsCorruption(t 
 			document.RequiredScopes = []string{"schedule.read", "profile.basic"}
 		}},
 		{name: "empty created by", mutate: func(document *applicationVersionDocument) { document.CreatedBy = "" }},
-		{name: "wrong status", mutate: func(document *applicationVersionDocument) { document.ReviewStatus = "SUBMITTED" }},
-		{name: "wrong revision", mutate: func(document *applicationVersionDocument) { document.Revision = 2 }},
-		{name: "different updated by", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "auth-other" }},
-		{name: "different updated at", mutate: func(document *applicationVersionDocument) { document.UpdatedAt = document.UpdatedAt.Add(time.Second) }},
+		{name: "unknown status", mutate: func(document *applicationVersionDocument) { document.ReviewStatus = "UNKNOWN" }},
+		{name: "invalid revision", mutate: func(document *applicationVersionDocument) { document.Revision = 0 }},
+		{name: "empty updated by", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "" }},
+		{name: "zero updated at", mutate: func(document *applicationVersionDocument) { document.UpdatedAt = time.Time{} }},
 	}
 
 	for _, test := range tests {
@@ -151,6 +151,37 @@ func TestApplicationVersionDocumentMapper_StoredValidationFailureIsCorruption(t 
 				t.Fatalf("storage corruption leaked caller validation: %v", err)
 			}
 		})
+	}
+}
+
+func TestApplicationVersionDocumentMapper_BRVER012_BRVER013_RestoresUpdatedAuditAndLifecycle(t *testing.T) {
+	draft := mapperDraftApplicationVersion(t)
+	created, err := versiondomain.NewApplicationVersion(draft, 7)
+	if err != nil {
+		t.Fatalf("create version: %v", err)
+	}
+	capabilities, _ := versiondomain.NewCapabilitySet([]string{"camera.read.v1", "user.profile.v2"})
+	scopes, _ := versiondomain.NewScopeRequest([]string{"profile.basic"}, nil)
+	label, _ := versiondomain.NewVersionLabel("v2")
+	launchURL, _ := versiondomain.NewLaunchURL("https://example.edu/v2")
+	rpcRange, _ := versiondomain.NewRPCApiRange(2, 5)
+	replacement, _ := versiondomain.NewDraftApplicationVersionReplacement(label, launchURL, rpcRange, capabilities, scopes)
+	updatedAt := time.Date(2026, time.September, 20, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	updated, err := created.ReplaceDraft(1, replacement, "auth-editor", updatedAt)
+	if err != nil {
+		t.Fatalf("replace draft: %v", err)
+	}
+	document, err := applicationVersionEntityToDocument(updated)
+	if err != nil {
+		t.Fatalf("map updated version: %v", err)
+	}
+	restored, err := applicationVersionFromDocument(document)
+	if err != nil {
+		t.Fatalf("restore updated version: %v", err)
+	}
+	if restored.Revision() != 2 || restored.UpdatedBy() != "auth-editor" || !restored.UpdatedAt().Equal(updatedAt) ||
+		restored.CreatedBy() != created.CreatedBy() || !restored.CreatedAt().Equal(created.CreatedAt()) {
+		t.Fatalf("restored audit is incorrect: %#v", restored)
 	}
 }
 

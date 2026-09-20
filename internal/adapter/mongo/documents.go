@@ -101,7 +101,13 @@ func applicationVersionToDocument(
 	if err != nil {
 		return applicationVersionDocument{}, fmt.Errorf("map application version document: %w", err)
 	}
+	return applicationVersionEntityToDocument(version)
+}
 
+func applicationVersionEntityToDocument(version *versiondomain.ApplicationVersion) (applicationVersionDocument, error) {
+	if version == nil {
+		return applicationVersionDocument{}, fmt.Errorf("map application version document: version is nil")
+	}
 	return applicationVersionDocument{
 		VersionID:                 version.ID().String(),
 		ApplicationID:             version.ApplicationID().String(),
@@ -167,27 +173,26 @@ func applicationVersionFromDocument(document applicationVersionDocument) (*versi
 	if !createdBy.IsValid() {
 		return nil, corruptApplicationVersion("invalid created-by identity")
 	}
-	if document.ReviewStatus != string(versiondomain.ReviewStatusDraft) ||
-		document.Revision != 1 || document.UpdatedBy != document.CreatedBy ||
-		!document.UpdatedAt.Equal(document.CreatedAt) {
-		return nil, corruptApplicationVersion("invalid initial lifecycle or audit fields")
+	updatedBy := shared.AuthID(document.UpdatedBy)
+	if document.Revision < 1 || !updatedBy.IsValid() || document.UpdatedAt.IsZero() {
+		return nil, corruptApplicationVersion("invalid lifecycle or audit fields")
 	}
-
-	draft, err := versiondomain.NewDraftApplicationVersion(
+	version, err := versiondomain.RestoreApplicationVersion(
 		versionID,
 		applicationID,
+		sequence,
 		versionLabel,
 		launchURL,
 		rpcAPIRange,
 		requiredCapabilities,
 		scopeRequest,
+		versiondomain.ReviewStatus(document.ReviewStatus),
 		createdBy,
 		document.CreatedAt,
+		document.Revision,
+		updatedBy,
+		document.UpdatedAt,
 	)
-	if err != nil {
-		return nil, corruptApplicationVersion("invalid draft fields")
-	}
-	version, err := versiondomain.NewApplicationVersion(draft, sequence)
 	if err != nil {
 		return nil, corruptApplicationVersion("invalid application version")
 	}

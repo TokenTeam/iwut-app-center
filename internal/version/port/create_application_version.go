@@ -14,6 +14,9 @@ var (
 	ErrScopeCatalogUnavailable              = errors.New("scope catalog unavailable")
 	ErrApplicationNotFound                  = errors.New("application not found")
 	ErrApplicationAdminRequired             = errors.New("application administrator required")
+	ErrApplicationVersionNotFound           = errors.New("application version not found")
+	ErrApplicationVersionNotDraft           = errors.New("application version not draft")
+	ErrApplicationVersionRevisionConflict   = errors.New("application version revision conflict")
 	ErrApplicationVersionLabelAlreadyExists = errors.New("application version label already exists")
 )
 
@@ -38,5 +41,14 @@ type ApplicationVersionRepository interface {
 		ctx context.Context,
 		expectedAdminID shared.AuthID,
 		draft *domain.DraftApplicationVersion,
+	) (*domain.ApplicationVersion, error)
+	ReplaceDraft(
+		ctx context.Context,
+		applicationID shared.ApplicationID,
+		versionID domain.ApplicationVersionID,
+		expectedAdminID shared.AuthID,
+		expectedRevision int64,
+		replacement domain.DraftApplicationVersionReplacement,
+		updatedAt time.Time,
 	) (*domain.ApplicationVersion, error)
 }

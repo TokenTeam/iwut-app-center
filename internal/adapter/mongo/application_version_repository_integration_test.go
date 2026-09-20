@@ -293,10 +293,9 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 			{name: "invalid capability", mutate: func(document *applicationVersionDocument) { document.RequiredCapabilities = []string{"Camera.Read.v1"} }},
 			{name: "duplicate required scope", mutate: func(document *applicationVersionDocument) { document.RequiredScopes = []string{"profile", "profile"} }},
 			{name: "crossed scopes", mutate: func(document *applicationVersionDocument) { document.OptionalScopes = []string{"profile.basic"} }},
-			{name: "non-DRAFT status", mutate: func(document *applicationVersionDocument) { document.ReviewStatus = "SUBMITTED" }},
-			{name: "revision other than one", mutate: func(document *applicationVersionDocument) { document.Revision = 2 }},
-			{name: "created and updated identities differ", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "auth-other" }},
-			{name: "created and updated times differ", mutate: func(document *applicationVersionDocument) { document.UpdatedAt = document.CreatedAt.Add(time.Second) }},
+			{name: "unknown status", mutate: func(document *applicationVersionDocument) { document.ReviewStatus = "UNKNOWN" }},
+			{name: "revision below one", mutate: func(document *applicationVersionDocument) { document.Revision = 0 }},
+			{name: "empty updated identity", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "" }},
 		}
 		_, err := versions.InsertOne(t.Context(), bson.D{{Key: "versionId", Value: valid.VersionID}})
 		assertDocumentValidationFailure(t, err)
@@ -310,6 +309,349 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 				_, err := versions.InsertOne(t.Context(), document)
 				assertDocumentValidationFailure(t, err)
 			})
+		}
+	})
+}
+
+func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
+	client := integrationClient(t)
+
+	t.Run("BR-VER-011 BR-VER-012 BR-VER-013 BR-VER-014 BR-VER-016 atomically replaces all editable fields and preserves no-op audit", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-update", "update-success")
+		repository := NewApplicationVersionRepository(database)
+		created, err := repository.CreateDraft(
+			t.Context(), shared.AuthID("auth-update"), integrationApplicationVersionDraft(t, application.ID(), "auth-update", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create seed version: %v", err)
+		}
+		replacement := integrationApplicationVersionReplacement(
+			t, "v2", "http://localhost:3000/app", []string{"user.profile.v2", "camera.read.v1"},
+			[]string{"schedule.read", "profile.basic"}, nil,
+		)
+		// MongoDB stores BSON datetimes with millisecond precision, so the audit
+		// instant under test must be millisecond-aligned while still exercising
+		// non-UTC input conversion.
+		updatedAt := time.Date(2026, time.September, 20, 10, 11, 12, 130_000_000, time.FixedZone("CST", 8*60*60))
+		updated, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), created.ID(), "auth-update", 1, replacement, updatedAt,
+		)
+		if err != nil {
+			t.Fatalf("replace draft: %v", err)
+		}
+		if updated.ID() != created.ID() || updated.ApplicationID() != created.ApplicationID() || updated.Sequence() != created.Sequence() ||
+			updated.CreatedBy() != created.CreatedBy() || !updated.CreatedAt().Equal(created.CreatedAt()) || updated.ReviewStatus() != versiondomain.ReviewStatusDraft {
+			t.Fatal("immutable version fields changed")
+		}
+		if updated.VersionLabel().String() != "v2" || updated.LaunchURL().String() != "http://localhost:3000/app" ||
+			updated.RPCApiRange().Minimum() != 2 || updated.RPCApiRange().MaximumExclusive() != 5 || updated.Revision() != 2 ||
+			updated.UpdatedBy() != "auth-update" || !updated.UpdatedAt().Equal(updatedAt) || updated.UpdatedAt().Location() != time.UTC {
+			t.Fatalf("updated version content/audit is incorrect: %#v", updated)
+		}
+		if want := []versiondomain.CapabilityName{"camera.read.v1", "user.profile.v2"}; fmt.Sprint(updated.RequiredCapabilities()) != fmt.Sprint(want) {
+			t.Fatalf("capabilities = %v, want %v", updated.RequiredCapabilities(), want)
+		}
+		if updated.OptionalScopes() == nil || len(updated.OptionalScopes()) != 0 {
+			t.Fatalf("optional scopes = %#v, want non-nil empty array", updated.OptionalScopes())
+		}
+
+		noOp, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), created.ID(), "auth-update", 2, replacement, updatedAt.Add(time.Hour),
+		)
+		if err != nil {
+			t.Fatalf("repeat normalized replacement: %v", err)
+		}
+		if noOp.Revision() != 2 || !noOp.UpdatedAt().Equal(updatedAt) || noOp.UpdatedBy() != "auth-update" {
+			t.Fatalf("no-op changed audit: revision=%d by=%s at=%v", noOp.Revision(), noOp.UpdatedBy(), noOp.UpdatedAt())
+		}
+		stored := readApplicationVersionDocument(t, database, created.ID())
+		if stored.Revision != 2 || stored.VersionLabel != "v2" || stored.UpdatedBy != "auth-update" || !stored.UpdatedAt.Equal(updatedAt) {
+			t.Fatalf("stored update is not atomic: %#v", stored)
+		}
+	})
+
+	t.Run("BR-VER-010 BR-VER-013 BR-VER-016 classifies ownership state revision and hidden path mismatch", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-classify", "update-classify")
+		otherApplication := createVersionTestApplication(t, database, "auth-classify", "update-other")
+		repository := NewApplicationVersionRepository(database)
+		created, err := repository.CreateDraft(
+			t.Context(), "auth-classify", integrationApplicationVersionDraft(t, application.ID(), "auth-classify", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create seed version: %v", err)
+		}
+		replacement := integrationApplicationVersionReplacement(t, "v2", "https://example.edu/v2", nil, nil, nil)
+
+		tests := []struct {
+			name          string
+			applicationID shared.ApplicationID
+			adminID       shared.AuthID
+			revision      int64
+			want          error
+		}{
+			{name: "cross-application version ID", applicationID: otherApplication.ID(), adminID: "auth-classify", revision: 1, want: versionport.ErrApplicationVersionNotFound},
+			{name: "wrong administrator", applicationID: application.ID(), adminID: "auth-other", revision: 1, want: versionport.ErrApplicationAdminRequired},
+			{name: "stale revision", applicationID: application.ID(), adminID: "auth-classify", revision: 2, want: versionport.ErrApplicationVersionRevisionConflict},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				version, err := repository.ReplaceDraft(
+					t.Context(), test.applicationID, created.ID(), test.adminID, test.revision, replacement, time.Now(),
+				)
+				if version != nil || !errors.Is(err, test.want) {
+					t.Fatalf("ReplaceDraft() = (%v, %v), want nil and %v", version, err, test.want)
+				}
+			})
+		}
+
+		result, err := database.Collection(applicationVersionsCollectionName).UpdateOne(
+			t.Context(),
+			bson.D{{Key: "versionId", Value: created.ID().String()}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "SUBMITTED"}}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+		)
+		if err != nil || result.ModifiedCount != 1 {
+			t.Fatalf("seed submitted state: result=%#v error=%v", result, err)
+		}
+		version, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), created.ID(), "auth-classify", 2, replacement, time.Now(),
+		)
+		if version != nil || !errors.Is(err, versionport.ErrApplicationVersionNotDraft) {
+			t.Fatalf("non-draft ReplaceDraft() = (%v, %v), want not draft", version, err)
+		}
+	})
+
+	t.Run("BR-VER-013 two concurrent replacements with one expected revision allow one success", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-revision-race", "revision-race")
+		repository := NewApplicationVersionRepository(database)
+		created, err := repository.CreateDraft(
+			t.Context(), "auth-revision-race", integrationApplicationVersionDraft(t, application.ID(), "auth-revision-race", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create seed version: %v", err)
+		}
+		start := make(chan struct{})
+		results := make(chan versionCreationResult, 2)
+		var group sync.WaitGroup
+		for index := 0; index < 2; index++ {
+			index := index
+			replacement := integrationApplicationVersionReplacement(
+				t, fmt.Sprintf("v%d", index+2), fmt.Sprintf("https://example.edu/v%d", index+2), nil, nil, nil,
+			)
+			group.Add(1)
+			go func() {
+				defer group.Done()
+				<-start
+				version, replaceErr := repository.ReplaceDraft(
+					t.Context(), application.ID(), created.ID(), "auth-revision-race", 1, replacement,
+					time.Date(2026, time.September, 20, 11, 0, index, 0, time.UTC),
+				)
+				results <- versionCreationResult{version: version, err: replaceErr}
+			}()
+		}
+		close(start)
+		group.Wait()
+		close(results)
+		var successes, conflicts int
+		for result := range results {
+			switch {
+			case result.err == nil:
+				successes++
+				if result.version == nil || result.version.Revision() != 2 {
+					t.Errorf("successful result = %#v, want revision 2", result.version)
+				}
+			case errors.Is(result.err, versionport.ErrApplicationVersionRevisionConflict):
+				conflicts++
+			default:
+				t.Errorf("unexpected concurrent result: %v", result.err)
+			}
+		}
+		if successes != 1 || conflicts != 1 {
+			t.Fatalf("successes/conflicts = %d/%d, want 1/1", successes, conflicts)
+		}
+		if stored := readApplicationVersionDocument(t, database, created.ID()); stored.Revision != 2 {
+			t.Fatalf("stored revision = %d, want 2", stored.Revision)
+		}
+	})
+
+	t.Run("BR-VER-013 BR-VER-016 label conflict rolls back the entire replacement", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-label-update", "label-update")
+		repository := NewApplicationVersionRepository(database)
+		first, err := repository.CreateDraft(
+			t.Context(), "auth-label-update", integrationApplicationVersionDraft(t, application.ID(), "auth-label-update", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create first version: %v", err)
+		}
+		if _, err := repository.CreateDraft(
+			t.Context(), "auth-label-update", integrationApplicationVersionDraft(t, application.ID(), "auth-label-update", "v2"),
+		); err != nil {
+			t.Fatalf("create second version: %v", err)
+		}
+		replacement := integrationApplicationVersionReplacement(t, "v2", "https://example.edu/collision", nil, nil, nil)
+		updated, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), first.ID(), "auth-label-update", 1, replacement, time.Now(),
+		)
+		if updated != nil || !errors.Is(err, versionport.ErrApplicationVersionLabelAlreadyExists) {
+			t.Fatalf("ReplaceDraft() = (%v, %v), want label conflict", updated, err)
+		}
+		stored := readApplicationVersionDocument(t, database, first.ID())
+		if stored.VersionLabel != "v1" || stored.Revision != 1 || stored.LaunchURL == "https://example.edu/collision" {
+			t.Fatalf("failed replacement partially persisted: %#v", stored)
+		}
+	})
+
+	t.Run("BR-VER-016 committed administrator transfer wins against an in-flight old-admin replacement", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-old-update", "admin-update-race")
+		seedRepository := NewApplicationVersionRepository(database)
+		created, err := seedRepository.CreateDraft(
+			t.Context(), "auth-old-update", integrationApplicationVersionDraft(t, application.ID(), "auth-old-update", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create seed version: %v", err)
+		}
+
+		transferSession, err := client.StartSession()
+		if err != nil {
+			t.Fatalf("start transfer session: %v", err)
+		}
+		defer transferSession.EndSession(context.Background())
+		if err := transferSession.StartTransaction(); err != nil {
+			t.Fatalf("start transfer transaction: %v", err)
+		}
+		result, err := database.Collection(applicationsCollectionName).UpdateOne(
+			drivermongo.NewSessionContext(t.Context(), transferSession),
+			bson.D{{Key: "id", Value: application.ID().String()}, {Key: "adminId", Value: "auth-old-update"}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "adminId", Value: "auth-new-update"}}}},
+		)
+		if err != nil || result.ModifiedCount != 1 {
+			t.Fatalf("stage administrator transfer: result=%#v error=%v", result, err)
+		}
+
+		raceContext, cancelRace := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancelRace()
+		ownershipCheckStarted := make(chan struct{}, 1)
+		monitor := &event.CommandMonitor{Started: func(_ context.Context, started *event.CommandStartedEvent) {
+			if started.DatabaseName == database.Name() && started.CommandName == "findAndModify" &&
+				started.Command.Lookup("findAndModify").StringValue() == applicationsCollectionName {
+				select {
+				case ownershipCheckStarted <- struct{}{}:
+				default:
+				}
+			}
+		}}
+		competingClient, err := drivermongo.Connect(options.Client().ApplyURI(os.Getenv(mongoIntegrationURIEnvironment)).SetMonitor(monitor))
+		if err != nil {
+			t.Fatalf("connect competing client: %v", err)
+		}
+		defer competingClient.Disconnect(context.Background())
+		repository := NewApplicationVersionRepository(competingClient.Database(database.Name()))
+		replacement := integrationApplicationVersionReplacement(t, "v2", "https://example.edu/v2", nil, nil, nil)
+		updateResult := make(chan error, 1)
+		go func() {
+			_, replaceErr := repository.ReplaceDraft(
+				raceContext, application.ID(), created.ID(), "auth-old-update", 1, replacement, time.Now(),
+			)
+			updateResult <- replaceErr
+		}()
+		select {
+		case <-ownershipCheckStarted:
+		case <-raceContext.Done():
+			t.Fatalf("wait for ownership check: %v", raceContext.Err())
+		}
+		if err := transferSession.CommitTransaction(raceContext); err != nil {
+			t.Fatalf("commit administrator transfer: %v", err)
+		}
+		select {
+		case err := <-updateResult:
+			if !errors.Is(err, versionport.ErrApplicationAdminRequired) {
+				t.Fatalf("old administrator result = %v, want admin required", err)
+			}
+		case <-raceContext.Done():
+			t.Fatalf("wait for replacement result: %v", raceContext.Err())
+		}
+		if stored := readApplicationVersionDocument(t, database, created.ID()); stored.Revision != 1 {
+			t.Fatalf("old-admin replacement persisted with revision %d", stored.Revision)
+		}
+	})
+
+	t.Run("BR-VER-010 BR-VER-016 committed submission wins against an in-flight replacement", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-submit-race", "submit-update-race")
+		seedRepository := NewApplicationVersionRepository(database)
+		created, err := seedRepository.CreateDraft(
+			t.Context(), "auth-submit-race", integrationApplicationVersionDraft(t, application.ID(), "auth-submit-race", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create seed version: %v", err)
+		}
+
+		submitSession, err := client.StartSession()
+		if err != nil {
+			t.Fatalf("start submit session: %v", err)
+		}
+		defer submitSession.EndSession(context.Background())
+		if err := submitSession.StartTransaction(); err != nil {
+			t.Fatalf("start submit transaction: %v", err)
+		}
+		result, err := database.Collection(applicationVersionsCollectionName).UpdateOne(
+			drivermongo.NewSessionContext(t.Context(), submitSession),
+			bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: "DRAFT"}, {Key: "revision", Value: int64(1)}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "SUBMITTED"}}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+		)
+		if err != nil || result.ModifiedCount != 1 {
+			t.Fatalf("stage submission: result=%#v error=%v", result, err)
+		}
+
+		raceContext, cancelRace := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancelRace()
+		versionReadStarted := make(chan struct{}, 1)
+		monitor := &event.CommandMonitor{Started: func(_ context.Context, started *event.CommandStartedEvent) {
+			if started.DatabaseName == database.Name() && started.CommandName == "find" &&
+				started.Command.Lookup("find").StringValue() == applicationVersionsCollectionName {
+				select {
+				case versionReadStarted <- struct{}{}:
+				default:
+				}
+			}
+		}}
+		competingClient, err := drivermongo.Connect(options.Client().ApplyURI(os.Getenv(mongoIntegrationURIEnvironment)).SetMonitor(monitor))
+		if err != nil {
+			t.Fatalf("connect competing client: %v", err)
+		}
+		defer competingClient.Disconnect(context.Background())
+		repository := NewApplicationVersionRepository(competingClient.Database(database.Name()))
+		replacement := integrationApplicationVersionReplacement(t, "v2", "https://example.edu/v2", nil, nil, nil)
+		updateResult := make(chan error, 1)
+		go func() {
+			_, replaceErr := repository.ReplaceDraft(
+				raceContext, application.ID(), created.ID(), "auth-submit-race", 1, replacement, time.Now(),
+			)
+			updateResult <- replaceErr
+		}()
+		select {
+		case <-versionReadStarted:
+		case <-raceContext.Done():
+			t.Fatalf("wait for version read: %v", raceContext.Err())
+		}
+		if err := submitSession.CommitTransaction(raceContext); err != nil {
+			t.Fatalf("commit submission: %v", err)
+		}
+		select {
+		case err := <-updateResult:
+			if !errors.Is(err, versionport.ErrApplicationVersionNotDraft) {
+				t.Fatalf("replacement result = %v, want not draft", err)
+			}
+		case <-raceContext.Done():
+			t.Fatalf("wait for replacement result: %v", raceContext.Err())
+		}
+		stored := readApplicationVersionDocument(t, database, created.ID())
+		if stored.ReviewStatus != "SUBMITTED" || stored.Revision != 2 || stored.VersionLabel != "v1" {
+			t.Fatalf("replacement modified submitted version: %#v", stored)
 		}
 	})
 }
@@ -359,6 +701,60 @@ func TestApplicationVersionMigrationUsesSimpleCollationForLabelIndex(t *testing.
 		return
 	}
 	t.Fatalf("label index %q not found in %#v", applicationVersionLabelUniqueIndexName, indexes)
+}
+
+func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *testing.T) {
+	client := integrationClient(t)
+	database := integrationDatabase(t, client)
+	migrator := NewMigrator(database)
+	if err := migrator.ensureMigrationLedger(t.Context()); err != nil {
+		t.Fatalf("create migration ledger: %v", err)
+	}
+	if err := migrator.applyMigration(t.Context(), applicationCreationMigrationID, migrator.applyApplicationCreationMigration); err != nil {
+		t.Fatalf("apply 0001: %v", err)
+	}
+	if err := migrator.applyMigration(t.Context(), applicationVersionMigrationID, migrator.applyApplicationVersionMigration); err != nil {
+		t.Fatalf("apply 0002: %v", err)
+	}
+	application := createVersionTestApplication(t, database, "auth-migration", "migration-update")
+	repository := NewApplicationVersionRepository(database)
+	created, err := repository.CreateDraft(
+		t.Context(), "auth-migration", integrationApplicationVersionDraft(t, application.ID(), "auth-migration", "v1"),
+	)
+	if err != nil {
+		t.Fatalf("create version under 0002 schema: %v", err)
+	}
+	versions := database.Collection(applicationVersionsCollectionName)
+	_, err = versions.UpdateOne(
+		t.Context(),
+		bson.D{{Key: "versionId", Value: created.ID().String()}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "updatedBy", Value: "auth-editor"}}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+	)
+	assertDocumentValidationFailure(t, err)
+
+	if err := migrator.Migrate(t.Context()); err != nil {
+		t.Fatalf("upgrade to 0003: %v", err)
+	}
+	if err := migrator.Migrate(t.Context()); err != nil {
+		t.Fatalf("repeat migrations: %v", err)
+	}
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
+	result, err := versions.UpdateOne(
+		t.Context(),
+		bson.D{{Key: "versionId", Value: created.ID().String()}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "reviewStatus", Value: "SUBMITTED"},
+			{Key: "updatedBy", Value: "auth-editor"},
+			{Key: "updatedAt", Value: time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC)},
+		}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+	)
+	if err != nil || result.ModifiedCount != 1 {
+		t.Fatalf("write fields enabled by 0003: result=%#v error=%v", result, err)
+	}
+	stored := readApplicationVersionDocument(t, database, created.ID())
+	if stored.ReviewStatus != "SUBMITTED" || stored.Revision != 2 || stored.UpdatedBy != "auth-editor" {
+		t.Fatalf("upgraded document = %#v", stored)
+	}
 }
 
 type versionCreationResult struct {
@@ -465,6 +861,54 @@ func integrationApplicationVersionDocument(t *testing.T, applicationID shared.Ap
 	document, err := applicationVersionToDocument(draft, sequence)
 	if err != nil {
 		t.Fatalf("map version document: %v", err)
+	}
+	return document
+}
+
+func integrationApplicationVersionReplacement(
+	t *testing.T,
+	labelValue, launchURLValue string,
+	capabilityValues, requiredScopeValues, optionalScopeValues []string,
+) versiondomain.DraftApplicationVersionReplacement {
+	t.Helper()
+	label, err := versiondomain.NewVersionLabel(labelValue)
+	if err != nil {
+		t.Fatalf("create replacement label: %v", err)
+	}
+	launchURL, err := versiondomain.NewLaunchURL(launchURLValue)
+	if err != nil {
+		t.Fatalf("create replacement launch URL: %v", err)
+	}
+	rpcRange, err := versiondomain.NewRPCApiRange(2, 5)
+	if err != nil {
+		t.Fatalf("create replacement RPC range: %v", err)
+	}
+	capabilities, err := versiondomain.NewCapabilitySet(capabilityValues)
+	if err != nil {
+		t.Fatalf("create replacement capabilities: %v", err)
+	}
+	scopes, err := versiondomain.NewScopeRequest(requiredScopeValues, optionalScopeValues)
+	if err != nil {
+		t.Fatalf("create replacement scopes: %v", err)
+	}
+	replacement, err := versiondomain.NewDraftApplicationVersionReplacement(label, launchURL, rpcRange, capabilities, scopes)
+	if err != nil {
+		t.Fatalf("create replacement: %v", err)
+	}
+	return replacement
+}
+
+func readApplicationVersionDocument(
+	t *testing.T,
+	database *drivermongo.Database,
+	versionID versiondomain.ApplicationVersionID,
+) applicationVersionDocument {
+	t.Helper()
+	var document applicationVersionDocument
+	if err := database.Collection(applicationVersionsCollectionName).
+		FindOne(t.Context(), bson.D{{Key: "versionId", Value: versionID.String()}}).
+		Decode(&document); err != nil {
+		t.Fatalf("read application version %s: %v", versionID, err)
 	}
 	return document
 }

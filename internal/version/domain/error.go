@@ -28,6 +28,10 @@ const (
 	ErrorCodeScopeCatalogUnavailable              ErrorCode = "ScopeCatalogUnavailable"
 	ErrorCodeApplicationNotFound                  ErrorCode = "ApplicationNotFound"
 	ErrorCodeApplicationAdminRequired             ErrorCode = "ApplicationAdminRequired"
+	ErrorCodeApplicationVersionRevisionRequired   ErrorCode = "ApplicationVersionRevisionRequired"
+	ErrorCodeApplicationVersionNotFound           ErrorCode = "ApplicationVersionNotFound"
+	ErrorCodeApplicationVersionNotDraft           ErrorCode = "ApplicationVersionNotDraft"
+	ErrorCodeApplicationVersionRevisionConflict   ErrorCode = "ApplicationVersionRevisionConflict"
 	ErrorCodeApplicationVersionLabelAlreadyExists ErrorCode = "ApplicationVersionLabelAlreadyExists"
 	ErrorCodeInternal                             ErrorCode = "Internal"
 )
@@ -98,6 +102,18 @@ var (
 	)
 	ErrApplicationAdminRequired = newError(
 		ErrorCategoryAuthorization, ErrorCodeApplicationAdminRequired, "application administrator is required", nil,
+	)
+	ErrApplicationVersionRevisionRequired = newError(
+		ErrorCategoryValidation, ErrorCodeApplicationVersionRevisionRequired, "application version revision is required", nil,
+	)
+	ErrApplicationVersionNotFound = newError(
+		ErrorCategoryNotFound, ErrorCodeApplicationVersionNotFound, "application version not found", nil,
+	)
+	ErrApplicationVersionNotDraft = newError(
+		ErrorCategoryConflict, ErrorCodeApplicationVersionNotDraft, "application version is not a draft", nil,
+	)
+	ErrApplicationVersionRevisionConflict = newError(
+		ErrorCategoryConflict, ErrorCodeApplicationVersionRevisionConflict, "application version revision conflicts", nil,
 	)
 	ErrApplicationVersionLabelAlreadyExists = newError(
 		ErrorCategoryConflict, ErrorCodeApplicationVersionLabelAlreadyExists, "application version label already exists", nil,

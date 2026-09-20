@@ -30,14 +30,30 @@ Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions 
 
 ## Current work package
 
-No implementation work package is currently active. UC-APP-001 and UC-APP-002
-are `ACCEPTED / CORE_COMPLETE`; their remaining Transport, composition and
-end-to-end work is tracked in the implementation entry point.
+Implement UC-APP-003, updating a DRAFT ApplicationVersion by complete
+replacement with optimistic concurrency.
 
-Before the next implementation begins, replace this paragraph with a bounded
-package that lists: target UC, exact Required BR/ADR headings, code scope,
-explicit non-goals, and verification commands. Do not infer the next package
-from file order, recent commits, or the next UC number.
+Required design sections:
+
+- `UC-APP-003`: Goal and scope; Editable and immutable fields; Input and
+  identity; Main flow; Exceptional flows; BR-VER-010 through BR-VER-017; Use
+  case ports; Data model changes; Tests and acceptance.
+- `UC-APP-002`: BR-VER-003 through BR-VER-007 for reused field validation and
+  normalization.
+- `ADR-001`: Decision and consistency/failure behavior for Scope Catalog.
+- `ADR-003`: Decision, Port ownership and automated constraints.
+- `ADR-004`: Transaction boundary, retry and schema migration rules.
+- `ADR-005`: Domain error classification and adapter mapping rules.
+
+Code scope: Domain update behavior, UC-APP-003 command/handler and narrow
+ports/errors, MongoDB atomic repository behavior and explicit schema migration,
+plus Domain/UseCase and real replica-set integration tests.
+
+Non-goals: API/Proto/HTTP transport, a real Auth transport, UC-APP-004 or later
+lifecycle transitions, generic CRUD repositories, and unrelated refactors.
+
+Verification: `gofmt`, `go vet ./...`, `go test ./...`, `go test -race ./...`,
+and `./scripts/test-mongo-integration.sh -race -count=1`.
 
 ## Code boundaries
 
