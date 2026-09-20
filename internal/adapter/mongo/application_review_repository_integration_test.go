@@ -88,6 +88,30 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 		assertCollectionCount(t, database, applicationReviewsCollectionName, 1)
 	})
 
+	t.Run("BR-REV-001 BR-REV-009 coordination revision advances on success and rolls back on failure", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application, version := createReviewTestVersion(t, database, "auth-review-fence", "review-fence", "v1")
+		repository := NewApplicationReviewRepository(database)
+		candidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-review-fence", 1)
+		assertApplicationCoordinationRevision(t, database, application.ID(), 0)
+
+		result, err := repository.Submit(t.Context(), candidate, nextIntegrationApplicationReviewID(t), "auth-review-fence", 1, "v1", time.Now().UTC())
+		if err != nil {
+			t.Fatalf("submit review: %v", err)
+		}
+		if result.Version().ReviewStatus() != "SUBMITTED" {
+			t.Fatalf("submitted version = %#v, want SUBMITTED", result.Version())
+		}
+		assertApplicationCoordinationRevision(t, database, application.ID(), 1)
+
+		// A repeat against the now-SUBMITTED Version must fail without leaving
+		// the authorization fence increment behind.
+		if _, err := repository.Submit(t.Context(), candidate, nextIntegrationApplicationReviewID(t), "auth-review-fence", 1, "v1", time.Now().UTC()); !errors.Is(err, reviewport.ErrApplicationVersionNotDraft) {
+			t.Fatalf("repeat submission error = %v, want not draft", err)
+		}
+		assertApplicationCoordinationRevision(t, database, application.ID(), 1)
+	})
+
 	t.Run("BR-REV-002 BR-REV-003 BR-REV-005 BR-REV-009 concurrent same-revision submissions allow at most one", func(t *testing.T) {
 		database := migratedIntegrationDatabase(t, client)
 		_, version := createReviewTestVersion(t, database, "auth-review-race", "review-race", "v1")

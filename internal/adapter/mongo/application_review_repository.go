@@ -201,9 +201,12 @@ func (repository *ApplicationReviewRepository) submitTransaction(
 }
 
 // lockAdministrator turns the final ownership check into a document write in
-// the submission transaction. A concurrent administrator transfer therefore
-// conflicts or completes first; snapshot isolation cannot validate ownership
-// from a stale read and then commit an unrelated Version write.
+// the submission transaction. The conditional $inc on the adapter-only
+// coordinationRevision is a real write, so a concurrent administrator transfer
+// on the same Application document conflicts and forces a retry that
+// re-evaluates the administrator filter. A same-value $set would not reliably
+// produce that write conflict, letting an old administrator commit against a
+// stale snapshot. It is never nextVersionSequence, which belongs to UC-APP-002.
 func (repository *ApplicationReviewRepository) lockAdministrator(
 	ctx context.Context,
 	applicationID shared.ApplicationID,
@@ -215,7 +218,7 @@ func (repository *ApplicationReviewRepository) lockAdministrator(
 	err := repository.database.Collection(applicationsCollectionName).FindOneAndUpdate(
 		ctx,
 		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: expectedAdminID.String()}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "adminId", Value: expectedAdminID.String()}}}},
+		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 		options.FindOneAndUpdate().SetProjection(bson.D{{Key: "adminId", Value: 1}}).SetReturnDocument(options.Before),
 	).Decode(&document)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
