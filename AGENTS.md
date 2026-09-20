@@ -39,21 +39,21 @@ Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions 
 
 ## Current work package
 
-UC-APP-001 Domain, UseCase and MongoDB persistence are complete. The current
-work package implements only UC-APP-002 Domain and UseCase core:
+UC-APP-001 and the UC-APP-002 Domain/UseCase core are complete. The current
+work package completes UC-APP-002 persistence, Scope Catalog caching and the
+two startup configuration values required by these use cases:
 
 ```text
-ApplicationVersion value objects and initial DRAFT invariants
-CreateApplicationVersion orchestration and narrow ports
-Local requiredCapabilities validation, exact duplicate rejection and sorting
-ScopeCatalog port with deterministic fakes only in _test.go
-Domain and UseCase unit tests
+ApplicationVersion MongoDB mapper and atomic CreateDraft repository
+0002_application_version migration, validator and named indexes
+Real replica-set transaction and concurrency integration tests
+ScopeCatalog read-through cache with injected TTL, Clock and snapshot source
+Validated initial application quota and Scope Catalog TTL environment config
 ```
 
-Do not add the UC-APP-002 MongoDB repository/schema/migration, the Scope Catalog
-TTL/singleflight cache adapter, a real Auth client, Redis, Kratos, Proto,
-HTTP/gRPC, UC-APP-003+, Profile, Publication, Tester or Catalog queries in this
-work package. Test fakes must remain in `_test.go`. Do not add generic CRUD
+Do not add a real Auth client, Redis, RabbitMQ, Kratos, Proto, HTTP/gRPC,
+UC-APP-003+, Profile, Publication, Tester or Catalog queries in this work
+package. Test fakes must remain in `_test.go`. Do not add generic CRUD
 repositories.
 
 ## Code boundaries
@@ -77,6 +77,11 @@ Name directories by current business responsibility. Do not create global `biz`,
 Domain code must not import Kratos, MongoDB drivers, generated Proto packages, HTTP packages or deployment configuration. Domain entities must not carry BSON, JSON or Proto tags.
 
 UseCase code coordinates Domain and ports. Adapters perform external type conversion and technical error mapping. The composition root is the only place that knows concrete implementations.
+
+Environment variables are read only by `internal/config` or a future
+composition root. UseCases and adapters receive validated scalar values through
+constructors. Explicit invalid configuration must fail loading rather than fall
+back silently.
 
 ## Design discipline
 
