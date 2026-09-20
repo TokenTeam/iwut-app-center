@@ -14,47 +14,30 @@ Do not copy those documents into this repository. If that path is unavailable, s
 
 ## Required reading
 
-Before implementation work, read these files in order:
+Use the local-reading protocol in `../../docs/app-center/implements/README.md`.
+Before implementation work, read only:
 
 1. `../../docs/app-center/implements/README.md`
-2. `../../docs/app-center/implements/implementation-conventions.md`
-3. The UC named by the current task, including every referenced `BR-*`
-4. The ADRs referenced by the implementation entry point or current UC
+2. The exact UC/BR/ADR sections listed under the active work package below.
+3. Only the implementation-convention sections relevant to that package.
 
-For the current work package, also read:
-
-```text
-../../docs/app-center/domain-model.md
-../../docs/app-center/lifecycle-models.md
-../../docs/app-center/use-cases/UC-APP-002-create-application-version.md
-../../docs/app-center/use-cases/UC-APP-003-update-draft-application-version.md
-../../docs/app-center/use-cases/UC-APP-004-submit-application-version-review.md
-../../docs/app-center/adr/ADR-001-scope-catalog-cache.md
-../../docs/app-center/adr/ADR-003-go-package-and-dependency-boundaries.md
-../../docs/app-center/adr/ADR-004-mongodb-transactions-and-schema-management.md
-../../docs/app-center/adr/ADR-005-domain-errors-and-transport-mapping.md
-```
+Do not read the complete design registry, every UC, whole domain/lifecycle
+documents, or every referenced ADR by default. Expand the working set only
+when the active package contains a precise reference or implementation exposes
+a concrete conflict or missing definition.
 
 Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions are authoritative in `ADR-*`. This file does not override them.
 
 ## Current work package
 
-UC-APP-001 and the UC-APP-002 Domain/UseCase core are complete. The current
-work package completes UC-APP-002 persistence, Scope Catalog caching and the
-two startup configuration values required by these use cases:
+No implementation work package is currently active. UC-APP-001 and UC-APP-002
+are `ACCEPTED / CORE_COMPLETE`; their remaining Transport, composition and
+end-to-end work is tracked in the implementation entry point.
 
-```text
-ApplicationVersion MongoDB mapper and atomic CreateDraft repository
-0002_application_version migration, validator and named indexes
-Real replica-set transaction and concurrency integration tests
-ScopeCatalog read-through cache with injected TTL, Clock and snapshot source
-Validated initial application quota and Scope Catalog TTL environment config
-```
-
-Do not add a real Auth client, Redis, RabbitMQ, Kratos, Proto, HTTP/gRPC,
-UC-APP-003+, Profile, Publication, Tester or Catalog queries in this work
-package. Test fakes must remain in `_test.go`. Do not add generic CRUD
-repositories.
+Before the next implementation begins, replace this paragraph with a bounded
+package that lists: target UC, exact Required BR/ADR headings, code scope,
+explicit non-goals, and verification commands. Do not infer the next package
+from file order, recent commits, or the next UC number.
 
 ## Code boundaries
 
