@@ -3,12 +3,16 @@ package mongo
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"iwut-app-center/internal/application/domain"
+	"iwut-app-center/internal/shared"
+	versiondomain "iwut-app-center/internal/version/domain"
 )
 
 var errCorruptApplicationDocument = errors.New("corrupt application document")
+var errCorruptApplicationVersionDocument = errors.New("corrupt application version document")
 
 type applicationDocument struct {
 	ID                          string    `bson:"id"`
@@ -26,6 +30,25 @@ type applicationCreationQuotaDocument struct {
 	UsedCount int32     `bson:"usedCount"`
 	Revision  int64     `bson:"revision"`
 	UpdatedAt time.Time `bson:"updatedAt"`
+}
+
+type applicationVersionDocument struct {
+	VersionID                 string    `bson:"versionId"`
+	ApplicationID             string    `bson:"applicationId"`
+	Sequence                  int32     `bson:"sequence"`
+	VersionLabel              string    `bson:"versionLabel"`
+	LaunchURL                 string    `bson:"launchUrl"`
+	RPCApiMinVersion          int32     `bson:"rpcApiMinVersion"`
+	RPCApiMaxVersionExclusive int32     `bson:"rpcApiMaxVersionExclusive"`
+	RequiredCapabilities      []string  `bson:"requiredCapabilities"`
+	RequiredScopes            []string  `bson:"requiredScopes"`
+	OptionalScopes            []string  `bson:"optionalScopes"`
+	ReviewStatus              string    `bson:"reviewStatus"`
+	CreatedBy                 string    `bson:"createdBy"`
+	CreatedAt                 time.Time `bson:"createdAt"`
+	Revision                  int64     `bson:"revision"`
+	UpdatedBy                 string    `bson:"updatedBy"`
+	UpdatedAt                 time.Time `bson:"updatedAt"`
 }
 
 func applicationToDocument(application *domain.Application) (applicationDocument, error) {
@@ -68,4 +91,125 @@ func applicationFromDocument(document applicationDocument) (*domain.Application,
 		return nil, fmt.Errorf("%w: invalid application fields", errCorruptApplicationDocument)
 	}
 	return application, nil
+}
+
+func applicationVersionToDocument(
+	draft *versiondomain.DraftApplicationVersion,
+	sequence versiondomain.VersionSequence,
+) (applicationVersionDocument, error) {
+	version, err := versiondomain.NewApplicationVersion(draft, sequence)
+	if err != nil {
+		return applicationVersionDocument{}, fmt.Errorf("map application version document: %w", err)
+	}
+
+	return applicationVersionDocument{
+		VersionID:                 version.ID().String(),
+		ApplicationID:             version.ApplicationID().String(),
+		Sequence:                  version.Sequence().Int32(),
+		VersionLabel:              version.VersionLabel().String(),
+		LaunchURL:                 version.LaunchURL().String(),
+		RPCApiMinVersion:          version.RPCApiRange().Minimum(),
+		RPCApiMaxVersionExclusive: version.RPCApiRange().MaximumExclusive(),
+		RequiredCapabilities:      capabilityNamesToStrings(version.RequiredCapabilities()),
+		RequiredScopes:            scopeNamesToStrings(version.RequiredScopes()),
+		OptionalScopes:            scopeNamesToStrings(version.OptionalScopes()),
+		ReviewStatus:              string(version.ReviewStatus()),
+		CreatedBy:                 version.CreatedBy().String(),
+		CreatedAt:                 version.CreatedAt().UTC(),
+		Revision:                  version.Revision(),
+		UpdatedBy:                 version.UpdatedBy().String(),
+		UpdatedAt:                 version.UpdatedAt().UTC(),
+	}, nil
+}
+
+// applicationVersionFromDocument re-enters the Domain through its
+// constructors. Stored invalidity is adapter corruption and never caller
+// validation.
+func applicationVersionFromDocument(document applicationVersionDocument) (*versiondomain.ApplicationVersion, error) {
+	versionID := versiondomain.ApplicationVersionID(document.VersionID)
+	if !versionID.IsValid() {
+		return nil, corruptApplicationVersion("invalid version ID")
+	}
+	applicationID, ok := shared.ParseApplicationID(document.ApplicationID)
+	if !ok {
+		return nil, corruptApplicationVersion("invalid application ID")
+	}
+	sequence, err := versiondomain.NewVersionSequence(document.Sequence)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid sequence")
+	}
+	versionLabel, err := versiondomain.NewVersionLabel(document.VersionLabel)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid version label")
+	}
+	launchURL, err := versiondomain.NewLaunchURL(document.LaunchURL)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid launch URL")
+	}
+	rpcAPIRange, err := versiondomain.NewRPCApiRange(document.RPCApiMinVersion, document.RPCApiMaxVersionExclusive)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid RPC API range")
+	}
+	if document.RequiredCapabilities == nil || document.RequiredScopes == nil || document.OptionalScopes == nil {
+		return nil, corruptApplicationVersion("null set field")
+	}
+	requiredCapabilities, err := versiondomain.NewCapabilitySet(document.RequiredCapabilities)
+	if err != nil || !slices.Equal(requiredCapabilities.Strings(), document.RequiredCapabilities) {
+		return nil, corruptApplicationVersion("invalid required capabilities")
+	}
+	scopeRequest, err := versiondomain.NewScopeRequest(document.RequiredScopes, document.OptionalScopes)
+	if err != nil ||
+		!slices.Equal(scopeNamesToStrings(scopeRequest.Required()), document.RequiredScopes) ||
+		!slices.Equal(scopeNamesToStrings(scopeRequest.Optional()), document.OptionalScopes) {
+		return nil, corruptApplicationVersion("invalid scope request")
+	}
+	createdBy := shared.AuthID(document.CreatedBy)
+	if !createdBy.IsValid() {
+		return nil, corruptApplicationVersion("invalid created-by identity")
+	}
+	if document.ReviewStatus != string(versiondomain.ReviewStatusDraft) ||
+		document.Revision != 1 || document.UpdatedBy != document.CreatedBy ||
+		!document.UpdatedAt.Equal(document.CreatedAt) {
+		return nil, corruptApplicationVersion("invalid initial lifecycle or audit fields")
+	}
+
+	draft, err := versiondomain.NewDraftApplicationVersion(
+		versionID,
+		applicationID,
+		versionLabel,
+		launchURL,
+		rpcAPIRange,
+		requiredCapabilities,
+		scopeRequest,
+		createdBy,
+		document.CreatedAt,
+	)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid draft fields")
+	}
+	version, err := versiondomain.NewApplicationVersion(draft, sequence)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid application version")
+	}
+	return version, nil
+}
+
+func corruptApplicationVersion(reason string) error {
+	return fmt.Errorf("%w: %s", errCorruptApplicationVersionDocument, reason)
+}
+
+func capabilityNamesToStrings(values []versiondomain.CapabilityName) []string {
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = string(value)
+	}
+	return result
+}
+
+func scopeNamesToStrings(values []versiondomain.ScopeName) []string {
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = string(value)
+	}
+	return result
 }

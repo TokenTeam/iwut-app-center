@@ -268,12 +268,43 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 1)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 2)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
 	assertIndexNames(t, database.Collection(applicationCreationQuotasCollectionName), []string{
 		"_id_", applicationQuotaAdminIDUniqueIndexName,
+	})
+	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
+		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
+		applicationVersionLabelUniqueIndexName,
+	})
+}
+
+func TestMigratorIntegration_UpgradesExisting0001DatabaseTo0002(t *testing.T) {
+	client := integrationClient(t)
+	database := integrationDatabase(t, client)
+	migrator := NewMigrator(database)
+	if err := migrator.ensureMigrationLedger(t.Context()); err != nil {
+		t.Fatalf("create migration ledger: %v", err)
+	}
+	if err := migrator.applyMigration(t.Context(), applicationCreationMigrationID, migrator.applyApplicationCreationMigration); err != nil {
+		t.Fatalf("apply 0001: %v", err)
+	}
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 1)
+	if names, err := database.ListCollectionNames(t.Context(), bson.D{{Key: "name", Value: applicationVersionsCollectionName}}); err != nil {
+		t.Fatalf("list collections before 0002: %v", err)
+	} else if len(names) != 0 {
+		t.Fatalf("application_versions exists before 0002: %v", names)
+	}
+
+	if err := migrator.Migrate(t.Context()); err != nil {
+		t.Fatalf("upgrade to 0002: %v", err)
+	}
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 2)
+	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
+		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
+		applicationVersionLabelUniqueIndexName,
 	})
 }
 

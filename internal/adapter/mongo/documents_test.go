@@ -2,10 +2,13 @@ package mongo
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	"iwut-app-center/internal/application/domain"
+	"iwut-app-center/internal/shared"
+	versiondomain "iwut-app-center/internal/version/domain"
 )
 
 func TestApplicationDocumentMapper_BRAPP001_BRAPP003_BRAPP007(t *testing.T) {
@@ -48,6 +51,150 @@ func TestApplicationDocumentMapper_BRAPP001_BRAPP003_BRAPP007(t *testing.T) {
 	if restored.ID() != id || restored.Name().String() != "Course_App" || restored.AdminID() != adminID {
 		t.Fatalf("restored application does not match source")
 	}
+}
+
+func TestApplicationVersionDocumentMapper_BRVER001_BRVER006_BRVER007_BRVER009(t *testing.T) {
+	draft := mapperDraftApplicationVersion(t)
+	sequence, err := versiondomain.NewVersionSequence(7)
+	if err != nil {
+		t.Fatalf("create sequence: %v", err)
+	}
+
+	document, err := applicationVersionToDocument(draft, sequence)
+	if err != nil {
+		t.Fatalf("map application version to document: %v", err)
+	}
+	if document.Sequence != 7 || document.ReviewStatus != "DRAFT" || document.Revision != 1 {
+		t.Fatalf("sequence/status/revision = %d/%q/%d, want 7/DRAFT/1", document.Sequence, document.ReviewStatus, document.Revision)
+	}
+	if !reflect.DeepEqual(document.RequiredCapabilities, []string{"camera.read.v1", "user.profile.v2"}) ||
+		!reflect.DeepEqual(document.RequiredScopes, []string{"profile.basic", "schedule.read"}) ||
+		!reflect.DeepEqual(document.OptionalScopes, []string{"email.read"}) {
+		t.Fatalf("stored sets are not canonical: capabilities=%v required=%v optional=%v", document.RequiredCapabilities, document.RequiredScopes, document.OptionalScopes)
+	}
+	if document.RequiredCapabilities == nil || document.RequiredScopes == nil || document.OptionalScopes == nil {
+		t.Fatal("stored set fields must be non-nil arrays")
+	}
+	if document.CreatedBy != document.UpdatedBy || !document.CreatedAt.Equal(document.UpdatedAt) {
+		t.Fatal("creation and update audit fields differ")
+	}
+
+	restored, err := applicationVersionFromDocument(document)
+	if err != nil {
+		t.Fatalf("restore application version document: %v", err)
+	}
+	if restored.ID() != draft.ID() || restored.ApplicationID() != draft.ApplicationID() || restored.Sequence() != sequence ||
+		restored.VersionLabel() != draft.VersionLabel() || restored.CreatedBy() != draft.CreatedBy() {
+		t.Fatalf("restored version does not match source: %#v", restored)
+	}
+}
+
+func TestApplicationVersionDocumentMapper_StoredValidationFailureIsCorruption(t *testing.T) {
+	draft := mapperDraftApplicationVersion(t)
+	sequence, err := versiondomain.NewVersionSequence(1)
+	if err != nil {
+		t.Fatalf("create sequence: %v", err)
+	}
+	valid, err := applicationVersionToDocument(draft, sequence)
+	if err != nil {
+		t.Fatalf("map valid document: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*applicationVersionDocument)
+	}{
+		{name: "invalid version ID", mutate: func(document *applicationVersionDocument) { document.VersionID = "not-a-uuid" }},
+		{name: "invalid application ID", mutate: func(document *applicationVersionDocument) { document.ApplicationID = "not-a-uuid" }},
+		{name: "invalid sequence", mutate: func(document *applicationVersionDocument) { document.Sequence = 0 }},
+		{name: "invalid version label", mutate: func(document *applicationVersionDocument) { document.VersionLabel = " bad" }},
+		{name: "invalid launch URL", mutate: func(document *applicationVersionDocument) { document.LaunchURL = "file:///tmp/app" }},
+		{name: "invalid RPC range", mutate: func(document *applicationVersionDocument) {
+			document.RPCApiMaxVersionExclusive = document.RPCApiMinVersion
+		}},
+		{name: "null capability array", mutate: func(document *applicationVersionDocument) { document.RequiredCapabilities = nil }},
+		{name: "null required scope array", mutate: func(document *applicationVersionDocument) { document.RequiredScopes = nil }},
+		{name: "null optional scope array", mutate: func(document *applicationVersionDocument) { document.OptionalScopes = nil }},
+		{name: "duplicate capability", mutate: func(document *applicationVersionDocument) {
+			document.RequiredCapabilities = []string{"camera.read.v1", "camera.read.v1"}
+		}},
+		{name: "unsorted capabilities", mutate: func(document *applicationVersionDocument) {
+			document.RequiredCapabilities = []string{"user.profile.v2", "camera.read.v1"}
+		}},
+		{name: "crossed scope", mutate: func(document *applicationVersionDocument) { document.OptionalScopes = []string{"profile.basic"} }},
+		{name: "unsorted scope", mutate: func(document *applicationVersionDocument) {
+			document.RequiredScopes = []string{"schedule.read", "profile.basic"}
+		}},
+		{name: "empty created by", mutate: func(document *applicationVersionDocument) { document.CreatedBy = "" }},
+		{name: "wrong status", mutate: func(document *applicationVersionDocument) { document.ReviewStatus = "SUBMITTED" }},
+		{name: "wrong revision", mutate: func(document *applicationVersionDocument) { document.Revision = 2 }},
+		{name: "different updated by", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "auth-other" }},
+		{name: "different updated at", mutate: func(document *applicationVersionDocument) { document.UpdatedAt = document.UpdatedAt.Add(time.Second) }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			document := valid
+			document.RequiredCapabilities = append([]string(nil), valid.RequiredCapabilities...)
+			document.RequiredScopes = append([]string(nil), valid.RequiredScopes...)
+			document.OptionalScopes = append([]string(nil), valid.OptionalScopes...)
+			test.mutate(&document)
+			_, err := applicationVersionFromDocument(document)
+			if !errors.Is(err, errCorruptApplicationVersionDocument) {
+				t.Fatalf("error = %v, want stored application-version corruption", err)
+			}
+			if errors.Is(err, versiondomain.ErrInvalidVersionLabel) ||
+				errors.Is(err, versiondomain.ErrInvalidApplicationLaunchURL) ||
+				errors.Is(err, versiondomain.ErrInvalidRPCApiRange) ||
+				errors.Is(err, versiondomain.ErrInvalidRequiredCapability) ||
+				errors.Is(err, versiondomain.ErrInvalidApplicationScope) {
+				t.Fatalf("storage corruption leaked caller validation: %v", err)
+			}
+		})
+	}
+}
+
+func mapperDraftApplicationVersion(t *testing.T) *versiondomain.DraftApplicationVersion {
+	t.Helper()
+	applicationID, ok := shared.ParseApplicationID("01890f47-0000-7000-8000-000000000101")
+	if !ok {
+		t.Fatal("parse application ID")
+	}
+	label, err := versiondomain.NewVersionLabel("v1.0.0")
+	if err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	launchURL, err := versiondomain.NewLaunchURL("https://example.edu/app")
+	if err != nil {
+		t.Fatalf("create launch URL: %v", err)
+	}
+	rpcRange, err := versiondomain.NewRPCApiRange(2, 4)
+	if err != nil {
+		t.Fatalf("create RPC range: %v", err)
+	}
+	capabilities, err := versiondomain.NewCapabilitySet([]string{"user.profile.v2", "camera.read.v1"})
+	if err != nil {
+		t.Fatalf("create capabilities: %v", err)
+	}
+	scopes, err := versiondomain.NewScopeRequest([]string{"schedule.read", "profile.basic"}, []string{"email.read"})
+	if err != nil {
+		t.Fatalf("create scopes: %v", err)
+	}
+	draft, err := versiondomain.NewDraftApplicationVersion(
+		versiondomain.ApplicationVersionID("01890f47-0000-7000-8000-000000000201"),
+		applicationID,
+		label,
+		launchURL,
+		rpcRange,
+		capabilities,
+		scopes,
+		shared.AuthID("auth-version-mapper"),
+		time.Date(2026, time.September, 20, 1, 2, 3, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+	return draft
 }
 
 func TestApplicationDocumentMapper_StoredValidationFailureIsCorruption(t *testing.T) {

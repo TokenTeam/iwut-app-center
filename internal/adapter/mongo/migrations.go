@@ -12,11 +12,15 @@ import (
 )
 
 const (
-	migrationLedgerCollectionName          = "app_center_schema_migrations"
-	applicationCreationMigrationID         = "0001_application_creation"
-	applicationIDUniqueIndexName           = "uq_applications_id"
-	applicationAdminNameUniqueIndexName    = "uq_applications_admin_id_name_key"
-	applicationQuotaAdminIDUniqueIndexName = "uq_application_creation_quotas_admin_id"
+	migrationLedgerCollectionName             = "app_center_schema_migrations"
+	applicationCreationMigrationID            = "0001_application_creation"
+	applicationIDUniqueIndexName              = "uq_applications_id"
+	applicationAdminNameUniqueIndexName       = "uq_applications_admin_id_name_key"
+	applicationQuotaAdminIDUniqueIndexName    = "uq_application_creation_quotas_admin_id"
+	applicationVersionMigrationID             = "0002_application_version"
+	applicationVersionIDUniqueIndexName       = "uq_application_versions_version_id"
+	applicationVersionSequenceUniqueIndexName = "uq_application_versions_application_id_sequence"
+	applicationVersionLabelUniqueIndexName    = "uq_application_versions_application_id_version_label"
 )
 
 type migrationRecord struct {
@@ -43,30 +47,39 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		return err
 	}
 
+	migrations := []struct {
+		id    string
+		apply func(context.Context) error
+	}{
+		{id: applicationCreationMigrationID, apply: migrator.applyApplicationCreationMigration},
+		{id: applicationVersionMigrationID, apply: migrator.applyApplicationVersionMigration},
+	}
+	for _, migration := range migrations {
+		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (migrator *Migrator) applyMigration(ctx context.Context, id string, apply func(context.Context) error) error {
 	ledger := migrator.database.Collection(migrationLedgerCollectionName)
-	err := ledger.FindOne(ctx, bson.D{{Key: "_id", Value: applicationCreationMigrationID}}).Err()
+	err := ledger.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Err()
 	switch {
 	case err == nil:
 		return nil
 	case !errors.Is(err, drivermongo.ErrNoDocuments):
-		return fmt.Errorf("read migration ledger: %w", err)
+		return fmt.Errorf("read migration ledger for %s: %w", id, err)
 	}
 
-	if err := migrator.applyApplicationCreationMigration(ctx); err != nil {
-		return fmt.Errorf("apply migration %s: %w", applicationCreationMigrationID, err)
+	if err := apply(ctx); err != nil {
+		return fmt.Errorf("apply migration %s: %w", id, err)
 	}
-
-	_, err = ledger.InsertOne(ctx, migrationRecord{
-		ID:        applicationCreationMigrationID,
-		AppliedAt: time.Now().UTC(),
-	})
-	if err != nil {
-		if drivermongo.IsDuplicateKeyError(err) {
-			return nil
-		}
-		return fmt.Errorf("record migration %s: %w", applicationCreationMigrationID, err)
+	_, err = ledger.InsertOne(ctx, migrationRecord{ID: id, AppliedAt: time.Now().UTC()})
+	if err == nil || drivermongo.IsDuplicateKeyError(err) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("record migration %s: %w", id, err)
 }
 
 func (migrator *Migrator) ensureMigrationLedger(ctx context.Context) error {
@@ -110,6 +123,41 @@ func (migrator *Migrator) applyApplicationCreationMigration(ctx context.Context)
 	})
 	if err != nil {
 		return fmt.Errorf("create application quota index: %w", err)
+	}
+	return nil
+}
+
+func (migrator *Migrator) applyApplicationVersionMigration(ctx context.Context) error {
+	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionValidator()); err != nil {
+		return err
+	}
+
+	versions := migrator.database.Collection(applicationVersionsCollectionName)
+	_, err := versions.Indexes().CreateMany(ctx, []drivermongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "versionId", Value: 1}},
+			Options: options.Index().SetName(applicationVersionIDUniqueIndexName).SetUnique(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "applicationId", Value: 1},
+				{Key: "sequence", Value: 1},
+			},
+			Options: options.Index().SetName(applicationVersionSequenceUniqueIndexName).SetUnique(true),
+		},
+		{
+			Keys: bson.D{
+				{Key: "applicationId", Value: 1},
+				{Key: "versionLabel", Value: 1},
+			},
+			Options: options.Index().
+				SetName(applicationVersionLabelUniqueIndexName).
+				SetUnique(true).
+				SetCollation(&options.Collation{Locale: "simple"}),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create application version indexes: %w", err)
 	}
 	return nil
 }
@@ -218,4 +266,97 @@ func applicationCreationQuotaValidator() bson.D {
 		}}},
 		bson.D{{Key: "$expr", Value: bson.D{{Key: "$lte", Value: bson.A{"$usedCount", "$limit"}}}}},
 	}}}
+}
+
+// applicationVersionValidator is a storage-level defense in depth. It enforces
+// facts MongoDB can express reliably (shape, byte limits, set relationships,
+// RPC ordering, and initial lifecycle/audit equality). Full URL address-class
+// and Unicode domain validation remains in version/domain and in the document
+// mapper; this schema is not a replacement for those constructors.
+func applicationVersionValidator() bson.D {
+	return bson.D{{Key: "$and", Value: bson.A{
+		bson.D{{Key: "$jsonSchema", Value: bson.D{
+			{Key: "bsonType", Value: "object"},
+			{Key: "required", Value: bson.A{
+				"versionId", "applicationId", "sequence", "versionLabel", "launchUrl",
+				"rpcApiMinVersion", "rpcApiMaxVersionExclusive", "requiredCapabilities",
+				"requiredScopes", "optionalScopes", "reviewStatus", "createdBy", "createdAt",
+				"revision", "updatedBy", "updatedAt",
+			}},
+			{Key: "additionalProperties", Value: false},
+			{Key: "properties", Value: bson.D{
+				{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
+				{Key: "versionId", Value: uuidV7Schema()},
+				{Key: "applicationId", Value: uuidV7Schema()},
+				{Key: "sequence", Value: bson.D{
+					{Key: "bsonType", Value: "int"},
+					{Key: "minimum", Value: int32(1)},
+				}},
+				{Key: "versionLabel", Value: bson.D{
+					{Key: "bsonType", Value: "string"},
+					{Key: "minLength", Value: 1},
+					{Key: "maxLength", Value: 50},
+					{Key: "pattern", Value: "^[^\\x00-\\x1F\\x7F\\s](?:[^\\x00-\\x1F\\x7F]*[^\\x00-\\x1F\\x7F\\s])?$"},
+				}},
+				{Key: "launchUrl", Value: bson.D{
+					{Key: "bsonType", Value: "string"},
+					{Key: "minLength", Value: 1},
+					{Key: "pattern", Value: "^https?://"},
+				}},
+				{Key: "rpcApiMinVersion", Value: bson.D{
+					{Key: "bsonType", Value: "int"},
+					{Key: "minimum", Value: int32(1)},
+				}},
+				{Key: "rpcApiMaxVersionExclusive", Value: bson.D{{Key: "bsonType", Value: "int"}}},
+				{Key: "requiredCapabilities", Value: stringSetSchema("^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)*\\.v[1-9][0-9]*$")},
+				{Key: "requiredScopes", Value: stringSetSchema("")},
+				{Key: "optionalScopes", Value: stringSetSchema("")},
+				{Key: "reviewStatus", Value: bson.D{
+					{Key: "bsonType", Value: "string"},
+					{Key: "enum", Value: bson.A{"DRAFT"}},
+				}},
+				{Key: "createdBy", Value: nonEmptyStringSchema()},
+				{Key: "createdAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+				{Key: "revision", Value: bson.D{
+					{Key: "bsonType", Value: "long"},
+					{Key: "enum", Value: bson.A{int64(1)}},
+				}},
+				{Key: "updatedBy", Value: nonEmptyStringSchema()},
+				{Key: "updatedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+			}},
+		}}},
+		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$gt", Value: bson.A{"$rpcApiMaxVersionExclusive", "$rpcApiMinVersion"}}},
+			bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$launchUrl"}}, 2048}}},
+			bson.D{{Key: "$eq", Value: bson.A{
+				bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$requiredScopes", "$optionalScopes"}}}}},
+				0,
+			}}},
+			bson.D{{Key: "$eq", Value: bson.A{"$createdBy", "$updatedBy"}}},
+			bson.D{{Key: "$eq", Value: bson.A{"$createdAt", "$updatedAt"}}},
+		}}}}},
+	}}}
+}
+
+func uuidV7Schema() bson.D {
+	return bson.D{
+		{Key: "bsonType", Value: "string"},
+		{Key: "pattern", Value: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"},
+	}
+}
+
+func nonEmptyStringSchema() bson.D {
+	return bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}}
+}
+
+func stringSetSchema(pattern string) bson.D {
+	itemSchema := bson.D{{Key: "bsonType", Value: "string"}}
+	if pattern != "" {
+		itemSchema = append(itemSchema, bson.E{Key: "pattern", Value: pattern})
+	}
+	return bson.D{
+		{Key: "bsonType", Value: "array"},
+		{Key: "uniqueItems", Value: true},
+		{Key: "items", Value: itemSchema},
+	}
 }
