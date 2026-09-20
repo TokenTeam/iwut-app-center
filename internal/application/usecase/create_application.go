@@ -25,20 +25,23 @@ type CreateApplicationCommand struct {
 }
 
 type CreateApplicationHandler struct {
-	idGenerator port.ApplicationIDGenerator
-	clock       port.Clock
-	repository  port.ApplicationRepository
+	idGenerator  port.ApplicationIDGenerator
+	clock        port.Clock
+	repository   port.ApplicationRepository
+	initialLimit int32
 }
 
 func NewCreateApplicationHandler(
 	idGenerator port.ApplicationIDGenerator,
 	clock port.Clock,
 	repository port.ApplicationRepository,
+	initialLimit int32,
 ) *CreateApplicationHandler {
 	return &CreateApplicationHandler{
-		idGenerator: idGenerator,
-		clock:       clock,
-		repository:  repository,
+		idGenerator:  idGenerator,
+		clock:        clock,
+		repository:   repository,
+		initialLimit: initialLimit,
 	}
 }
 
@@ -59,7 +62,7 @@ func (handler *CreateApplicationHandler) Handle(
 		return nil, err
 	}
 
-	if handler == nil || handler.idGenerator == nil || handler.clock == nil || handler.repository == nil {
+	if handler == nil || handler.idGenerator == nil || handler.clock == nil || handler.repository == nil || handler.initialLimit < 0 {
 		return nil, domain.NewInternalError(nil)
 	}
 
@@ -73,7 +76,7 @@ func (handler *CreateApplicationHandler) Handle(
 		return nil, domain.NewInternalError(err)
 	}
 
-	err = handler.repository.CreateWithinQuota(ctx, application, domain.InitialDeveloperApplicationQuotaLimit)
+	err = handler.repository.CreateWithinQuota(ctx, application, handler.initialLimit)
 	if err != nil {
 		switch {
 		case errors.Is(err, port.ErrApplicationNameAlreadyExists):

@@ -72,7 +72,7 @@ func TestCreateApplication_BR_APP_001_002_003_005_006_007_Success(t *testing.T) 
 	idGenerator := &fakeIDGenerator{events: &events, id: generatedApplicationID}
 	clock := &fakeClock{events: &events, now: generatedAt}
 	repository := &fakeApplicationRepository{events: &events}
-	handler := NewCreateApplicationHandler(idGenerator, clock, repository)
+	handler := NewCreateApplicationHandler(idGenerator, clock, repository, 27)
 
 	application, err := handler.Handle(
 		context.Background(),
@@ -98,8 +98,8 @@ func TestCreateApplication_BR_APP_001_002_003_005_006_007_Success(t *testing.T) 
 	if !application.CreatedAt().Equal(generatedAt) || application.CreatedAt().Location() != time.UTC {
 		t.Fatalf("CreatedAt() = %v, want generated instant in UTC", application.CreatedAt())
 	}
-	if repository.application != application || repository.initialLimit != domain.InitialDeveloperApplicationQuotaLimit || repository.calls != 1 {
-		t.Fatalf("repository call = (%p, %d, %d), want application, initial limit 10, exactly one call", repository.application, repository.initialLimit, repository.calls)
+	if repository.application != application || repository.initialLimit != 27 || repository.calls != 1 {
+		t.Fatalf("repository call = (%p, %d, %d), want application, configured initial limit 27, exactly one call", repository.application, repository.initialLimit, repository.calls)
 	}
 	if want := []string{"id", "clock", "repository"}; !reflect.DeepEqual(events, want) {
 		t.Fatalf("dependency order = %v, want %v", events, want)
@@ -128,7 +128,7 @@ func TestCreateApplication_BR_APP_002_OnlyApprovedDevelopersCanCreate(t *testing
 			idGenerator := &fakeIDGenerator{id: generatedApplicationID}
 			clock := &fakeClock{now: time.Now()}
 			repository := &fakeApplicationRepository{}
-			handler := NewCreateApplicationHandler(idGenerator, clock, repository)
+			handler := NewCreateApplicationHandler(idGenerator, clock, repository, domain.InitialDeveloperApplicationQuotaLimit)
 
 			application, err := handler.Handle(context.Background(), testCase.identity, CreateApplicationCommand{Name: "app"})
 			if application != nil || !errors.Is(err, testCase.want) {
@@ -147,7 +147,7 @@ func TestCreateApplication_BR_APP_003_InvalidNameStopsBeforeDependencies(t *test
 	idGenerator := &fakeIDGenerator{id: generatedApplicationID}
 	clock := &fakeClock{now: time.Now()}
 	repository := &fakeApplicationRepository{}
-	handler := NewCreateApplicationHandler(idGenerator, clock, repository)
+	handler := NewCreateApplicationHandler(idGenerator, clock, repository, domain.InitialDeveloperApplicationQuotaLimit)
 
 	application, err := handler.Handle(
 		context.Background(),
@@ -193,6 +193,7 @@ func TestCreateApplication_BR_APP_005_006_RepositoryOutcomesMapToBusinessErrors(
 				&fakeIDGenerator{id: generatedApplicationID},
 				&fakeClock{now: time.Now()},
 				repository,
+				domain.InitialDeveloperApplicationQuotaLimit,
 			)
 
 			application, err := handler.Handle(
@@ -244,6 +245,7 @@ func TestCreateApplication_BR_APP_001_005_006_DependencyFailuresReturnNoPartialR
 				testCase.idGenerator,
 				&fakeClock{now: time.Now()},
 				testCase.repository,
+				domain.InitialDeveloperApplicationQuotaLimit,
 			)
 			application, err := handler.Handle(
 				context.Background(),
@@ -269,6 +271,7 @@ func TestCreateApplication_BR_APP_001_InvalidGeneratedIDIsInternalFailure(t *tes
 		&fakeIDGenerator{id: "not-a-uuid"},
 		&fakeClock{now: time.Now()},
 		repository,
+		domain.InitialDeveloperApplicationQuotaLimit,
 	)
 
 	application, err := handler.Handle(
@@ -293,6 +296,7 @@ func TestCreateApplication_BR_APP_001_007_InvalidClockValueIsInternalFailure(t *
 		&fakeIDGenerator{id: generatedApplicationID},
 		clock,
 		repository,
+		domain.InitialDeveloperApplicationQuotaLimit,
 	)
 
 	application, err := handler.Handle(
@@ -329,9 +333,10 @@ func TestCreateApplication_NilDependenciesReturnInternalFailure(t *testing.T) {
 		handler *CreateApplicationHandler
 	}{
 		{name: "nil handler"},
-		{name: "nil ID generator", handler: NewCreateApplicationHandler(nil, validClock(), validRepository())},
-		{name: "nil clock", handler: NewCreateApplicationHandler(validIDGenerator(), nil, validRepository())},
-		{name: "nil repository", handler: NewCreateApplicationHandler(validIDGenerator(), validClock(), nil)},
+		{name: "nil ID generator", handler: NewCreateApplicationHandler(nil, validClock(), validRepository(), domain.InitialDeveloperApplicationQuotaLimit)},
+		{name: "nil clock", handler: NewCreateApplicationHandler(validIDGenerator(), nil, validRepository(), domain.InitialDeveloperApplicationQuotaLimit)},
+		{name: "nil repository", handler: NewCreateApplicationHandler(validIDGenerator(), validClock(), nil, domain.InitialDeveloperApplicationQuotaLimit)},
+		{name: "negative configured initial quota", handler: NewCreateApplicationHandler(validIDGenerator(), validClock(), validRepository(), -1)},
 	}
 
 	for _, testCase := range testCases {
