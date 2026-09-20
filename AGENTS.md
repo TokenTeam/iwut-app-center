@@ -30,33 +30,17 @@ Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions 
 
 ## Current work package
 
-Integrate and repair UC-APP-003 and UC-APP-004 as one bounded package.
+No implementation work package is currently active. UC-APP-001 and UC-APP-002
+are `ACCEPTED / CORE_COMPLETE`. UC-APP-003 and UC-APP-004 now have working
+Domain, UseCase, MongoDB repository, explicit migration (0003 and 0004) and
+real replica-set integration coverage; their external design/implementation
+registration and the remaining Transport, composition-root and end-to-end work
+are tracked in the implementation entry point.
 
-Required design sections:
-
-- `UC-APP-003`: Goal and scope; Editable and immutable fields; Input and
-  identity; Main flow; Exceptional flows; BR-VER-010 through BR-VER-017; Use
-  case ports; Data model changes; Tests and acceptance.
-- `UC-APP-004`: Goal and scope; Submission result; Input and identity; Main
-  flow; Exceptional flows; BR-REV-001 through BR-REV-009; Minimal domain model;
-  Use case ports; Data model; Tests and acceptance.
-- `UC-APP-002`: BR-VER-003 through BR-VER-009 for reused candidate and snapshot
-  field validation.
-- `ADR-001`: Decision and consistency/failure behavior for Scope Catalog.
-- `ADR-003`: Decision, Port ownership and automated constraints.
-- `ADR-004`: Transaction boundary, retry and schema migration rules.
-- `ADR-005`: Domain error classification and adapter mapping rules.
-
-Code scope: UC-APP-003 draft replacement, UC-APP-004 review submission,
-MongoDB atomic authorization fences, the explicit immutable migration chain up
-to 0004, and Domain/UseCase plus real replica-set integration tests.
-
-Non-goals: API/Proto/HTTP transport, real Auth or URL-check transports,
-UC-APP-005 or later lifecycle transitions, generic CRUD repositories, and
-unrelated refactors.
-
-Verification: `gofmt`, `go vet ./...`, `go test ./...`, `go test -race ./...`,
-and `./scripts/test-mongo-integration.sh -race -count=1`.
+Before the next implementation begins, replace this paragraph with a bounded
+package that lists: target UC, exact Required BR/ADR headings, code scope,
+explicit non-goals, and verification commands. Do not infer the next package
+from file order, recent commits, or the next UC number.
 
 ## Code boundaries
 
