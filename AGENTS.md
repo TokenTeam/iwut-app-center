@@ -66,6 +66,11 @@ composition root. UseCases and adapters receive validated scalar values through
 constructors. Explicit invalid configuration must fail loading rather than fall
 back silently.
 
+The root `architecture_test.go` enforces these package and import boundaries as
+part of `go test ./...`. A boundary change requires an accepted ADR update and
+the corresponding architecture-test change in the same commit. Do not skip,
+weaken or relocate the test to make a dependency pass.
+
 ## Design discipline
 
 - Implement only the active work package; do not prebuild abstractions for future UCs.
@@ -94,10 +99,8 @@ back silently.
 - Do not use sleeps to coordinate concurrency tests.
 - `go test ./...` is the minimum verification once a Go module exists.
 - Use `go test -race ./...` for code that introduces meaningful in-process concurrency.
-- MongoDB transaction and index behavior belongs to later integration-test work and cannot be proven with an in-memory fake.
-- Run `./scripts/test-mongo-integration.sh` for the current MongoDB work package;
-  it starts and removes an isolated transaction-capable replica set. Plain
-  `go test ./...` skips these tests when `MONGODB_INTEGRATION_URI` is absent.
+- MongoDB transaction and index behavior cannot be proven with an in-memory fake.
+- Run `./scripts/test-mongo-integration.sh` whenever a work package changes MongoDB transactions, migrations, validators, indexes or repository concurrency. The script starts and removes an isolated transaction-capable replica set; plain `go test ./...` skips these tests when `MONGODB_INTEGRATION_URI` is absent.
 
 ## Generated code and secrets
 
@@ -136,6 +139,6 @@ Before declaring work complete:
 
 1. Re-read the target UC acceptance section and referenced BRs.
 2. Confirm no future capability entered the current package unintentionally.
-3. Run formatting, static checks available in the repository and all relevant tests.
+3. Run formatting, static checks available in the repository and all relevant tests; `go test ./...` must include the root architecture guard.
 4. Report which BRs are covered and any remaining test obligation.
 5. Keep design changes in the external authoritative document tree; do not create a repository-local copy.
