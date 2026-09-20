@@ -11,6 +11,7 @@ trap cleanup EXIT
 
 docker run --detach --rm \
   --name "${container_name}" \
+  --ulimit nofile=65536:65536 \
   --publish "127.0.0.1:${mongo_port}:${mongo_port}" \
   mongo:8.2.12 \
   mongod --replSet rs0 --bind_ip_all --port "${mongo_port}" >/dev/null
