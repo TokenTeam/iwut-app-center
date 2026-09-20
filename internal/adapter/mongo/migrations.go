@@ -22,6 +22,12 @@ const (
 	applicationVersionIDUniqueIndexName       = "uq_application_versions_version_id"
 	applicationVersionSequenceUniqueIndexName = "uq_application_versions_application_id_sequence"
 	applicationVersionLabelUniqueIndexName    = "uq_application_versions_application_id_version_label"
+	applicationReviewMigrationID              = "0004_application_review_submission"
+	applicationReviewIDUniqueIndexName        = "uq_application_reviews_review_id"
+	applicationReviewAttemptUniqueIndexName   = "uq_application_reviews_version_id_attempt"
+	applicationReviewSourceUniqueIndexName    = "uq_application_reviews_version_id_source_revision"
+	applicationReviewPendingUniqueIndexName   = "uq_application_reviews_pending_version_id"
+	applicationReviewQueueIndexName           = "ix_application_reviews_status_submitted_at_review_id"
 )
 
 type migrationRecord struct {
@@ -55,6 +61,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationCreationMigrationID, apply: migrator.applyApplicationCreationMigration},
 		{id: applicationVersionMigrationID, apply: migrator.applyApplicationVersionMigration},
 		{id: applicationVersionDraftUpdateMigrationID, apply: migrator.applyApplicationVersionDraftUpdateMigration},
+		{id: applicationReviewMigrationID, apply: migrator.applyApplicationReviewMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -194,6 +201,49 @@ func (migrator *Migrator) backfillApplicationCoordinationRevision(ctx context.Co
 	)
 	if err != nil {
 		return fmt.Errorf("backfill application coordination revision: %w", err)
+	}
+	return nil
+}
+
+func (migrator *Migrator) applyApplicationReviewMigration(ctx context.Context) error {
+	// UC-APP-004 changes the Version validator because a successful submission
+	// stores SUBMITTED, increments revision and updates the modification audit.
+	// It is the only stage allowed to add SUBMITTED to the lifecycle enum.
+	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionValidator()); err != nil {
+		return err
+	}
+	if err := migrator.ensureValidatedCollection(ctx, applicationReviewsCollectionName, applicationReviewValidator()); err != nil {
+		return err
+	}
+
+	reviews := migrator.database.Collection(applicationReviewsCollectionName)
+	_, err := reviews.Indexes().CreateMany(ctx, []drivermongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "reviewId", Value: 1}},
+			Options: options.Index().SetName(applicationReviewIDUniqueIndexName).SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "versionId", Value: 1}, {Key: "attempt", Value: 1}},
+			Options: options.Index().SetName(applicationReviewAttemptUniqueIndexName).SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "versionId", Value: 1}, {Key: "sourceVersionRevision", Value: 1}},
+			Options: options.Index().SetName(applicationReviewSourceUniqueIndexName).SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "versionId", Value: 1}},
+			Options: options.Index().
+				SetName(applicationReviewPendingUniqueIndexName).
+				SetUnique(true).
+				SetPartialFilterExpression(bson.D{{Key: "status", Value: "PENDING"}}),
+		},
+		{
+			Keys:    bson.D{{Key: "status", Value: 1}, {Key: "submittedAt", Value: 1}, {Key: "reviewId", Value: 1}},
+			Options: options.Index().SetName(applicationReviewQueueIndexName),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create application review indexes: %w", err)
 	}
 	return nil
 }
@@ -349,6 +399,13 @@ func applicationVersionDraftValidator() bson.D {
 	return applicationVersionValidatorForLifecycle(bson.A{"DRAFT"}, false)
 }
 
+// applicationVersionValidator is the 0004 schema. It adds SUBMITTED, the only
+// state UC-APP-004 stores, and still leaves APPROVED/REJECTED/REVOKED to future
+// migrations.
+func applicationVersionValidator() bson.D {
+	return applicationVersionValidatorForLifecycle(bson.A{"DRAFT", "SUBMITTED"}, false)
+}
+
 func applicationVersionValidatorForLifecycle(reviewStatuses bson.A, initialOnly bool) bson.D {
 	revisionSchema := bson.D{
 		{Key: "bsonType", Value: "long"},
@@ -434,6 +491,67 @@ func applicationVersionValidatorForLifecycle(reviewStatuses bson.A, initialOnly 
 		}}},
 		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: expressions}}}},
 	}}}
+}
+
+func applicationReviewValidator() bson.D {
+	return bson.D{{Key: "$and", Value: bson.A{
+		bson.D{{Key: "$jsonSchema", Value: bson.D{
+			{Key: "bsonType", Value: "object"},
+			{Key: "required", Value: bson.A{
+				"reviewId", "applicationId", "versionId", "attempt", "sourceVersionRevision",
+				"status", "decision", "draftRestoration", "snapshot", "scopeCatalogRevision",
+				"preflightPolicyVersion", "submittedBy", "submittedAt",
+			}},
+			{Key: "additionalProperties", Value: false},
+			{Key: "properties", Value: bson.D{
+				{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
+				{Key: "reviewId", Value: uuidV7Schema()},
+				{Key: "applicationId", Value: uuidV7Schema()},
+				{Key: "versionId", Value: uuidV7Schema()},
+				{Key: "attempt", Value: bson.D{{Key: "bsonType", Value: "int"}, {Key: "minimum", Value: int32(1)}}},
+				{Key: "sourceVersionRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
+				{Key: "status", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "enum", Value: bson.A{"PENDING"}}}},
+				{Key: "decision", Value: bson.D{{Key: "bsonType", Value: "null"}}},
+				{Key: "draftRestoration", Value: bson.D{{Key: "bsonType", Value: "null"}}},
+				{Key: "snapshot", Value: applicationReviewSnapshotSchema()},
+				{Key: "scopeCatalogRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
+				{Key: "preflightPolicyVersion", Value: bson.D{
+					{Key: "bsonType", Value: "string"},
+					{Key: "pattern", Value: "^[A-Za-z0-9._-]{1,50}$"},
+				}},
+				{Key: "submittedBy", Value: nonEmptyStringSchema()},
+				{Key: "submittedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+			}},
+		}}},
+		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$gt", Value: bson.A{"$snapshot.rpcApiMaxVersionExclusive", "$snapshot.rpcApiMinVersion"}}},
+			bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$snapshot.launchUrl"}}, 2048}}},
+			bson.D{{Key: "$eq", Value: bson.A{
+				bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$snapshot.requiredScopes", "$snapshot.optionalScopes"}}}}},
+				0,
+			}}},
+		}}}}},
+	}}}
+}
+
+func applicationReviewSnapshotSchema() bson.D {
+	return bson.D{
+		{Key: "bsonType", Value: "object"},
+		{Key: "required", Value: bson.A{
+			"versionLabel", "launchUrl", "rpcApiMinVersion", "rpcApiMaxVersionExclusive",
+			"requiredCapabilities", "requiredScopes", "optionalScopes",
+		}},
+		{Key: "additionalProperties", Value: false},
+		{Key: "properties", Value: bson.D{
+			{Key: "versionLabel", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: 50}}},
+			{Key: "launchUrl", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "pattern", Value: "^https://"}}},
+			{Key: "rpcApiMinVersion", Value: bson.D{{Key: "bsonType", Value: "int"}, {Key: "minimum", Value: int32(1)}}},
+			{Key: "rpcApiMaxVersionExclusive", Value: bson.D{{Key: "bsonType", Value: "int"}}},
+			{Key: "requiredCapabilities", Value: stringSetSchema("^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)*\\.v[1-9][0-9]*$")},
+			{Key: "requiredScopes", Value: stringSetSchema("")},
+			{Key: "optionalScopes", Value: stringSetSchema("")},
+		}},
+	}
 }
 
 func uuidV7Schema() bson.D {

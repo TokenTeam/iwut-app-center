@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"iwut-app-center/internal/application/domain"
+	reviewdomain "iwut-app-center/internal/review/domain"
 	"iwut-app-center/internal/shared"
 	versiondomain "iwut-app-center/internal/version/domain"
 )
 
 var errCorruptApplicationDocument = errors.New("corrupt application document")
 var errCorruptApplicationVersionDocument = errors.New("corrupt application version document")
+var errCorruptApplicationReviewDocument = errors.New("corrupt application review document")
 
 // applicationDocument is the adapter persistence model. CoordinationRevision is
 // a technical write fence owned only by this adapter; it never enters the
@@ -53,6 +55,32 @@ type applicationVersionDocument struct {
 	Revision                  int64     `bson:"revision"`
 	UpdatedBy                 string    `bson:"updatedBy"`
 	UpdatedAt                 time.Time `bson:"updatedAt"`
+}
+
+type applicationVersionReviewSnapshotDocument struct {
+	VersionLabel              string   `bson:"versionLabel"`
+	LaunchURL                 string   `bson:"launchUrl"`
+	RPCApiMinVersion          int32    `bson:"rpcApiMinVersion"`
+	RPCApiMaxVersionExclusive int32    `bson:"rpcApiMaxVersionExclusive"`
+	RequiredCapabilities      []string `bson:"requiredCapabilities"`
+	RequiredScopes            []string `bson:"requiredScopes"`
+	OptionalScopes            []string `bson:"optionalScopes"`
+}
+
+type applicationReviewDocument struct {
+	ReviewID               string                                   `bson:"reviewId"`
+	ApplicationID          string                                   `bson:"applicationId"`
+	VersionID              string                                   `bson:"versionId"`
+	Attempt                int32                                    `bson:"attempt"`
+	SourceVersionRevision  int64                                    `bson:"sourceVersionRevision"`
+	Status                 string                                   `bson:"status"`
+	Decision               any                                      `bson:"decision"`
+	DraftRestoration       any                                      `bson:"draftRestoration"`
+	Snapshot               applicationVersionReviewSnapshotDocument `bson:"snapshot"`
+	ScopeCatalogRevision   int64                                    `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string                                   `bson:"preflightPolicyVersion"`
+	SubmittedBy            string                                   `bson:"submittedBy"`
+	SubmittedAt            time.Time                                `bson:"submittedAt"`
 }
 
 func applicationToDocument(application *domain.Application) (applicationDocument, error) {
@@ -205,6 +233,107 @@ func applicationVersionFromDocument(document applicationVersionDocument) (*versi
 
 func corruptApplicationVersion(reason string) error {
 	return fmt.Errorf("%w: %s", errCorruptApplicationVersionDocument, reason)
+}
+
+func applicationVersionDocumentToSubmissionCandidate(document applicationVersionDocument) (*reviewdomain.SubmissionCandidate, error) {
+	versionID := versiondomain.ApplicationVersionID(document.VersionID)
+	if !versionID.IsValid() {
+		return nil, corruptApplicationVersion("invalid version ID")
+	}
+	applicationID, ok := shared.ParseApplicationID(document.ApplicationID)
+	if !ok {
+		return nil, corruptApplicationVersion("invalid application ID")
+	}
+	if _, err := versiondomain.NewVersionLabel(document.VersionLabel); err != nil {
+		return nil, corruptApplicationVersion("invalid version label")
+	}
+	if _, err := versiondomain.NewLaunchURL(document.LaunchURL); err != nil {
+		return nil, corruptApplicationVersion("invalid launch URL")
+	}
+	if _, err := versiondomain.NewRPCApiRange(document.RPCApiMinVersion, document.RPCApiMaxVersionExclusive); err != nil {
+		return nil, corruptApplicationVersion("invalid RPC API range")
+	}
+	capabilities, err := versiondomain.NewCapabilitySet(document.RequiredCapabilities)
+	if err != nil || !slices.Equal(capabilities.Strings(), document.RequiredCapabilities) {
+		return nil, corruptApplicationVersion("invalid required capabilities")
+	}
+	scopes, err := versiondomain.NewScopeRequest(document.RequiredScopes, document.OptionalScopes)
+	if err != nil || !slices.Equal(scopeNamesToStrings(scopes.Required()), document.RequiredScopes) ||
+		!slices.Equal(scopeNamesToStrings(scopes.Optional()), document.OptionalScopes) {
+		return nil, corruptApplicationVersion("invalid scope request")
+	}
+	if document.ReviewStatus != string(versiondomain.ReviewStatusDraft) || document.Revision < 1 {
+		return nil, corruptApplicationVersion("invalid submission lifecycle")
+	}
+
+	snapshot, err := reviewdomain.NewApplicationVersionReviewSnapshot(
+		document.VersionLabel,
+		reviewdomain.LaunchURL(document.LaunchURL),
+		document.RPCApiMinVersion,
+		document.RPCApiMaxVersionExclusive,
+		append([]string{}, document.RequiredCapabilities...),
+		reviewScopeNames(document.RequiredScopes),
+		reviewScopeNames(document.OptionalScopes),
+	)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid review snapshot")
+	}
+	candidate, err := reviewdomain.NewSubmissionCandidate(
+		applicationID,
+		reviewdomain.ApplicationVersionID(versionID),
+		document.Revision,
+		snapshot,
+	)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid submission candidate")
+	}
+	return candidate, nil
+}
+
+func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applicationReviewDocument, error) {
+	if review == nil || review.Status() != reviewdomain.ReviewStatusPending || review.HasDecision() || review.HasDraftRestoration() {
+		return applicationReviewDocument{}, fmt.Errorf("map application review document: invalid review")
+	}
+	snapshot := review.Snapshot()
+	return applicationReviewDocument{
+		ReviewID:              review.ReviewID().String(),
+		ApplicationID:         review.ApplicationID().String(),
+		VersionID:             review.VersionID().String(),
+		Attempt:               review.Attempt().Int32(),
+		SourceVersionRevision: review.SourceVersionRevision(),
+		Status:                string(review.Status()),
+		Decision:              nil,
+		DraftRestoration:      nil,
+		Snapshot: applicationVersionReviewSnapshotDocument{
+			VersionLabel:              snapshot.VersionLabel(),
+			LaunchURL:                 string(snapshot.LaunchURL()),
+			RPCApiMinVersion:          snapshot.RPCAPIMinVersion(),
+			RPCApiMaxVersionExclusive: snapshot.RPCAPIMaxVersionExclusive(),
+			RequiredCapabilities:      snapshot.RequiredCapabilities(),
+			RequiredScopes:            reviewScopeNamesToStrings(snapshot.RequiredScopes()),
+			OptionalScopes:            reviewScopeNamesToStrings(snapshot.OptionalScopes()),
+		},
+		ScopeCatalogRevision:   review.ScopeCatalogRevision().Int64(),
+		PreflightPolicyVersion: review.PreflightPolicyVersion().String(),
+		SubmittedBy:            review.SubmittedBy().String(),
+		SubmittedAt:            review.SubmittedAt().UTC(),
+	}, nil
+}
+
+func reviewScopeNames(values []string) []reviewdomain.ScopeName {
+	result := make([]reviewdomain.ScopeName, len(values))
+	for index, value := range values {
+		result[index] = reviewdomain.ScopeName(value)
+	}
+	return result
+}
+
+func reviewScopeNamesToStrings(values []reviewdomain.ScopeName) []string {
+	result := make([]string, len(values))
+	for index, value := range values {
+		result[index] = string(value)
+	}
+	return result
 }
 
 func capabilityNamesToStrings(values []versiondomain.CapabilityName) []string {

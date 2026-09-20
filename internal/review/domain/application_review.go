@@ -1,0 +1,311 @@
+package domain
+
+import (
+	"regexp"
+	"slices"
+	"sort"
+	"time"
+	"unicode/utf8"
+
+	"iwut-app-center/internal/shared"
+)
+
+var policyVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,50}$`)
+
+type ApplicationReviewID string
+
+func (id ApplicationReviewID) String() string { return string(id) }
+func (id ApplicationReviewID) IsValid() bool  { return isUUIDv7(string(id)) }
+
+type ApplicationVersionID string
+
+func (id ApplicationVersionID) String() string { return string(id) }
+func (id ApplicationVersionID) IsValid() bool  { return isUUIDv7(string(id)) }
+
+type ReviewAttempt int32
+
+func NewReviewAttempt(value int32) (ReviewAttempt, error) {
+	if value < 1 {
+		return 0, NewInternalError(nil)
+	}
+	return ReviewAttempt(value), nil
+}
+
+func (attempt ReviewAttempt) Int32() int32 { return int32(attempt) }
+
+type ScopeCatalogRevision int64
+
+func NewScopeCatalogRevision(value int64) (ScopeCatalogRevision, error) {
+	if value < 1 {
+		return 0, NewInternalError(nil)
+	}
+	return ScopeCatalogRevision(value), nil
+}
+
+func (revision ScopeCatalogRevision) Int64() int64 { return int64(revision) }
+
+type PreflightPolicyVersion string
+
+func NewPreflightPolicyVersion(value string) (PreflightPolicyVersion, error) {
+	if !policyVersionPattern.MatchString(value) {
+		return "", NewInternalError(nil)
+	}
+	return PreflightPolicyVersion(value), nil
+}
+
+func (version PreflightPolicyVersion) String() string { return string(version) }
+
+type ScopeName string
+type LaunchURL string
+
+type ReviewStatus string
+
+const ReviewStatusPending ReviewStatus = "PENDING"
+
+type ApplicationVersionReviewSnapshot struct {
+	versionLabel              string
+	launchURL                 LaunchURL
+	rpcAPIMinVersion          int32
+	rpcAPIMaxVersionExclusive int32
+	requiredCapabilities      []string
+	requiredScopes            []ScopeName
+	optionalScopes            []ScopeName
+}
+
+func NewApplicationVersionReviewSnapshot(
+	versionLabel string,
+	launchURL LaunchURL,
+	rpcAPIMinVersion int32,
+	rpcAPIMaxVersionExclusive int32,
+	requiredCapabilities []string,
+	requiredScopes []ScopeName,
+	optionalScopes []ScopeName,
+) (*ApplicationVersionReviewSnapshot, error) {
+	if versionLabel == "" || !utf8.ValidString(versionLabel) || launchURL == "" ||
+		rpcAPIMinVersion < 1 || rpcAPIMaxVersionExclusive <= rpcAPIMinVersion ||
+		!strictlySortedUnique(requiredCapabilities) || !strictlySortedUnique(requiredScopes) ||
+		!strictlySortedUnique(optionalScopes) || hasOverlap(requiredScopes, optionalScopes) {
+		return nil, NewInternalError(nil)
+	}
+	return &ApplicationVersionReviewSnapshot{
+		versionLabel:              versionLabel,
+		launchURL:                 launchURL,
+		rpcAPIMinVersion:          rpcAPIMinVersion,
+		rpcAPIMaxVersionExclusive: rpcAPIMaxVersionExclusive,
+		requiredCapabilities:      append([]string{}, requiredCapabilities...),
+		requiredScopes:            append([]ScopeName{}, requiredScopes...),
+		optionalScopes:            append([]ScopeName{}, optionalScopes...),
+	}, nil
+}
+
+func (snapshot ApplicationVersionReviewSnapshot) VersionLabel() string { return snapshot.versionLabel }
+func (snapshot ApplicationVersionReviewSnapshot) LaunchURL() LaunchURL { return snapshot.launchURL }
+func (snapshot ApplicationVersionReviewSnapshot) RPCAPIMinVersion() int32 {
+	return snapshot.rpcAPIMinVersion
+}
+func (snapshot ApplicationVersionReviewSnapshot) RPCAPIMaxVersionExclusive() int32 {
+	return snapshot.rpcAPIMaxVersionExclusive
+}
+func (snapshot ApplicationVersionReviewSnapshot) RequiredCapabilities() []string {
+	return append([]string{}, snapshot.requiredCapabilities...)
+}
+func (snapshot ApplicationVersionReviewSnapshot) RequiredScopes() []ScopeName {
+	return append([]ScopeName{}, snapshot.requiredScopes...)
+}
+func (snapshot ApplicationVersionReviewSnapshot) OptionalScopes() []ScopeName {
+	return append([]ScopeName{}, snapshot.optionalScopes...)
+}
+
+type SubmissionCandidate struct {
+	applicationID shared.ApplicationID
+	versionID     ApplicationVersionID
+	revision      int64
+	snapshot      ApplicationVersionReviewSnapshot
+}
+
+func NewSubmissionCandidate(
+	applicationID shared.ApplicationID,
+	versionID ApplicationVersionID,
+	revision int64,
+	snapshot *ApplicationVersionReviewSnapshot,
+) (*SubmissionCandidate, error) {
+	if !applicationID.IsValid() || !versionID.IsValid() || revision < 1 || snapshot == nil {
+		return nil, NewInternalError(nil)
+	}
+	return &SubmissionCandidate{
+		applicationID: applicationID,
+		versionID:     versionID,
+		revision:      revision,
+		snapshot:      *snapshot,
+	}, nil
+}
+
+func (candidate *SubmissionCandidate) ApplicationID() shared.ApplicationID {
+	return candidate.applicationID
+}
+func (candidate *SubmissionCandidate) VersionID() ApplicationVersionID { return candidate.versionID }
+func (candidate *SubmissionCandidate) Revision() int64                 { return candidate.revision }
+func (candidate *SubmissionCandidate) Snapshot() ApplicationVersionReviewSnapshot {
+	copy := candidate.snapshot
+	copy.requiredCapabilities = candidate.snapshot.RequiredCapabilities()
+	copy.requiredScopes = candidate.snapshot.RequiredScopes()
+	copy.optionalScopes = candidate.snapshot.OptionalScopes()
+	return copy
+}
+func (candidate *SubmissionCandidate) AllScopes() []ScopeName {
+	values := append(candidate.snapshot.RequiredScopes(), candidate.snapshot.OptionalScopes()...)
+	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+	return values
+}
+
+type ApplicationReview struct {
+	reviewID               ApplicationReviewID
+	applicationID          shared.ApplicationID
+	versionID              ApplicationVersionID
+	attempt                ReviewAttempt
+	sourceVersionRevision  int64
+	snapshot               ApplicationVersionReviewSnapshot
+	scopeCatalogRevision   ScopeCatalogRevision
+	preflightPolicyVersion PreflightPolicyVersion
+	submittedBy            shared.AuthID
+	submittedAt            time.Time
+}
+
+func NewPendingApplicationReview(
+	candidate *SubmissionCandidate,
+	reviewID ApplicationReviewID,
+	attempt ReviewAttempt,
+	scopeCatalogRevision ScopeCatalogRevision,
+	preflightPolicyVersion PreflightPolicyVersion,
+	submittedBy shared.AuthID,
+	submittedAt time.Time,
+) (*ApplicationReview, error) {
+	if candidate == nil || !reviewID.IsValid() || attempt < 1 || scopeCatalogRevision < 1 ||
+		!policyVersionPattern.MatchString(preflightPolicyVersion.String()) || !submittedBy.IsValid() || submittedAt.IsZero() {
+		return nil, NewInternalError(nil)
+	}
+	return &ApplicationReview{
+		reviewID:               reviewID,
+		applicationID:          candidate.ApplicationID(),
+		versionID:              candidate.VersionID(),
+		attempt:                attempt,
+		sourceVersionRevision:  candidate.Revision(),
+		snapshot:               candidate.Snapshot(),
+		scopeCatalogRevision:   scopeCatalogRevision,
+		preflightPolicyVersion: preflightPolicyVersion,
+		submittedBy:            submittedBy,
+		submittedAt:            submittedAt.UTC(),
+	}, nil
+}
+
+func (review *ApplicationReview) ReviewID() ApplicationReviewID       { return review.reviewID }
+func (review *ApplicationReview) ApplicationID() shared.ApplicationID { return review.applicationID }
+func (review *ApplicationReview) VersionID() ApplicationVersionID     { return review.versionID }
+func (review *ApplicationReview) Attempt() ReviewAttempt              { return review.attempt }
+func (review *ApplicationReview) SourceVersionRevision() int64        { return review.sourceVersionRevision }
+func (review *ApplicationReview) Status() ReviewStatus                { return ReviewStatusPending }
+func (review *ApplicationReview) HasDecision() bool                   { return false }
+func (review *ApplicationReview) HasDraftRestoration() bool           { return false }
+func (review *ApplicationReview) Snapshot() ApplicationVersionReviewSnapshot {
+	copy := review.snapshot
+	copy.requiredCapabilities = review.snapshot.RequiredCapabilities()
+	copy.requiredScopes = review.snapshot.RequiredScopes()
+	copy.optionalScopes = review.snapshot.OptionalScopes()
+	return copy
+}
+func (review *ApplicationReview) ScopeCatalogRevision() ScopeCatalogRevision {
+	return review.scopeCatalogRevision
+}
+func (review *ApplicationReview) PreflightPolicyVersion() PreflightPolicyVersion {
+	return review.preflightPolicyVersion
+}
+func (review *ApplicationReview) SubmittedBy() shared.AuthID { return review.submittedBy }
+func (review *ApplicationReview) SubmittedAt() time.Time     { return review.submittedAt }
+
+type SubmittedApplicationVersion struct {
+	applicationID shared.ApplicationID
+	versionID     ApplicationVersionID
+	revision      int64
+	updatedBy     shared.AuthID
+	updatedAt     time.Time
+}
+
+func NewSubmittedApplicationVersion(candidate *SubmissionCandidate, updatedBy shared.AuthID, updatedAt time.Time) (*SubmittedApplicationVersion, error) {
+	if candidate == nil || !updatedBy.IsValid() || updatedAt.IsZero() {
+		return nil, NewInternalError(nil)
+	}
+	return &SubmittedApplicationVersion{
+		applicationID: candidate.ApplicationID(), versionID: candidate.VersionID(), revision: candidate.Revision() + 1,
+		updatedBy: updatedBy, updatedAt: updatedAt.UTC(),
+	}, nil
+}
+
+func (version *SubmittedApplicationVersion) ApplicationID() shared.ApplicationID {
+	return version.applicationID
+}
+func (version *SubmittedApplicationVersion) VersionID() ApplicationVersionID {
+	return version.versionID
+}
+func (version *SubmittedApplicationVersion) ReviewStatus() string     { return "SUBMITTED" }
+func (version *SubmittedApplicationVersion) Revision() int64          { return version.revision }
+func (version *SubmittedApplicationVersion) UpdatedBy() shared.AuthID { return version.updatedBy }
+func (version *SubmittedApplicationVersion) UpdatedAt() time.Time     { return version.updatedAt }
+
+type ReviewSubmissionResult struct {
+	review  ApplicationReview
+	version SubmittedApplicationVersion
+}
+
+func NewReviewSubmissionResult(review *ApplicationReview, version *SubmittedApplicationVersion) (*ReviewSubmissionResult, error) {
+	if review == nil || version == nil || review.ApplicationID() != version.ApplicationID() || review.VersionID() != version.VersionID() ||
+		review.SourceVersionRevision()+1 != version.Revision() || review.SubmittedBy() != version.UpdatedBy() || !review.SubmittedAt().Equal(version.UpdatedAt()) {
+		return nil, NewInternalError(nil)
+	}
+	return &ReviewSubmissionResult{review: *review, version: *version}, nil
+}
+
+func (result *ReviewSubmissionResult) Review() *ApplicationReview {
+	copy := result.review
+	copy.snapshot = result.review.Snapshot()
+	return &copy
+}
+
+func (result *ReviewSubmissionResult) Version() *SubmittedApplicationVersion {
+	copy := result.version
+	return &copy
+}
+
+func strictlySortedUnique[T ~string](values []T) bool {
+	return values != nil && slices.IsSorted(values) && len(slices.Compact(append([]T{}, values...))) == len(values)
+}
+
+func hasOverlap[T ~string](left, right []T) bool {
+	seen := make(map[T]struct{}, len(left))
+	for _, value := range left {
+		seen[value] = struct{}{}
+	}
+	for _, value := range right {
+		if _, ok := seen[value]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func isUUIDv7(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' || value[14] != '7' {
+		return false
+	}
+	if value[19] != '8' && value[19] != '9' && value[19] != 'a' && value[19] != 'A' && value[19] != 'b' && value[19] != 'B' {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+			return false
+		}
+	}
+	return true
+}

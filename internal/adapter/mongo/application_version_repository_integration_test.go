@@ -296,6 +296,8 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 			{name: "unknown status", mutate: func(document *applicationVersionDocument) { document.ReviewStatus = "UNKNOWN" }},
 			{name: "revision below one", mutate: func(document *applicationVersionDocument) { document.Revision = 0 }},
 			{name: "empty updated identity", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "" }},
+			{name: "created and updated identities differ at revision one", mutate: func(document *applicationVersionDocument) { document.UpdatedBy = "auth-other" }},
+			{name: "created and updated times differ at revision one", mutate: func(document *applicationVersionDocument) { document.UpdatedAt = document.CreatedAt.Add(time.Second) }},
 		}
 		_, err := versions.InsertOne(t.Context(), bson.D{{Key: "versionId", Value: valid.VersionID}})
 		assertDocumentValidationFailure(t, err)
@@ -784,11 +786,8 @@ func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *te
 	)
 	assertDocumentValidationFailure(t, err)
 
-	if err := migrator.Migrate(t.Context()); err != nil {
-		t.Fatalf("upgrade to 0003: %v", err)
-	}
-	if err := migrator.Migrate(t.Context()); err != nil {
-		t.Fatalf("repeat migrations: %v", err)
+	if err := migrator.applyMigration(t.Context(), applicationVersionDraftUpdateMigrationID, migrator.applyApplicationVersionDraftUpdateMigration); err != nil {
+		t.Fatalf("apply 0003: %v", err)
 	}
 	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
 
@@ -830,6 +829,77 @@ func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *te
 	stored := readApplicationVersionDocument(t, database, created.ID())
 	if stored.ReviewStatus != "DRAFT" || stored.Revision != 2 || stored.UpdatedBy != "auth-editor" {
 		t.Fatalf("upgraded document = %#v", stored)
+	}
+}
+
+func TestApplicationReviewMigration_ExtendsLifecycleOnlyToSubmitted(t *testing.T) {
+	client := integrationClient(t)
+	database := integrationDatabase(t, client)
+	migrator := NewMigrator(database)
+	if err := migrator.ensureMigrationLedger(t.Context()); err != nil {
+		t.Fatalf("create migration ledger: %v", err)
+	}
+	for _, migration := range []struct {
+		id    string
+		apply func(context.Context) error
+	}{
+		{id: applicationCreationMigrationID, apply: migrator.applyApplicationCreationMigration},
+		{id: applicationVersionMigrationID, apply: migrator.applyApplicationVersionMigration},
+		{id: applicationVersionDraftUpdateMigrationID, apply: migrator.applyApplicationVersionDraftUpdateMigration},
+	} {
+		if err := migrator.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
+			t.Fatalf("apply %s: %v", migration.id, err)
+		}
+	}
+
+	application := createVersionTestApplication(t, database, "auth-review-migration", "review-migration")
+	repository := NewApplicationVersionRepository(database)
+	created, err := repository.CreateDraft(
+		t.Context(), "auth-review-migration", integrationApplicationVersionDraft(t, application.ID(), "auth-review-migration", "v1"),
+	)
+	if err != nil {
+		t.Fatalf("create version under 0003 schema: %v", err)
+	}
+	versions := database.Collection(applicationVersionsCollectionName)
+	writeSubmitted := func() error {
+		_, err := versions.UpdateOne(
+			t.Context(),
+			bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: "DRAFT"}},
+			bson.D{
+				{Key: "$set", Value: bson.D{
+					{Key: "reviewStatus", Value: "SUBMITTED"},
+					{Key: "updatedBy", Value: "auth-review-migration"},
+					{Key: "updatedAt", Value: time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC)},
+				}},
+				{Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}},
+			},
+		)
+		return err
+	}
+
+	// 0003 deliberately rejects the future SUBMITTED state.
+	assertDocumentValidationFailure(t, writeSubmitted())
+
+	if err := migrator.applyMigration(t.Context(), applicationReviewMigrationID, migrator.applyApplicationReviewMigration); err != nil {
+		t.Fatalf("apply 0004: %v", err)
+	}
+	if err := migrator.Migrate(t.Context()); err != nil {
+		t.Fatalf("repeat migrations: %v", err)
+	}
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 4)
+
+	// 0004 enables SUBMITTED...
+	if err := writeSubmitted(); err != nil {
+		t.Fatalf("write SUBMITTED enabled by 0004: %v", err)
+	}
+	// ...but may not prebuild any later review decision state.
+	for _, status := range []string{"APPROVED", "REJECTED", "REVOKED"} {
+		_, err := versions.UpdateOne(
+			t.Context(),
+			bson.D{{Key: "versionId", Value: created.ID().String()}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: status}}}},
+		)
+		assertDocumentValidationFailure(t, err)
 	}
 }
 

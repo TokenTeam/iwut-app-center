@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 4)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -313,9 +313,14 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
 	})
+	assertIndexNames(t, database.Collection(applicationReviewsCollectionName), []string{
+		"_id_", applicationReviewIDUniqueIndexName, applicationReviewAttemptUniqueIndexName,
+		applicationReviewSourceUniqueIndexName, applicationReviewPendingUniqueIndexName,
+		applicationReviewQueueIndexName,
+	})
 }
 
-func TestMigratorIntegration_UpgradesExisting0001DatabaseToCurrent(t *testing.T) {
+func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) {
 	client := integrationClient(t)
 	database := integrationDatabase(t, client)
 	migrator := NewMigrator(database)
@@ -333,12 +338,17 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToCurrent(t *testing.T)
 	}
 
 	if err := migrator.Migrate(t.Context()); err != nil {
-		t.Fatalf("upgrade to current: %v", err)
+		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 4)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
+	})
+	assertIndexNames(t, database.Collection(applicationReviewsCollectionName), []string{
+		"_id_", applicationReviewIDUniqueIndexName, applicationReviewAttemptUniqueIndexName,
+		applicationReviewSourceUniqueIndexName, applicationReviewPendingUniqueIndexName,
+		applicationReviewQueueIndexName,
 	})
 }
 
@@ -364,6 +374,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		applicationCreationMigrationID,
 		applicationVersionMigrationID,
 		applicationVersionDraftUpdateMigrationID,
+		applicationReviewMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -393,6 +404,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: applicationCreationMigrationID, apply: sequential.applyApplicationCreationMigration},
 		{id: applicationVersionMigrationID, apply: sequential.applyApplicationVersionMigration},
 		{id: applicationVersionDraftUpdateMigrationID, apply: sequential.applyApplicationVersionDraftUpdateMigration},
+		{id: applicationReviewMigrationID, apply: sequential.applyApplicationReviewMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)
@@ -403,6 +415,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		applicationsCollectionName,
 		applicationCreationQuotasCollectionName,
 		applicationVersionsCollectionName,
+		applicationReviewsCollectionName,
 	} {
 		freshValidator := collectionValidator(t, freshDatabase, collectionName)
 		sequentialValidator := collectionValidator(t, sequentialDatabase, collectionName)

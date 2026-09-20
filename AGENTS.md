@@ -30,27 +30,30 @@ Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions 
 
 ## Current work package
 
-Implement UC-APP-003, updating a DRAFT ApplicationVersion by complete
-replacement with optimistic concurrency.
+Integrate and repair UC-APP-003 and UC-APP-004 as one bounded package.
 
 Required design sections:
 
 - `UC-APP-003`: Goal and scope; Editable and immutable fields; Input and
   identity; Main flow; Exceptional flows; BR-VER-010 through BR-VER-017; Use
   case ports; Data model changes; Tests and acceptance.
-- `UC-APP-002`: BR-VER-003 through BR-VER-007 for reused field validation and
-  normalization.
+- `UC-APP-004`: Goal and scope; Submission result; Input and identity; Main
+  flow; Exceptional flows; BR-REV-001 through BR-REV-009; Minimal domain model;
+  Use case ports; Data model; Tests and acceptance.
+- `UC-APP-002`: BR-VER-003 through BR-VER-009 for reused candidate and snapshot
+  field validation.
 - `ADR-001`: Decision and consistency/failure behavior for Scope Catalog.
 - `ADR-003`: Decision, Port ownership and automated constraints.
 - `ADR-004`: Transaction boundary, retry and schema migration rules.
 - `ADR-005`: Domain error classification and adapter mapping rules.
 
-Code scope: Domain update behavior, UC-APP-003 command/handler and narrow
-ports/errors, MongoDB atomic repository behavior and explicit schema migration,
-plus Domain/UseCase and real replica-set integration tests.
+Code scope: UC-APP-003 draft replacement, UC-APP-004 review submission,
+MongoDB atomic authorization fences, the explicit immutable migration chain up
+to 0004, and Domain/UseCase plus real replica-set integration tests.
 
-Non-goals: API/Proto/HTTP transport, a real Auth transport, UC-APP-004 or later
-lifecycle transitions, generic CRUD repositories, and unrelated refactors.
+Non-goals: API/Proto/HTTP transport, real Auth or URL-check transports,
+UC-APP-005 or later lifecycle transitions, generic CRUD repositories, and
+unrelated refactors.
 
 Verification: `gofmt`, `go vet ./...`, `go test ./...`, `go test -race ./...`,
 and `./scripts/test-mongo-integration.sh -race -count=1`.
@@ -68,6 +71,9 @@ internal/application/port/
 internal/version/domain/
 internal/version/usecase/
 internal/version/port/
+internal/review/domain/
+internal/review/usecase/
+internal/review/port/
 internal/adapter/
 ```
 
