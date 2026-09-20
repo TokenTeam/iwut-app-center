@@ -93,7 +93,7 @@ func (migrator *Migrator) ensureMigrationLedger(ctx context.Context) error {
 }
 
 func (migrator *Migrator) applyApplicationCreationMigration(ctx context.Context) error {
-	if err := migrator.ensureValidatedCollection(ctx, applicationsCollectionName, applicationValidator()); err != nil {
+	if err := migrator.ensureValidatedCollection(ctx, applicationsCollectionName, applicationInitialValidator()); err != nil {
 		return err
 	}
 	if err := migrator.ensureValidatedCollection(ctx, applicationCreationQuotasCollectionName, applicationCreationQuotaValidator()); err != nil {
@@ -165,8 +165,35 @@ func (migrator *Migrator) applyApplicationVersionMigration(ctx context.Context) 
 }
 
 func (migrator *Migrator) applyApplicationVersionDraftUpdateMigration(ctx context.Context) error {
-	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionValidator()); err != nil {
+	// This migration changes both the application_versions lifecycle/audit
+	// schema and the applications coordination schema. The coordination field
+	// is a technical write fence: replacing a draft performs a conditional $inc
+	// on it inside the same transaction that mutates the Version, so a
+	// concurrent administrator transfer on the same Application document
+	// conflicts and forces a retry that re-evaluates the administrator filter.
+	if err := migrator.ensureValidatedCollection(ctx, applicationsCollectionName, applicationValidator()); err != nil {
+		return fmt.Errorf("enable application coordination revision: %w", err)
+	}
+	if err := migrator.backfillApplicationCoordinationRevision(ctx); err != nil {
+		return err
+	}
+	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionDraftValidator()); err != nil {
 		return fmt.Errorf("enable application version draft updates: %w", err)
+	}
+	return nil
+}
+
+// backfillApplicationCoordinationRevision gives every pre-existing Application
+// a concrete starting revision so the first fence $inc observes a stable long
+// instead of creating the field implicitly.
+func (migrator *Migrator) backfillApplicationCoordinationRevision(ctx context.Context) error {
+	_, err := migrator.database.Collection(applicationsCollectionName).UpdateMany(
+		ctx,
+		bson.D{{Key: "coordinationRevision", Value: bson.D{{Key: "$exists", Value: false}}}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "coordinationRevision", Value: int64(0)}}}},
+	)
+	if err != nil {
+		return fmt.Errorf("backfill application coordination revision: %w", err)
 	}
 	return nil
 }
@@ -204,43 +231,66 @@ func isNamespaceExists(err error) bool {
 	return errors.As(err, &commandError) && commandError.Code == 48
 }
 
+// applicationInitialValidator is the 0001 schema. It must stay byte-for-byte
+// equivalent to the validator a fresh 0001 deployment established; the
+// coordinationRevision fence is added by 0003, never by rewriting this stage.
+func applicationInitialValidator() bson.D {
+	return applicationValidatorForCoordination(false)
+}
+
+// applicationValidator is the 0003 schema. It keeps the 0001 business
+// constraints and adds the adapter-only coordinationRevision write fence.
 func applicationValidator() bson.D {
+	return applicationValidatorForCoordination(true)
+}
+
+func applicationValidatorForCoordination(includeCoordinationRevision bool) bson.D {
+	required := bson.A{
+		"id", "name", "nameKey", "adminId", "createdAt",
+		"nextVersionSequence", "nextProfileRevisionSequence",
+	}
+	properties := bson.D{
+		{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
+		{Key: "id", Value: bson.D{
+			{Key: "bsonType", Value: "string"},
+			{Key: "pattern", Value: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"},
+		}},
+		{Key: "name", Value: bson.D{
+			{Key: "bsonType", Value: "string"},
+			{Key: "pattern", Value: "^[A-Za-z0-9_-]{1,50}$"},
+		}},
+		{Key: "nameKey", Value: bson.D{
+			{Key: "bsonType", Value: "string"},
+			{Key: "pattern", Value: "^[a-z0-9_-]{1,50}$"},
+		}},
+		{Key: "adminId", Value: bson.D{
+			{Key: "bsonType", Value: "string"},
+			{Key: "minLength", Value: 1},
+		}},
+		{Key: "createdAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+		{Key: "nextVersionSequence", Value: bson.D{
+			{Key: "bsonType", Value: "int"},
+			{Key: "minimum", Value: int32(1)},
+		}},
+		{Key: "nextProfileRevisionSequence", Value: bson.D{
+			{Key: "bsonType", Value: "int"},
+			{Key: "minimum", Value: int32(1)},
+		}},
+	}
+	if includeCoordinationRevision {
+		required = append(required, "coordinationRevision")
+		properties = append(properties, bson.E{Key: "coordinationRevision", Value: bson.D{
+			{Key: "bsonType", Value: "long"},
+			{Key: "minimum", Value: int64(0)},
+		}})
+	}
+
 	return bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$jsonSchema", Value: bson.D{
 			{Key: "bsonType", Value: "object"},
-			{Key: "required", Value: bson.A{
-				"id", "name", "nameKey", "adminId", "createdAt",
-				"nextVersionSequence", "nextProfileRevisionSequence",
-			}},
+			{Key: "required", Value: required},
 			{Key: "additionalProperties", Value: false},
-			{Key: "properties", Value: bson.D{
-				{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
-				{Key: "id", Value: bson.D{
-					{Key: "bsonType", Value: "string"},
-					{Key: "pattern", Value: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"},
-				}},
-				{Key: "name", Value: bson.D{
-					{Key: "bsonType", Value: "string"},
-					{Key: "pattern", Value: "^[A-Za-z0-9_-]{1,50}$"},
-				}},
-				{Key: "nameKey", Value: bson.D{
-					{Key: "bsonType", Value: "string"},
-					{Key: "pattern", Value: "^[a-z0-9_-]{1,50}$"},
-				}},
-				{Key: "adminId", Value: bson.D{
-					{Key: "bsonType", Value: "string"},
-					{Key: "minLength", Value: 1},
-				}},
-				{Key: "createdAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
-				{Key: "nextVersionSequence", Value: bson.D{
-					{Key: "bsonType", Value: "int"},
-					{Key: "minimum", Value: int32(1)},
-				}},
-				{Key: "nextProfileRevisionSequence", Value: bson.D{
-					{Key: "bsonType", Value: "int"},
-					{Key: "minimum", Value: int32(1)},
-				}},
-			}},
+			{Key: "properties", Value: properties},
 		}}},
 		bson.D{{Key: "$expr", Value: bson.D{{Key: "$eq", Value: bson.A{"$nameKey", bson.D{{Key: "$toLower", Value: "$name"}}}}}}},
 	}}}
@@ -277,21 +327,29 @@ func applicationCreationQuotaValidator() bson.D {
 	}}}
 }
 
-// applicationVersionValidator is a storage-level defense in depth. It enforces
-// facts MongoDB can express reliably (shape, byte limits, set relationships,
-// RPC ordering, and lifecycle/audit shape). Full URL address-class
-// and Unicode domain validation remains in version/domain and in the document
-// mapper; this schema is not a replacement for those constructors.
-func applicationVersionValidator() bson.D {
-	return applicationVersionValidatorForLifecycle(false)
-}
-
+// applicationVersion validators are storage-level defense in depth. They
+// enforce facts MongoDB can express reliably (shape, byte limits, set
+// relationships, RPC ordering, and lifecycle/audit shape). Full URL
+// address-class and Unicode domain validation remains in version/domain and in
+// the document mapper; these schemas are not a replacement for those
+// constructors.
+//
+// The lifecycle enum is advanced one migration at a time. Each stage accepts
+// only states that already exist at that point in the migration chain, so a
+// database upgraded through the chain ends with exactly the same validator as a
+// fresh database.
 func applicationVersionInitialValidator() bson.D {
-	return applicationVersionValidatorForLifecycle(true)
+	return applicationVersionValidatorForLifecycle(bson.A{"DRAFT"}, true)
 }
 
-func applicationVersionValidatorForLifecycle(initialOnly bool) bson.D {
-	reviewStatuses := bson.A{"DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "REVOKED"}
+// applicationVersionDraftValidator is the 0003 schema. It opens DRAFT to
+// replacement (revision >= 1, mutable audit) but still rejects SUBMITTED and
+// every later lifecycle state; SUBMITTED only becomes valid in 0004.
+func applicationVersionDraftValidator() bson.D {
+	return applicationVersionValidatorForLifecycle(bson.A{"DRAFT"}, false)
+}
+
+func applicationVersionValidatorForLifecycle(reviewStatuses bson.A, initialOnly bool) bson.D {
 	revisionSchema := bson.D{
 		{Key: "bsonType", Value: "long"},
 		{Key: "minimum", Value: int64(1)},
@@ -305,7 +363,6 @@ func applicationVersionValidatorForLifecycle(initialOnly bool) bson.D {
 		}}},
 	}
 	if initialOnly {
-		reviewStatuses = bson.A{"DRAFT"}
 		revisionSchema = bson.D{
 			{Key: "bsonType", Value: "long"},
 			{Key: "enum", Value: bson.A{int64(1)}},
@@ -314,6 +371,17 @@ func applicationVersionValidatorForLifecycle(initialOnly bool) bson.D {
 			bson.D{{Key: "$eq", Value: bson.A{"$createdBy", "$updatedBy"}}},
 			bson.D{{Key: "$eq", Value: bson.A{"$createdAt", "$updatedAt"}}},
 		)
+	} else {
+		// Revision 1 is always the unedited creation audit. Any later revision
+		// (replacement or lifecycle transition) may carry a different updater.
+		expressions = append(expressions, bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "$gt", Value: bson.A{"$revision", int64(1)}}},
+			bson.D{{Key: "$and", Value: bson.A{
+				bson.D{{Key: "$eq", Value: bson.A{"$reviewStatus", "DRAFT"}}},
+				bson.D{{Key: "$eq", Value: bson.A{"$createdBy", "$updatedBy"}}},
+				bson.D{{Key: "$eq", Value: bson.A{"$createdAt", "$updatedAt"}}},
+			}}},
+		}}})
 	}
 
 	return bson.D{{Key: "$and", Value: bson.A{

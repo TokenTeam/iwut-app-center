@@ -40,6 +40,9 @@ func TestApplicationDocumentMapper_BRAPP001_BRAPP003_BRAPP007(t *testing.T) {
 	if document.NextVersionSequence != 1 || document.NextProfileRevisionSequence != 1 {
 		t.Fatalf("next sequences = (%d, %d), want (1, 1)", document.NextVersionSequence, document.NextProfileRevisionSequence)
 	}
+	if document.CoordinationRevision != 0 {
+		t.Fatalf("coordinationRevision = %d, want 0", document.CoordinationRevision)
+	}
 	if document.CreatedAt.Location() != time.UTC {
 		t.Fatalf("createdAt location = %s, want UTC", document.CreatedAt.Location())
 	}

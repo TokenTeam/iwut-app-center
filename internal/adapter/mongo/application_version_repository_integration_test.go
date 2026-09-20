@@ -371,6 +371,43 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("BR-VER-016 coordination revision advances on success and rolls back on failure", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-coordination", "coordination")
+		repository := NewApplicationVersionRepository(database)
+		created, err := repository.CreateDraft(
+			t.Context(), "auth-coordination", integrationApplicationVersionDraft(t, application.ID(), "auth-coordination", "v1"),
+		)
+		if err != nil {
+			t.Fatalf("create seed version: %v", err)
+		}
+		assertApplicationCoordinationRevision(t, database, application.ID(), 0)
+
+		replacement := integrationApplicationVersionReplacement(t, "v2", "https://example.edu/v2", nil, nil, nil)
+		if _, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), created.ID(), "auth-coordination", 1, replacement, time.Now(),
+		); err != nil {
+			t.Fatalf("replace draft: %v", err)
+		}
+		assertApplicationCoordinationRevision(t, database, application.ID(), 1)
+
+		// Neither a stale revision nor a wrong administrator may leave the fence
+		// increment behind: the whole transaction, including the $inc, rolls back.
+		if _, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), created.ID(), "auth-coordination", 1, replacement, time.Now(),
+		); !errors.Is(err, versionport.ErrApplicationVersionRevisionConflict) {
+			t.Fatalf("stale revision error = %v, want revision conflict", err)
+		}
+		assertApplicationCoordinationRevision(t, database, application.ID(), 1)
+
+		if _, err := repository.ReplaceDraft(
+			t.Context(), application.ID(), created.ID(), "auth-other", 2, replacement, time.Now(),
+		); !errors.Is(err, versionport.ErrApplicationAdminRequired) {
+			t.Fatalf("wrong administrator error = %v, want admin required", err)
+		}
+		assertApplicationCoordinationRevision(t, database, application.ID(), 1)
+	})
+
 	t.Run("BR-VER-010 BR-VER-013 BR-VER-016 classifies ownership state revision and hidden path mismatch", func(t *testing.T) {
 		database := migratedIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-classify", "update-classify")
@@ -406,10 +443,14 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 			})
 		}
 
+		// 0003 deliberately rejects SUBMITTED; it only becomes a valid stored
+		// state in 0004. Bypass validation here to simulate the later lifecycle
+		// that ReplaceDraft must still refuse to edit.
 		result, err := database.Collection(applicationVersionsCollectionName).UpdateOne(
 			t.Context(),
 			bson.D{{Key: "versionId", Value: created.ID().String()}},
 			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "SUBMITTED"}}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+			options.UpdateOne().SetBypassDocumentValidation(true),
 		)
 		if err != nil || result.ModifiedCount != 1 {
 			t.Fatalf("seed submitted state: result=%#v error=%v", result, err)
@@ -602,6 +643,10 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 			drivermongo.NewSessionContext(t.Context(), submitSession),
 			bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: "DRAFT"}, {Key: "revision", Value: int64(1)}},
 			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "SUBMITTED"}}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+			// 0003 deliberately rejects SUBMITTED; it only becomes a valid stored
+			// state in 0004. Bypass validation here to simulate the submission
+			// transition that ReplaceDraft must still lose against.
+			options.UpdateOne().SetBypassDocumentValidation(true),
 		)
 		if err != nil || result.ModifiedCount != 1 {
 			t.Fatalf("stage submission: result=%#v error=%v", result, err)
@@ -716,7 +761,8 @@ func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *te
 	if err := migrator.applyMigration(t.Context(), applicationVersionMigrationID, migrator.applyApplicationVersionMigration); err != nil {
 		t.Fatalf("apply 0002: %v", err)
 	}
-	application := createVersionTestApplication(t, database, "auth-migration", "migration-update")
+	application := integrationApplication(t, "auth-migration", "migration-update")
+	insertLegacyApplicationDocument(t, database, application)
 	repository := NewApplicationVersionRepository(database)
 	created, err := repository.CreateDraft(
 		t.Context(), "auth-migration", integrationApplicationVersionDraft(t, application.ID(), "auth-migration", "v1"),
@@ -728,7 +774,13 @@ func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *te
 	_, err = versions.UpdateOne(
 		t.Context(),
 		bson.D{{Key: "versionId", Value: created.ID().String()}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "updatedBy", Value: "auth-editor"}}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+		bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "updatedBy", Value: "auth-editor"},
+				{Key: "updatedAt", Value: time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC)},
+			}},
+			{Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}},
+		},
 	)
 	assertDocumentValidationFailure(t, err)
 
@@ -739,21 +791,60 @@ func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *te
 		t.Fatalf("repeat migrations: %v", err)
 	}
 	assertCollectionCount(t, database, migrationLedgerCollectionName, 3)
+
+	// 0003 backfills the adapter-only fence field on Applications created under
+	// the 0001 schema and enables the new Application validator.
+	assertApplicationCoordinationRevision(t, database, application.ID(), 0)
+
+	// 0003 opens DRAFT replacement (mutable audit, revision >= 1) but must not
+	// yet accept the future SUBMITTED lifecycle state.
+	_, err = versions.UpdateOne(
+		t.Context(),
+		bson.D{{Key: "versionId", Value: created.ID().String()}},
+		bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "reviewStatus", Value: "SUBMITTED"},
+				{Key: "updatedBy", Value: "auth-editor"},
+				{Key: "updatedAt", Value: time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC)},
+			}},
+			{Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}},
+		},
+	)
+	assertDocumentValidationFailure(t, err)
+
 	result, err := versions.UpdateOne(
 		t.Context(),
 		bson.D{{Key: "versionId", Value: created.ID().String()}},
-		bson.D{{Key: "$set", Value: bson.D{
-			{Key: "reviewStatus", Value: "SUBMITTED"},
-			{Key: "updatedBy", Value: "auth-editor"},
-			{Key: "updatedAt", Value: time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC)},
-		}}, {Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}},
+		bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "reviewStatus", Value: "DRAFT"},
+				{Key: "updatedBy", Value: "auth-editor"},
+				{Key: "updatedAt", Value: time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC)},
+			}},
+			{Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}},
+		},
 	)
 	if err != nil || result.ModifiedCount != 1 {
 		t.Fatalf("write fields enabled by 0003: result=%#v error=%v", result, err)
 	}
 	stored := readApplicationVersionDocument(t, database, created.ID())
-	if stored.ReviewStatus != "SUBMITTED" || stored.Revision != 2 || stored.UpdatedBy != "auth-editor" {
+	if stored.ReviewStatus != "DRAFT" || stored.Revision != 2 || stored.UpdatedBy != "auth-editor" {
 		t.Fatalf("upgraded document = %#v", stored)
+	}
+}
+
+// insertLegacyApplicationDocument writes an Application exactly as the 0001
+// schema allowed: without the adapter-only coordinationRevision field that 0003
+// introduces. Repository mapping must not be used here because it already emits
+// the post-0003 shape.
+func insertLegacyApplicationDocument(t *testing.T, database *drivermongo.Database, application *domain.Application) {
+	t.Helper()
+	document, err := applicationToDocument(application)
+	if err != nil {
+		t.Fatalf("map legacy application: %v", err)
+	}
+	if _, err := database.Collection(applicationsCollectionName).InsertOne(t.Context(), legacyApplicationBSON(document)); err != nil {
+		t.Fatalf("insert legacy application document: %v", err)
 	}
 }
 
@@ -925,5 +1016,23 @@ func assertNextVersionSequence(t *testing.T, database *drivermongo.Database, app
 	}
 	if document.NextVersionSequence != int32(want) {
 		t.Fatalf("nextVersionSequence = %d, want %d", document.NextVersionSequence, want)
+	}
+}
+
+func assertApplicationCoordinationRevision(
+	t *testing.T,
+	database *drivermongo.Database,
+	applicationID shared.ApplicationID,
+	want int64,
+) {
+	t.Helper()
+	var document applicationDocument
+	if err := database.Collection(applicationsCollectionName).
+		FindOne(t.Context(), bson.D{{Key: "id", Value: applicationID.String()}}).
+		Decode(&document); err != nil {
+		t.Fatalf("read application coordination revision: %v", err)
+	}
+	if document.CoordinationRevision != want {
+		t.Fatalf("coordinationRevision = %d, want %d", document.CoordinationRevision, want)
 	}
 }

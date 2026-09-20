@@ -14,6 +14,9 @@ import (
 var errCorruptApplicationDocument = errors.New("corrupt application document")
 var errCorruptApplicationVersionDocument = errors.New("corrupt application version document")
 
+// applicationDocument is the adapter persistence model. CoordinationRevision is
+// a technical write fence owned only by this adapter; it never enters the
+// Application domain entity.
 type applicationDocument struct {
 	ID                          string    `bson:"id"`
 	Name                        string    `bson:"name"`
@@ -22,6 +25,7 @@ type applicationDocument struct {
 	CreatedAt                   time.Time `bson:"createdAt"`
 	NextVersionSequence         int32     `bson:"nextVersionSequence"`
 	NextProfileRevisionSequence int32     `bson:"nextProfileRevisionSequence"`
+	CoordinationRevision        int64     `bson:"coordinationRevision"`
 }
 
 type applicationCreationQuotaDocument struct {

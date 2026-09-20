@@ -1,6 +1,7 @@
 package mongo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -255,6 +256,39 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 		})
 		assertDocumentValidationFailure(t, err)
 	})
+
+	t.Run("BR-APP-001 coordination revision fence is required and typed", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		applications := database.Collection(applicationsCollectionName)
+		valid, err := applicationToDocument(integrationApplication(t, "auth-fence", "coordination_fence"))
+		if err != nil {
+			t.Fatalf("map application document: %v", err)
+		}
+
+		// The 0003 schema requires the adapter-only fence field, so a document
+		// shaped exactly like a 0001 row is no longer writable.
+		_, err = applications.InsertOne(t.Context(), legacyApplicationBSON(valid))
+		assertDocumentValidationFailure(t, err)
+
+		negative := valid
+		negative.CoordinationRevision = -1
+		_, err = applications.InsertOne(t.Context(), negative)
+		assertDocumentValidationFailure(t, err)
+	})
+}
+
+// legacyApplicationBSON renders an Application exactly as the 0001 schema
+// allowed, without the adapter-only coordinationRevision field.
+func legacyApplicationBSON(document applicationDocument) bson.D {
+	return bson.D{
+		{Key: "id", Value: document.ID},
+		{Key: "name", Value: document.Name},
+		{Key: "nameKey", Value: document.NameKey},
+		{Key: "adminId", Value: document.AdminID},
+		{Key: "createdAt", Value: document.CreatedAt},
+		{Key: "nextVersionSequence", Value: document.NextVersionSequence},
+		{Key: "nextProfileRevisionSequence", Value: document.NextProfileRevisionSequence},
+	}
 }
 
 func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
@@ -306,6 +340,105 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToCurrent(t *testing.T)
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
 	})
+}
+
+func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
+	client := integrationClient(t)
+	database := migratedIntegrationDatabase(t, client)
+
+	cursor, err := database.Collection(migrationLedgerCollectionName).Find(t.Context(), bson.D{})
+	if err != nil {
+		t.Fatalf("read migration ledger: %v", err)
+	}
+	defer cursor.Close(context.Background())
+	var records []migrationRecord
+	if err := cursor.All(t.Context(), &records); err != nil {
+		t.Fatalf("decode migration ledger: %v", err)
+	}
+	got := make([]string, 0, len(records))
+	for _, record := range records {
+		got = append(got, record.ID)
+	}
+	sort.Strings(got)
+	want := []string{
+		applicationCreationMigrationID,
+		applicationVersionMigrationID,
+		applicationVersionDraftUpdateMigrationID,
+	}
+	sort.Strings(want)
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("migration ledger IDs = %v, want %v", got, want)
+	}
+}
+
+// TestMigratorIntegration_FreshMatchesSequentialUpgrade proves that applying
+// the chain one migration at a time to an existing database produces exactly
+// the same collection validators as one fresh Migrate.
+func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
+	client := integrationClient(t)
+	freshDatabase := integrationDatabase(t, client)
+	if err := NewMigrator(freshDatabase).Migrate(t.Context()); err != nil {
+		t.Fatalf("fresh migrate: %v", err)
+	}
+
+	sequentialDatabase := integrationDatabase(t, client)
+	sequential := NewMigrator(sequentialDatabase)
+	if err := sequential.ensureMigrationLedger(t.Context()); err != nil {
+		t.Fatalf("create sequential migration ledger: %v", err)
+	}
+	for _, migration := range []struct {
+		id    string
+		apply func(context.Context) error
+	}{
+		{id: applicationCreationMigrationID, apply: sequential.applyApplicationCreationMigration},
+		{id: applicationVersionMigrationID, apply: sequential.applyApplicationVersionMigration},
+		{id: applicationVersionDraftUpdateMigrationID, apply: sequential.applyApplicationVersionDraftUpdateMigration},
+	} {
+		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
+			t.Fatalf("apply %s sequentially: %v", migration.id, err)
+		}
+	}
+
+	for _, collectionName := range []string{
+		applicationsCollectionName,
+		applicationCreationQuotasCollectionName,
+		applicationVersionsCollectionName,
+	} {
+		freshValidator := collectionValidator(t, freshDatabase, collectionName)
+		sequentialValidator := collectionValidator(t, sequentialDatabase, collectionName)
+		if !bytes.Equal(freshValidator, sequentialValidator) {
+			t.Fatalf(
+				"validator for %s differs between fresh and sequential upgrade:\nfresh=%s\nsequential=%s",
+				collectionName, freshValidator, sequentialValidator,
+			)
+		}
+	}
+}
+
+func collectionValidator(t *testing.T, database *drivermongo.Database, collectionName string) bson.Raw {
+	t.Helper()
+	var result struct {
+		Cursor struct {
+			FirstBatch []struct {
+				Options bson.Raw `bson:"options"`
+			} `bson:"firstBatch"`
+		} `bson:"cursor"`
+	}
+	err := database.RunCommand(t.Context(), bson.D{
+		{Key: "listCollections", Value: 1},
+		{Key: "filter", Value: bson.D{{Key: "name", Value: collectionName}}},
+	}).Decode(&result)
+	if err != nil {
+		t.Fatalf("list collection %s: %v", collectionName, err)
+	}
+	if len(result.Cursor.FirstBatch) != 1 {
+		t.Fatalf("list collection %s returned %d entries, want 1", collectionName, len(result.Cursor.FirstBatch))
+	}
+	validator, ok := result.Cursor.FirstBatch[0].Options.Lookup("validator").DocumentOK()
+	if !ok {
+		t.Fatalf("collection %s has no validator", collectionName)
+	}
+	return validator
 }
 
 func TestIntegrationTopologySupportsTransactions(t *testing.T) {

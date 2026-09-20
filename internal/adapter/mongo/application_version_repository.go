@@ -151,16 +151,20 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 	applications := repository.database.Collection(applicationsCollectionName)
 	versions := repository.database.Collection(applicationVersionsCollectionName)
 
-	// FindOneAndUpdate establishes a write conflict with an administrator
-	// transfer while atomically rechecking the current administrator. Setting the
-	// existing value leaves the Application's business state unchanged.
+	// The conditional $inc on the adapter-only coordinationRevision is the
+	// write fence. A same-value $set would not reliably create a document-level
+	// write conflict, so a committed administrator transfer could be bypassed
+	// by an in-flight old-admin replacement. Incrementing a real field forces
+	// MongoDB to serialize on the Application document; the retried transaction
+	// then fails the administrator filter and maps to a stable admin-required
+	// error. It is never nextVersionSequence, which belongs to UC-APP-002.
 	var ownedApplication struct {
 		ID string `bson:"id"`
 	}
 	err := applications.FindOneAndUpdate(
 		ctx,
 		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: expectedAdminID.String()}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "adminId", Value: expectedAdminID.String()}}}},
+		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 		options.FindOneAndUpdate().SetProjection(bson.D{{Key: "id", Value: 1}}),
 	).Decode(&ownedApplication)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
