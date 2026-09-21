@@ -32,6 +32,9 @@ const (
 	ErrorCodeApplicationReviewPermissionRequired   ErrorCode = "ApplicationReviewPermissionRequired"
 	ErrorCodeApplicationReviewNotFound             ErrorCode = "ApplicationReviewNotFound"
 	ErrorCodeApplicationReviewAlreadyDecided       ErrorCode = "ApplicationReviewAlreadyDecided"
+	ErrorCodeApplicationReviewNotLatest            ErrorCode = "ApplicationReviewNotLatest"
+	ErrorCodeApplicationReviewAlreadyRestored      ErrorCode = "ApplicationReviewAlreadyRestored"
+	ErrorCodeApplicationVersionNotRejected         ErrorCode = "ApplicationVersionNotRejected"
 	ErrorCodeApplicationReviewStateInconsistent    ErrorCode = "ApplicationReviewStateInconsistent"
 	ErrorCodeApplicationReviewConflictOfInterest   ErrorCode = "ApplicationReviewConflictOfInterest"
 	ErrorCodeInvalidApplicationReviewOutcome       ErrorCode = "InvalidApplicationReviewOutcome"
@@ -96,6 +99,9 @@ var (
 	ErrApplicationReviewPermissionRequired   = newError(ErrorCategoryAuthorization, ErrorCodeApplicationReviewPermissionRequired, "application version review permission is required", nil)
 	ErrApplicationReviewNotFound             = newError(ErrorCategoryNotFound, ErrorCodeApplicationReviewNotFound, "application review not found", nil)
 	ErrApplicationReviewAlreadyDecided       = newError(ErrorCategoryConflict, ErrorCodeApplicationReviewAlreadyDecided, "application review is already decided", nil)
+	ErrApplicationReviewNotLatest            = newError(ErrorCategoryConflict, ErrorCodeApplicationReviewNotLatest, "application review is not the latest attempt", nil)
+	ErrApplicationReviewAlreadyRestored      = newError(ErrorCategoryConflict, ErrorCodeApplicationReviewAlreadyRestored, "application review is already restored", nil)
+	ErrApplicationVersionNotRejected         = newError(ErrorCategoryConflict, ErrorCodeApplicationVersionNotRejected, "application version is not rejected", nil)
 	ErrApplicationReviewStateInconsistent    = newError(ErrorCategoryConflict, ErrorCodeApplicationReviewStateInconsistent, "application review state is inconsistent", nil)
 	ErrApplicationReviewConflictOfInterest   = newError(ErrorCategoryAuthorization, ErrorCodeApplicationReviewConflictOfInterest, "reviewer has a conflict of interest", nil)
 	ErrInvalidApplicationReviewOutcome       = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewOutcome, "application review outcome is invalid", nil)

@@ -24,16 +24,31 @@ type SubmitApplicationVersionReviewHandler interface {
 	) (*reviewdomain.ReviewSubmissionResult, error)
 }
 
+type RestoreRejectedApplicationVersionHandler interface {
+	Handle(
+		ctx context.Context,
+		identity shared.DeveloperIdentity,
+		applicationID shared.ApplicationID,
+		versionID reviewdomain.ApplicationVersionID,
+		reviewID reviewdomain.ApplicationReviewID,
+		command reviewusecase.RestoreRejectedApplicationVersionCommand,
+	) (*reviewdomain.RestoreRejectedVersionResult, error)
+}
+
 type ApplicationReviewService struct {
 	applicationreviewv1.UnimplementedApplicationReviewServer
-	submitHandler SubmitApplicationVersionReviewHandler
+	submitHandler  SubmitApplicationVersionReviewHandler
+	restoreHandler RestoreRejectedApplicationVersionHandler
 }
 
 var _ applicationreviewv1.ApplicationReviewHTTPServer = (*ApplicationReviewService)(nil)
 var _ applicationreviewv1.ApplicationReviewServer = (*ApplicationReviewService)(nil)
 
-func NewApplicationReviewService(handler SubmitApplicationVersionReviewHandler) *ApplicationReviewService {
-	return &ApplicationReviewService{submitHandler: handler}
+func NewApplicationReviewService(
+	submitHandler SubmitApplicationVersionReviewHandler,
+	restoreHandler RestoreRejectedApplicationVersionHandler,
+) *ApplicationReviewService {
+	return &ApplicationReviewService{submitHandler: submitHandler, restoreHandler: restoreHandler}
 }
 
 func (service *ApplicationReviewService) SubmitApplicationVersionReview(
@@ -87,9 +102,76 @@ func (service *ApplicationReviewService) SubmitApplicationVersionReview(
 	return applicationReviewSubmissionResponse(result), nil
 }
 
+func (service *ApplicationReviewService) RestoreRejectedApplicationVersionToDraft(
+	ctx context.Context,
+	request *applicationreviewv1.RestoreRejectedApplicationVersionToDraftRequest,
+) (*applicationreviewv1.RestoreRejectedApplicationVersionToDraftResponse, error) {
+	if service == nil || service.restoreHandler == nil || request == nil {
+		return nil, toTransportError(reviewdomain.NewInternalError(nil))
+	}
+	identity, ok := developerIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(reviewdomain.ErrDeveloperIdentityRequired)
+	}
+	applicationID, valid := shared.ParseApplicationID(request.GetApplicationId())
+	versionID := reviewdomain.ApplicationVersionID(request.GetVersionId())
+	reviewID := reviewdomain.ApplicationReviewID(request.GetReviewId())
+	if !valid || !versionID.IsValid() || !reviewID.IsValid() {
+		return nil, toTransportError(reviewdomain.ErrApplicationReviewNotFound)
+	}
+	expectedRevision := int64(0)
+	if command := request.GetCommand(); command != nil {
+		expectedRevision = command.GetExpectedVersionRevision()
+	}
+	result, err := service.restoreHandler.Handle(
+		ctx,
+		identity,
+		applicationID,
+		versionID,
+		reviewID,
+		reviewusecase.RestoreRejectedApplicationVersionCommand{ExpectedVersionRevision: expectedRevision},
+	)
+	if err != nil {
+		return nil, toTransportError(err)
+	}
+	if result == nil || result.Review() == nil || result.Version() == nil {
+		return nil, toTransportError(reviewdomain.NewInternalError(nil))
+	}
+	review := result.Review()
+	version := result.Version()
+	return &applicationreviewv1.RestoreRejectedApplicationVersionToDraftResponse{
+		Review: applicationReviewResource(review),
+		Version: &applicationreviewv1.RestoredApplicationVersion{
+			ApplicationId: version.ApplicationID().String(),
+			VersionId:     version.VersionID().String(),
+			ReviewStatus:  version.ReviewStatus(),
+			Revision:      version.Revision(),
+			UpdatedBy:     version.UpdatedBy().String(),
+			UpdatedAt:     timestamppb.New(version.UpdatedAt()),
+		},
+	}, nil
+}
+
 func applicationReviewSubmissionResponse(result *reviewdomain.ReviewSubmissionResult) *applicationreviewv1.SubmitApplicationVersionReviewResponse {
 	review := result.Review()
 	version := result.Version()
+	return &applicationreviewv1.SubmitApplicationVersionReviewResponse{
+		Review: applicationReviewResource(review),
+		Version: &applicationreviewv1.SubmittedApplicationVersion{
+			ApplicationId: version.ApplicationID().String(),
+			VersionId:     version.VersionID().String(),
+			ReviewStatus:  version.ReviewStatus(),
+			Revision:      version.Revision(),
+			UpdatedBy:     version.UpdatedBy().String(),
+			UpdatedAt:     timestamppb.New(version.UpdatedAt()),
+		},
+	}
+}
+
+func applicationReviewResource(review *reviewdomain.ApplicationReview) *applicationreviewv1.ApplicationReviewResource {
+	if review == nil {
+		return nil
+	}
 	snapshot := review.Snapshot()
 	requiredCapabilities := append([]string{}, snapshot.RequiredCapabilities()...)
 	requiredScopeValues := snapshot.RequiredScopes()
@@ -102,35 +184,33 @@ func applicationReviewSubmissionResponse(result *reviewdomain.ReviewSubmissionRe
 	for index, scope := range optionalScopeValues {
 		optionalScopes[index] = string(scope)
 	}
-	return &applicationreviewv1.SubmitApplicationVersionReviewResponse{
-		Review: &applicationreviewv1.ApplicationReviewResource{
-			ReviewId:              review.ReviewID().String(),
-			ApplicationId:         review.ApplicationID().String(),
-			VersionId:             review.VersionID().String(),
-			Attempt:               review.Attempt().Int32(),
-			SourceVersionRevision: review.SourceVersionRevision(),
-			Status:                string(review.Status()),
-			Snapshot: &applicationreviewv1.ApplicationVersionReviewSnapshot{
-				VersionLabel:              snapshot.VersionLabel(),
-				LaunchUrl:                 string(snapshot.LaunchURL()),
-				RpcApiMinVersion:          snapshot.RPCAPIMinVersion(),
-				RpcApiMaxVersionExclusive: snapshot.RPCAPIMaxVersionExclusive(),
-				RequiredCapabilities:      requiredCapabilities,
-				RequiredScopes:            requiredScopes,
-				OptionalScopes:            optionalScopes,
-			},
-			ScopeCatalogRevision:   review.ScopeCatalogRevision().Int64(),
-			PreflightPolicyVersion: review.PreflightPolicyVersion().String(),
-			SubmittedBy:            review.SubmittedBy().String(),
-			SubmittedAt:            timestamppb.New(review.SubmittedAt()),
+	resource := &applicationreviewv1.ApplicationReviewResource{
+		ReviewId:              review.ReviewID().String(),
+		ApplicationId:         review.ApplicationID().String(),
+		VersionId:             review.VersionID().String(),
+		Attempt:               review.Attempt().Int32(),
+		SourceVersionRevision: review.SourceVersionRevision(),
+		Status:                string(review.Status()),
+		Snapshot: &applicationreviewv1.ApplicationVersionReviewSnapshot{
+			VersionLabel:              snapshot.VersionLabel(),
+			LaunchUrl:                 string(snapshot.LaunchURL()),
+			RpcApiMinVersion:          snapshot.RPCAPIMinVersion(),
+			RpcApiMaxVersionExclusive: snapshot.RPCAPIMaxVersionExclusive(),
+			RequiredCapabilities:      requiredCapabilities,
+			RequiredScopes:            requiredScopes,
+			OptionalScopes:            optionalScopes,
 		},
-		Version: &applicationreviewv1.SubmittedApplicationVersion{
-			ApplicationId: version.ApplicationID().String(),
-			VersionId:     version.VersionID().String(),
-			ReviewStatus:  version.ReviewStatus(),
-			Revision:      version.Revision(),
-			UpdatedBy:     version.UpdatedBy().String(),
-			UpdatedAt:     timestamppb.New(version.UpdatedAt()),
-		},
+		ScopeCatalogRevision:   review.ScopeCatalogRevision().Int64(),
+		PreflightPolicyVersion: review.PreflightPolicyVersion().String(),
+		SubmittedBy:            review.SubmittedBy().String(),
+		SubmittedAt:            timestamppb.New(review.SubmittedAt()),
 	}
+	if restoration := review.DraftRestoration(); restoration != nil {
+		resource.DraftRestoration = &applicationreviewv1.ApplicationReviewDraftRestoration{
+			RestoredBy:            restoration.RestoredBy().String(),
+			RestoredAt:            timestamppb.New(restoration.RestoredAt()),
+			ResultVersionRevision: restoration.ResultVersionRevision(),
+		}
+	}
+	return resource
 }

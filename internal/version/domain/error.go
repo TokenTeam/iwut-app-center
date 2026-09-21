@@ -31,6 +31,7 @@ const (
 	ErrorCodeApplicationVersionRevisionRequired   ErrorCode = "ApplicationVersionRevisionRequired"
 	ErrorCodeApplicationVersionNotFound           ErrorCode = "ApplicationVersionNotFound"
 	ErrorCodeApplicationVersionNotDraft           ErrorCode = "ApplicationVersionNotDraft"
+	ErrorCodeApplicationVersionNotRejected        ErrorCode = "ApplicationVersionNotRejected"
 	ErrorCodeApplicationVersionRevisionConflict   ErrorCode = "ApplicationVersionRevisionConflict"
 	ErrorCodeApplicationVersionLabelAlreadyExists ErrorCode = "ApplicationVersionLabelAlreadyExists"
 	ErrorCodeInternal                             ErrorCode = "Internal"
@@ -111,6 +112,9 @@ var (
 	)
 	ErrApplicationVersionNotDraft = newError(
 		ErrorCategoryConflict, ErrorCodeApplicationVersionNotDraft, "application version is not a draft", nil,
+	)
+	ErrApplicationVersionNotRejected = newError(
+		ErrorCategoryConflict, ErrorCodeApplicationVersionNotRejected, "application version is not rejected", nil,
 	)
 	ErrApplicationVersionRevisionConflict = newError(
 		ErrorCategoryConflict, ErrorCodeApplicationVersionRevisionConflict, "application version revision conflicts", nil,

@@ -81,3 +81,68 @@ func TestAPIContract_UCAPP004_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIContract_UCAPP006_ResourceRouteAndGeneratedMethodAgree(t *testing.T) {
+	t.Parallel()
+	root := moduleRoot(t)
+	protoPath := filepath.Join(root, "api", "app_center", "v1", "application_review", "application_review.proto")
+	protoSource, err := os.ReadFile(protoPath)
+	if err != nil {
+		t.Fatalf("read proto: %v", err)
+	}
+	protoText := string(protoSource)
+	postPath := mustFind(t, regexp.MustCompile(`(?s)rpc\s+RestoreRejectedApplicationVersionToDraft.*?post:\s*"([^"]+)"`), protoText)
+	if postPath != RestoreApplicationVersionInternalPath {
+		t.Fatalf("Proto path = %q, constant = %q", postPath, RestoreApplicationVersionInternalPath)
+	}
+	if RestoreApplicationVersionExternalPath != "/app-center/v1/applications/{application_id}/versions/{version_id}/reviews/{review_id}/draft-restoration" ||
+		strings.TrimPrefix(RestoreApplicationVersionExternalPath, ServicePrefix) != RestoreApplicationVersionInternalPath {
+		t.Fatalf("external/internal mapping = %q -> %q", RestoreApplicationVersionExternalPath, RestoreApplicationVersionInternalPath)
+	}
+	if RestoreApplicationVersionGRPCMethod != "/app_center.v1.application_review.ApplicationReview/RestoreRejectedApplicationVersionToDraft" {
+		t.Fatalf("gRPC method = %q", RestoreApplicationVersionGRPCMethod)
+	}
+	if RestoreApplicationVersionGRPCMethod != applicationreviewv1.OperationApplicationReviewRestoreRejectedApplicationVersionToDraft {
+		t.Fatalf("gRPC method = %q, generated operation = %q", RestoreApplicationVersionGRPCMethod, applicationreviewv1.OperationApplicationReviewRestoreRejectedApplicationVersionToDraft)
+	}
+	generated, err := os.ReadFile(filepath.Join(root, "api", "gen", "go", "app_center", "v1", "application_review", "application_review_http.pb.go"))
+	if err != nil {
+		t.Fatalf("read generated HTTP code: %v", err)
+	}
+	if !strings.Contains(string(generated), `r.POST("`+postPath+`"`) {
+		t.Fatalf("generated HTTP code is missing route %q", postPath)
+	}
+}
+
+func TestAPIContract_UCAPP006_HTTPBodyOnlyAcceptsExpectedVersionRevision(t *testing.T) {
+	t.Parallel()
+	request := &applicationreviewv1.RestoreRejectedApplicationVersionToDraftRequest{}
+	wantOuter := []string{"application_id", "command", "review_id", "version_id"}
+	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != strings.Join(wantOuter, ",") {
+		t.Fatalf("outer request fields = %v, want %v", fields, wantOuter)
+	}
+	command := &applicationreviewv1.RestoreRejectedApplicationVersionToDraftCommand{}
+	if fields := messageFieldNames(t, command); strings.Join(fields, ",") != "expected_version_revision" {
+		t.Fatalf("HTTP command fields = %v, want [expected_version_revision]", fields)
+	}
+	for _, field := range []string{"status", "draft_restoration", "restored_by", "restored_at", "result_version_revision", "developer_status"} {
+		if containsField(command, field) {
+			t.Fatalf("HTTP body contains server-owned field %q", field)
+		}
+	}
+}
+
+func TestAPIContract_UCAPP006_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
+	t.Parallel()
+	for _, reason := range []string{
+		ReasonApplicationReviewNotFound,
+		ReasonApplicationReviewNotLatest,
+		ReasonApplicationReviewAlreadyRestored,
+		ReasonApplicationVersionNotRejected,
+		ReasonApplicationReviewStateInconsistent,
+	} {
+		if _, ok := applicationreviewv1.ErrorReason_value[reason]; !ok {
+			t.Fatalf("generated UC-APP-006 ErrorReason enum is missing %q", reason)
+		}
+	}
+}

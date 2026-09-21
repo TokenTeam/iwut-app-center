@@ -119,6 +119,7 @@ var _ transport.CreateApplicationHandler = (*usecase.CreateApplicationHandler)(n
 var _ transport.CreateApplicationVersionHandler = (*versionusecase.CreateApplicationVersionHandler)(nil)
 var _ transport.UpdateDraftApplicationVersionHandler = (*versionusecase.UpdateDraftApplicationVersionHandler)(nil)
 var _ transport.SubmitApplicationVersionReviewHandler = (*reviewusecase.SubmitApplicationVersionReviewHandler)(nil)
+var _ transport.RestoreRejectedApplicationVersionHandler = (*reviewusecase.RestoreRejectedApplicationVersionHandler)(nil)
 var _ authadapter.ScopeCatalogSnapshotSource = (*authadapter.GRPCScopeCatalogSnapshotSource)(nil)
 var _ versionport.ScopeCatalog = (*authadapter.ScopeCatalogCache)(nil)
 var _ reviewport.ScopeCatalog = (*authadapter.ReviewScopeCatalog)(nil)

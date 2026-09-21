@@ -36,7 +36,12 @@ const (
 	ReasonApplicationVersionRevisionRequired = "ERROR_REASON_APPLICATION_VERSION_REVISION_REQUIRED"
 	ReasonApplicationVersionNotFound         = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
 	ReasonApplicationVersionNotDraft         = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
+	ReasonApplicationVersionNotRejected      = "ERROR_REASON_APPLICATION_VERSION_NOT_REJECTED"
 	ReasonApplicationVersionRevisionConflict = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
+	ReasonApplicationReviewNotFound          = "ERROR_REASON_APPLICATION_REVIEW_NOT_FOUND"
+	ReasonApplicationReviewNotLatest         = "ERROR_REASON_APPLICATION_REVIEW_NOT_LATEST"
+	ReasonApplicationReviewAlreadyRestored   = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_RESTORED"
+	ReasonApplicationReviewStateInconsistent = "ERROR_REASON_APPLICATION_REVIEW_STATE_INCONSISTENT"
 	ReasonApplicationLaunchURLNotReviewable  = "ERROR_REASON_APPLICATION_LAUNCH_URL_NOT_REVIEWABLE"
 	ReasonLaunchURLInspectionUnavailable     = "ERROR_REASON_LAUNCH_URL_INSPECTION_UNAVAILABLE"
 	ReasonInternal                           = "ERROR_REASON_INTERNAL"
@@ -114,6 +119,7 @@ var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{
 	versiondomain.ErrorCodeApplicationVersionRevisionRequired:   {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
 	versiondomain.ErrorCodeApplicationVersionNotFound:           {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
 	versiondomain.ErrorCodeApplicationVersionNotDraft:           {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
+	versiondomain.ErrorCodeApplicationVersionNotRejected:        {code: codes.Aborted, reason: ReasonApplicationVersionNotRejected, message: "application version is not rejected"},
 	versiondomain.ErrorCodeApplicationVersionRevisionConflict:   {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
 	versiondomain.ErrorCodeInternal:                             internalSpec,
 }
@@ -125,7 +131,12 @@ var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
 	reviewdomain.ErrorCodeApplicationVersionNotFound:         {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
 	reviewdomain.ErrorCodeApplicationAdminRequired:           {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
 	reviewdomain.ErrorCodeApplicationVersionNotDraft:         {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
+	reviewdomain.ErrorCodeApplicationVersionNotRejected:      {code: codes.Aborted, reason: ReasonApplicationVersionNotRejected, message: "application version is not rejected"},
 	reviewdomain.ErrorCodeApplicationVersionRevisionConflict: {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
+	reviewdomain.ErrorCodeApplicationReviewNotFound:          {code: codes.NotFound, reason: ReasonApplicationReviewNotFound, message: "application review not found"},
+	reviewdomain.ErrorCodeApplicationReviewNotLatest:         {code: codes.Aborted, reason: ReasonApplicationReviewNotLatest, message: "application review is not the latest attempt"},
+	reviewdomain.ErrorCodeApplicationReviewAlreadyRestored:   {code: codes.Aborted, reason: ReasonApplicationReviewAlreadyRestored, message: "application review is already restored"},
+	reviewdomain.ErrorCodeApplicationReviewStateInconsistent: {code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent, message: "application review state is inconsistent"},
 	reviewdomain.ErrorCodeApplicationLaunchURLNotReviewable:  {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
 	reviewdomain.ErrorCodeLaunchURLInspectionUnavailable:     {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
 	reviewdomain.ErrorCodeInvalidApplicationScope:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},

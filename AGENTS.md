@@ -40,42 +40,34 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-004 API Delivery and E2E.** Target UC: UC-APP-004
-(SubmitApplicationVersionReview). Brief:
-`../../docs/app-center/briefs/UC-APP-004.md`, generated from
-`docs/tools/brief-specs/UC-APP-004.json`. The brief embeds the Auth Scope
-Catalog v1 and App Center routing contracts; regenerate it when a selected
+**UC-APP-006 Restore Rejected Version to Draft.** Brief:
+`../../docs/app-center/briefs/UC-APP-006.md`, generated from
+`docs/tools/brief-specs/UC-APP-006.json`. Regenerate it whenever a selected
 source changes.
 
 Code scope:
 
-- `api/` — add the resource-oriented UC-APP-004 POST method and response
-  messages; the body contains only `expectedRevision` and no server-owned
-  review, snapshot, state or audit fields.
-- `internal/adapter/preflight/` — implement the DNS-only public HTTPS launch
-  URL policy with an injectable resolver; it performs no HTTP request.
-- `internal/adapter/transport/` — add UC-APP-004 HTTP + gRPC conversion,
-  centralized ADR-005 error mapping and the created Review Location header.
-- `cmd/app-center/` — assemble the existing UC-APP-004 core handler, real Auth
-  Scope Catalog consumer and real preflight adapter with Wire.
-- `cmd/app-center/e2e_integration_test.go` — cross real listeners, JWS, the
-  generated Auth interface, the real policy with a deterministic resolver and
-  a transaction-capable MongoDB.
-- Contract/unit tests cover routing, request-field exclusion, public/special
-  address policy and UC-APP-004 error mappings.
+- `internal/review/domain`, `internal/version/domain` — add the one-time
+  restoration audit and the explicit `REJECTED -> DRAFT` transition.
+- `internal/review/usecase`, `internal/review/port` — add the restoration
+  command handler and one atomic repository port.
+- `internal/adapter/mongo` — add migration 0006, typed document mapping and a
+  transaction that fences current admin, latest attempt, revision and the
+  one-time restoration write.
+- `api/` and `internal/adapter/transport` — add the resource-oriented
+  draft-restoration POST method, stable reasons and HTTP/gRPC conversion.
+- `cmd/app-center/` — assemble the handler and repository with goforj/wire.
+- Real MongoDB tests cover rollback and concurrency; provider E2E crosses real
+  HTTP and gRPC listeners with signed DeveloperIdentity JWS.
 
 Explicit non-goals:
 
-- No UC-APP-005 transport and no legacy API compatibility layer.
-- No Auth database reads, production hardcoded Scope catalog or unsigned JSON
-  identity header.
-- No invented internal-service credential: until that platform contract is
-  accepted the consumer connection is explicitly unauthenticated and this work
-  remains non-production; tests use only the generated Auth interface.
-- No HTTP fetcher, redirect follower or headless browser; DNS is the only
-  launch URL inspection performed by this work package.
-- No Gateway or Auth Center code change; the Gateway prefix strip is only
-  recorded and asserted in the contract test.
+- No UC-APP-005 transport, reviewer identity, Auth developer-status RPC or
+  System Auth ID work.
+- No Scope Catalog, URL preflight or ReviewPolicyProvider call during restore.
+- No content change, automatic resubmission, appeal, notification or legacy API
+  compatibility layer.
+- No Gateway or Auth Center code change.
 - No gRPC-Web wrapper in this service (terminated at Traefik).
 - No push in any repository; keep API, service and documentation commits local
   until the user chooses the publication batch.

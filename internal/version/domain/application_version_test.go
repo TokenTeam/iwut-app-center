@@ -172,6 +172,64 @@ func TestApplicationVersion_BR_VER_013_014_NormalizedEquivalentReplacementIsNoOp
 	}
 }
 
+func TestApplicationVersion_BR_REV_023_024_RestoreRejectedDraftPreservesContentAndAdvancesAudit(t *testing.T) {
+	t.Parallel()
+	base, err := NewApplicationVersion(validDraft(t, time.Date(2026, time.September, 19, 12, 0, 0, 0, time.UTC)), 1)
+	if err != nil {
+		t.Fatalf("NewApplicationVersion() error = %v", err)
+	}
+	rejectedAt := time.Date(2026, time.September, 20, 9, 0, 0, 0, time.UTC)
+	rejected := restoreVersionForTest(t, base, ReviewStatusRejected, 3, "auth-reviewer", rejectedAt)
+	restoredAt := time.Date(2026, time.September, 21, 10, 30, 0, 0, time.FixedZone("CST", 8*60*60))
+
+	restored, err := rejected.RestoreDraft(3, "auth-admin", restoredAt)
+	if err != nil {
+		t.Fatalf("RestoreDraft() error = %v", err)
+	}
+	if restored.ReviewStatus() != ReviewStatusDraft || restored.Revision() != 4 || restored.UpdatedBy() != "auth-admin" ||
+		!restored.UpdatedAt().Equal(restoredAt) || restored.UpdatedAt().Location() != time.UTC {
+		t.Fatalf("restored lifecycle = (%s, %d, %s, %v)", restored.ReviewStatus(), restored.Revision(), restored.UpdatedBy(), restored.UpdatedAt())
+	}
+	if restored.ID() != rejected.ID() || restored.ApplicationID() != rejected.ApplicationID() || restored.Sequence() != rejected.Sequence() ||
+		restored.VersionLabel() != rejected.VersionLabel() || restored.LaunchURL() != rejected.LaunchURL() ||
+		restored.RPCApiRange() != rejected.RPCApiRange() ||
+		!reflect.DeepEqual(restored.RequiredCapabilities(), rejected.RequiredCapabilities()) ||
+		!reflect.DeepEqual(restored.RequiredScopes(), rejected.RequiredScopes()) ||
+		!reflect.DeepEqual(restored.OptionalScopes(), rejected.OptionalScopes()) {
+		t.Fatal("RestoreDraft changed version identity or reviewable content")
+	}
+	if rejected.ReviewStatus() != ReviewStatusRejected || rejected.Revision() != 3 {
+		t.Fatal("RestoreDraft mutated the source version")
+	}
+}
+
+func TestApplicationVersion_BR_REV_023_RestoreRejectedDraftRejectsWrongStateOrRevision(t *testing.T) {
+	t.Parallel()
+	base, err := NewApplicationVersion(validDraft(t, time.Now()), 1)
+	if err != nil {
+		t.Fatalf("NewApplicationVersion() error = %v", err)
+	}
+	rejected := restoreVersionForTest(t, base, ReviewStatusRejected, 3, "auth-reviewer", time.Now())
+	tests := []struct {
+		name     string
+		version  *ApplicationVersion
+		revision int64
+		want     error
+	}{
+		{name: "not rejected", version: base, revision: 1, want: ErrApplicationVersionNotRejected},
+		{name: "missing revision", version: rejected, revision: 0, want: ErrApplicationVersionRevisionRequired},
+		{name: "stale revision", version: rejected, revision: 2, want: ErrApplicationVersionRevisionConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			restored, err := test.version.RestoreDraft(test.revision, "auth-admin", time.Now())
+			if restored != nil || !errors.Is(err, test.want) {
+				t.Fatalf("RestoreDraft() = (%v, %v), want nil and %v", restored, err, test.want)
+			}
+		})
+	}
+}
+
 func validReplacement(
 	t *testing.T,
 	labelValue string,

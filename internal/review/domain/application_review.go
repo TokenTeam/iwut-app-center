@@ -199,6 +199,38 @@ type ApplicationReview struct {
 	submittedAt            time.Time
 	status                 ReviewStatus
 	decision               *ApplicationReviewDecision
+	draftRestoration       *ApplicationReviewDraftRestoration
+}
+
+type ApplicationReviewDraftRestoration struct {
+	restoredBy            shared.AuthID
+	restoredAt            time.Time
+	resultVersionRevision int64
+}
+
+func NewApplicationReviewDraftRestoration(
+	restoredBy shared.AuthID,
+	restoredAt time.Time,
+	resultVersionRevision int64,
+) (*ApplicationReviewDraftRestoration, error) {
+	if !restoredBy.IsValid() || restoredAt.IsZero() || resultVersionRevision < 1 {
+		return nil, NewInternalError(nil)
+	}
+	return &ApplicationReviewDraftRestoration{
+		restoredBy:            restoredBy,
+		restoredAt:            restoredAt.UTC(),
+		resultVersionRevision: resultVersionRevision,
+	}, nil
+}
+
+func (restoration *ApplicationReviewDraftRestoration) RestoredBy() shared.AuthID {
+	return restoration.restoredBy
+}
+func (restoration *ApplicationReviewDraftRestoration) RestoredAt() time.Time {
+	return restoration.restoredAt
+}
+func (restoration *ApplicationReviewDraftRestoration) ResultVersionRevision() int64 {
+	return restoration.resultVersionRevision
 }
 
 func NewPendingApplicationReview(
@@ -244,6 +276,7 @@ func RestoreApplicationReview(
 	submittedAt time.Time,
 	status ReviewStatus,
 	decision *ApplicationReviewDecision,
+	draftRestoration *ApplicationReviewDraftRestoration,
 ) (*ApplicationReview, error) {
 	if !reviewID.IsValid() || !applicationID.IsValid() || !versionID.IsValid() || attempt < 1 ||
 		sourceVersionRevision < 1 || scopeCatalogRevision < 1 ||
@@ -256,6 +289,9 @@ func RestoreApplicationReview(
 			return nil, NewInternalError(nil)
 		}
 	} else if decision == nil || decision.Outcome() != ReviewDecision(status) {
+		return nil, NewInternalError(nil)
+	}
+	if draftRestoration != nil && status != ReviewStatusRejected {
 		return nil, NewInternalError(nil)
 	}
 	return &ApplicationReview{
@@ -271,6 +307,7 @@ func RestoreApplicationReview(
 		submittedAt:            submittedAt.UTC(),
 		status:                 status,
 		decision:               copyDecision(decision),
+		draftRestoration:       copyDraftRestoration(draftRestoration),
 	}, nil
 }
 
@@ -281,7 +318,12 @@ func (review *ApplicationReview) Attempt() ReviewAttempt              { return r
 func (review *ApplicationReview) SourceVersionRevision() int64        { return review.sourceVersionRevision }
 func (review *ApplicationReview) Status() ReviewStatus                { return review.status }
 func (review *ApplicationReview) HasDecision() bool                   { return review.decision != nil }
-func (review *ApplicationReview) HasDraftRestoration() bool           { return false }
+func (review *ApplicationReview) HasDraftRestoration() bool {
+	return review != nil && review.draftRestoration != nil
+}
+func (review *ApplicationReview) DraftRestoration() *ApplicationReviewDraftRestoration {
+	return copyDraftRestoration(review.draftRestoration)
+}
 func (review *ApplicationReview) Decision() *ApplicationReviewDecision {
 	return copyDecision(review.decision)
 }
@@ -344,6 +386,29 @@ func (review *ApplicationReview) Reject(
 	return copyDecision(decision), nil
 }
 
+func (review *ApplicationReview) RecordDraftRestoration(
+	restoredBy shared.AuthID,
+	restoredAt time.Time,
+	resultVersionRevision int64,
+) (*ApplicationReviewDraftRestoration, error) {
+	if review == nil || review.status != ReviewStatusRejected || review.decision == nil ||
+		review.decision.Outcome() != ReviewDecisionRejected {
+		return nil, ErrApplicationReviewStateInconsistent
+	}
+	if review.draftRestoration != nil {
+		return nil, ErrApplicationReviewAlreadyRestored
+	}
+	if resultVersionRevision != review.sourceVersionRevision+3 {
+		return nil, ErrApplicationReviewStateInconsistent
+	}
+	restoration, err := NewApplicationReviewDraftRestoration(restoredBy, restoredAt, resultVersionRevision)
+	if err != nil {
+		return nil, err
+	}
+	review.draftRestoration = restoration
+	return copyDraftRestoration(restoration), nil
+}
+
 func copyDecision(decision *ApplicationReviewDecision) *ApplicationReviewDecision {
 	if decision == nil {
 		return nil
@@ -351,6 +416,86 @@ func copyDecision(decision *ApplicationReviewDecision) *ApplicationReviewDecisio
 	copy := *decision
 	copy.confirmedCheckIDs = append([]ReviewCheckID{}, decision.confirmedCheckIDs...)
 	copy.approvalValidation = copyApprovalValidation(decision.approvalValidation)
+	return &copy
+}
+
+func copyDraftRestoration(restoration *ApplicationReviewDraftRestoration) *ApplicationReviewDraftRestoration {
+	if restoration == nil {
+		return nil
+	}
+	copy := *restoration
+	return &copy
+}
+
+const RestoredVersionReviewStatus = "DRAFT"
+
+type RestoredApplicationVersion struct {
+	applicationID shared.ApplicationID
+	versionID     ApplicationVersionID
+	revision      int64
+	updatedBy     shared.AuthID
+	updatedAt     time.Time
+}
+
+func NewRestoredApplicationVersion(
+	applicationID shared.ApplicationID,
+	versionID ApplicationVersionID,
+	revision int64,
+	updatedBy shared.AuthID,
+	updatedAt time.Time,
+) (*RestoredApplicationVersion, error) {
+	if !applicationID.IsValid() || !versionID.IsValid() || revision < 1 || !updatedBy.IsValid() || updatedAt.IsZero() {
+		return nil, NewInternalError(nil)
+	}
+	return &RestoredApplicationVersion{
+		applicationID: applicationID,
+		versionID:     versionID,
+		revision:      revision,
+		updatedBy:     updatedBy,
+		updatedAt:     updatedAt.UTC(),
+	}, nil
+}
+
+func (version *RestoredApplicationVersion) ApplicationID() shared.ApplicationID {
+	return version.applicationID
+}
+func (version *RestoredApplicationVersion) VersionID() ApplicationVersionID { return version.versionID }
+func (version *RestoredApplicationVersion) ReviewStatus() string            { return RestoredVersionReviewStatus }
+func (version *RestoredApplicationVersion) Revision() int64                 { return version.revision }
+func (version *RestoredApplicationVersion) UpdatedBy() shared.AuthID        { return version.updatedBy }
+func (version *RestoredApplicationVersion) UpdatedAt() time.Time            { return version.updatedAt }
+
+type RestoreRejectedVersionResult struct {
+	review  ApplicationReview
+	version RestoredApplicationVersion
+}
+
+func NewRestoreRejectedVersionResult(
+	review *ApplicationReview,
+	version *RestoredApplicationVersion,
+) (*RestoreRejectedVersionResult, error) {
+	if review == nil || version == nil || review.Status() != ReviewStatusRejected || !review.HasDraftRestoration() ||
+		review.ApplicationID() != version.ApplicationID() || review.VersionID() != version.VersionID() {
+		return nil, NewInternalError(nil)
+	}
+	restoration := review.DraftRestoration()
+	if restoration.ResultVersionRevision() != version.Revision() || restoration.RestoredBy() != version.UpdatedBy() ||
+		!restoration.RestoredAt().Equal(version.UpdatedAt()) {
+		return nil, NewInternalError(nil)
+	}
+	return &RestoreRejectedVersionResult{review: *review, version: *version}, nil
+}
+
+func (result *RestoreRejectedVersionResult) Review() *ApplicationReview {
+	copy := result.review
+	copy.snapshot = result.review.Snapshot()
+	copy.decision = result.review.Decision()
+	copy.draftRestoration = result.review.DraftRestoration()
+	return &copy
+}
+
+func (result *RestoreRejectedVersionResult) Version() *RestoredApplicationVersion {
+	copy := result.version
 	return &copy
 }
 

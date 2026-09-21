@@ -115,6 +115,62 @@ func TestApplicationReview_BR_REV_005_AttemptStartsAtOne(t *testing.T) {
 	}
 }
 
+func TestApplicationReview_BR_REV_025_026_RecordDraftRestorationOnceWithoutChangingDecision(t *testing.T) {
+	t.Parallel()
+	candidate := validCandidate(t)
+	attempt, _ := NewReviewAttempt(2)
+	catalogRevision, _ := NewScopeCatalogRevision(17)
+	policyVersion, _ := NewPreflightPolicyVersion("public-https.v1")
+	submittedAt := time.Date(2026, time.September, 20, 12, 30, 0, 0, time.UTC)
+	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-admin", submittedAt)
+	reviewPolicy, _ := NewReviewPolicyVersion("review.v1")
+	decidedAt := submittedAt.Add(time.Hour)
+	if _, err := review.Reject(reviewPolicy, "用途说明不足。", "auth-reviewer", decidedAt); err != nil {
+		t.Fatalf("Reject() error = %v", err)
+	}
+	originalDecision := review.Decision()
+	originalSnapshot := review.Snapshot()
+	restoredAt := decidedAt.Add(time.Hour)
+
+	restoration, err := review.RecordDraftRestoration("auth-admin", restoredAt, candidate.Revision()+3)
+	if err != nil {
+		t.Fatalf("RecordDraftRestoration() error = %v", err)
+	}
+	if restoration.RestoredBy() != "auth-admin" || !restoration.RestoredAt().Equal(restoredAt) ||
+		restoration.ResultVersionRevision() != 10 || !review.HasDraftRestoration() {
+		t.Fatalf("restoration = %#v", restoration)
+	}
+	if review.Status() != ReviewStatusRejected || !reflect.DeepEqual(review.Decision(), originalDecision) ||
+		!reflect.DeepEqual(review.Snapshot(), originalSnapshot) {
+		t.Fatal("restoration changed the immutable decision or review snapshot")
+	}
+	if second, err := review.RecordDraftRestoration("auth-admin", restoredAt.Add(time.Minute), 10); second != nil ||
+		!errors.Is(err, ErrApplicationReviewAlreadyRestored) {
+		t.Fatalf("second RecordDraftRestoration() = (%v, %v)", second, err)
+	}
+}
+
+func TestApplicationReview_BR_REV_023_026_RecordDraftRestorationRequiresRejectedConsistentRevision(t *testing.T) {
+	t.Parallel()
+	candidate := validCandidate(t)
+	attempt, _ := NewReviewAttempt(1)
+	catalogRevision, _ := NewScopeCatalogRevision(17)
+	policyVersion, _ := NewPreflightPolicyVersion("public-https.v1")
+	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-admin", time.Now())
+	if restoration, err := review.RecordDraftRestoration("auth-admin", time.Now(), 10); restoration != nil ||
+		!errors.Is(err, ErrApplicationReviewStateInconsistent) {
+		t.Fatalf("pending restoration = (%v, %v)", restoration, err)
+	}
+	reviewPolicy, _ := NewReviewPolicyVersion("review.v1")
+	if _, err := review.Reject(reviewPolicy, "reason", "auth-reviewer", time.Now()); err != nil {
+		t.Fatalf("Reject() error = %v", err)
+	}
+	if restoration, err := review.RecordDraftRestoration("auth-admin", time.Now(), 9); restoration != nil ||
+		!errors.Is(err, ErrApplicationReviewStateInconsistent) {
+		t.Fatalf("wrong result revision = (%v, %v)", restoration, err)
+	}
+}
+
 func validCandidate(t *testing.T) *SubmissionCandidate {
 	t.Helper()
 	snapshot, err := NewApplicationVersionReviewSnapshot(

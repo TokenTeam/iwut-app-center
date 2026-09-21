@@ -24,6 +24,7 @@ const (
 	applicationVersionLabelUniqueIndexName    = "uq_application_versions_application_id_version_label"
 	applicationReviewMigrationID              = "0004_application_review_submission"
 	applicationReviewDecisionMigrationID      = "0005_application_review_decision"
+	applicationReviewRestorationMigrationID   = "0006_application_review_draft_restoration"
 	applicationReviewIDUniqueIndexName        = "uq_application_reviews_review_id"
 	applicationReviewAttemptUniqueIndexName   = "uq_application_reviews_version_id_attempt"
 	applicationReviewSourceUniqueIndexName    = "uq_application_reviews_version_id_source_revision"
@@ -64,6 +65,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationVersionDraftUpdateMigrationID, apply: migrator.applyApplicationVersionDraftUpdateMigration},
 		{id: applicationReviewMigrationID, apply: migrator.applyApplicationReviewMigration},
 		{id: applicationReviewDecisionMigrationID, apply: migrator.applyApplicationReviewDecisionMigration},
+		{id: applicationReviewRestorationMigrationID, apply: migrator.applyApplicationReviewRestorationMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -258,6 +260,16 @@ func (migrator *Migrator) applyApplicationReviewDecisionMigration(ctx context.Co
 		return err
 	}
 	if err := migrator.ensureValidatedCollection(ctx, applicationReviewsCollectionName, applicationReviewDecisionValidator()); err != nil {
+		return err
+	}
+	return nil
+}
+
+// applyApplicationReviewRestorationMigration is the 0006 stage. It opens the
+// typed one-time draftRestoration object while keeping the rejected decision
+// immutable and leaving ApplicationVersion storage unchanged.
+func (migrator *Migrator) applyApplicationReviewRestorationMigration(ctx context.Context) error {
+	if err := migrator.ensureValidatedCollection(ctx, applicationReviewsCollectionName, applicationReviewRestorationValidator()); err != nil {
 		return err
 	}
 	return nil
@@ -518,19 +530,28 @@ func applicationVersionValidatorForLifecycle(reviewStatuses bson.A, initialOnly 
 // applicationReviewValidator is the 0004 schema: only a PENDING Review without
 // a decision may exist.
 func applicationReviewValidator() bson.D {
-	return applicationReviewValidatorForDecision(false)
+	return applicationReviewValidatorForLifecycle(false, false)
 }
 
 // applicationReviewDecisionValidator is the 0005 schema. It allows exactly one
 // decision object on an APPROVED/REJECTED Review and keeps PENDING Reviews
 // decision-free.
 func applicationReviewDecisionValidator() bson.D {
-	return applicationReviewValidatorForDecision(true)
+	return applicationReviewValidatorForLifecycle(true, false)
+}
+
+func applicationReviewRestorationValidator() bson.D {
+	return applicationReviewValidatorForLifecycle(true, true)
 }
 
 func applicationReviewValidatorForDecision(includeDecision bool) bson.D {
+	return applicationReviewValidatorForLifecycle(includeDecision, false)
+}
+
+func applicationReviewValidatorForLifecycle(includeDecision, includeRestoration bool) bson.D {
 	statuses := bson.A{"PENDING"}
 	decisionSchema := bson.D{{Key: "bsonType", Value: "null"}}
+	draftRestorationSchema := bson.D{{Key: "bsonType", Value: "null"}}
 	expressions := bson.A{
 		bson.D{{Key: "$gt", Value: bson.A{"$snapshot.rpcApiMaxVersionExclusive", "$snapshot.rpcApiMinVersion"}}},
 		bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$snapshot.launchUrl"}}, 2048}}},
@@ -546,6 +567,13 @@ func applicationReviewValidatorForDecision(includeDecision bool) bson.D {
 			applicationReviewDecisionSchema(),
 		}}}
 		expressions = append(expressions, applicationReviewDecisionConsistencyExpression())
+	}
+	if includeRestoration {
+		draftRestorationSchema = bson.D{{Key: "oneOf", Value: bson.A{
+			bson.D{{Key: "bsonType", Value: "null"}},
+			applicationReviewDraftRestorationSchema(),
+		}}}
+		expressions = append(expressions, applicationReviewDraftRestorationConsistencyExpression())
 	}
 
 	return bson.D{{Key: "$and", Value: bson.A{
@@ -566,7 +594,7 @@ func applicationReviewValidatorForDecision(includeDecision bool) bson.D {
 				{Key: "sourceVersionRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
 				{Key: "status", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "enum", Value: statuses}}},
 				{Key: "decision", Value: decisionSchema},
-				{Key: "draftRestoration", Value: bson.D{{Key: "bsonType", Value: "null"}}},
+				{Key: "draftRestoration", Value: draftRestorationSchema},
 				{Key: "snapshot", Value: applicationReviewSnapshotSchema()},
 				{Key: "scopeCatalogRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
 				{Key: "preflightPolicyVersion", Value: bson.D{
@@ -578,6 +606,32 @@ func applicationReviewValidatorForDecision(includeDecision bool) bson.D {
 			}},
 		}}},
 		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: expressions}}}},
+	}}}
+}
+
+func applicationReviewDraftRestorationSchema() bson.D {
+	return bson.D{
+		{Key: "bsonType", Value: "object"},
+		{Key: "required", Value: bson.A{"restoredBy", "restoredAt", "resultVersionRevision"}},
+		{Key: "additionalProperties", Value: false},
+		{Key: "properties", Value: bson.D{
+			{Key: "restoredBy", Value: nonEmptyStringSchema()},
+			{Key: "restoredAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+			{Key: "resultVersionRevision", Value: bson.D{
+				{Key: "bsonType", Value: "long"},
+				{Key: "minimum", Value: int64(1)},
+			}},
+		}},
+	}
+}
+
+func applicationReviewDraftRestorationConsistencyExpression() bson.D {
+	return bson.D{{Key: "$or", Value: bson.A{
+		bson.D{{Key: "$eq", Value: bson.A{"$draftRestoration", nil}}},
+		bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$eq", Value: bson.A{"$status", "REJECTED"}}},
+			bson.D{{Key: "$eq", Value: bson.A{"$decision.outcome", "REJECTED"}}},
+		}}},
 	}}}
 }
 

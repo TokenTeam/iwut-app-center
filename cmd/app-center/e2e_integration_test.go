@@ -26,6 +26,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
@@ -98,15 +99,22 @@ type e2eApplicationVersionDocument struct {
 }
 
 type e2eApplicationReviewDocument struct {
-	ReviewID               string `bson:"reviewId"`
-	ApplicationID          string `bson:"applicationId"`
-	VersionID              string `bson:"versionId"`
-	Attempt                int32  `bson:"attempt"`
-	SourceVersionRevision  int64  `bson:"sourceVersionRevision"`
-	Status                 string `bson:"status"`
-	ScopeCatalogRevision   int64  `bson:"scopeCatalogRevision"`
-	PreflightPolicyVersion string `bson:"preflightPolicyVersion"`
-	SubmittedBy            string `bson:"submittedBy"`
+	ReviewID               string                       `bson:"reviewId"`
+	ApplicationID          string                       `bson:"applicationId"`
+	VersionID              string                       `bson:"versionId"`
+	Attempt                int32                        `bson:"attempt"`
+	SourceVersionRevision  int64                        `bson:"sourceVersionRevision"`
+	Status                 string                       `bson:"status"`
+	ScopeCatalogRevision   int64                        `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string                       `bson:"preflightPolicyVersion"`
+	SubmittedBy            string                       `bson:"submittedBy"`
+	DraftRestoration       *e2eDraftRestorationDocument `bson:"draftRestoration"`
+}
+
+type e2eDraftRestorationDocument struct {
+	RestoredBy            string    `bson:"restoredBy"`
+	RestoredAt            time.Time `bson:"restoredAt"`
+	ResultVersionRevision int64     `bson:"resultVersionRevision"`
 }
 
 type e2eDNSResolver struct {
@@ -803,6 +811,175 @@ func TestE2E_UCAPP004_SubmitApplicationVersionReview(t *testing.T) {
 	e2eAssertReviewFailureUnchanged(t, database, scopeBefore, 2)
 }
 
+// TestE2E_UCAPP006_RestoreRejectedApplicationVersionToDraft starts from the
+// rejected state owned by UC-APP-005, then crosses the generated HTTP and gRPC
+// contracts, trusted JWS middleware, Wire graph and real MongoDB transaction.
+func TestE2E_UCAPP006_RestoreRejectedApplicationVersionToDraft(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	_, database := e2eIsolatedDatabase(t, ctx, true)
+	privateKey, publicKeyPath := e2eIdentity(t)
+	const adminID = "auth-e2e-restore-review"
+	adminToken := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
+	otherToken := e2eSignIdentity(t, privateKey, "auth-e2e-other-admin", "APPROVED")
+
+	addresses := e2eReserveAddresses(t, 3)
+	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
+	e2eStartScopeCatalogServer(t, authAddress)
+	resolver := &e2eDNSResolver{addresses: map[string][]netip.Addr{
+		"example.edu": {netip.MustParseAddr("8.8.8.8")},
+	}}
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               httpAddress,
+		config.GRPCAddrEnv:               grpcAddress,
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: authAddress,
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+	app, appCleanup, err := wireAppWithResolver(configuration, resolver)
+	if err != nil {
+		t.Fatalf("wireAppWithResolver() error = %v", err)
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Error("app.Run() did not stop within 15s")
+		}
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Errorf("app.Run() error = %v", runErr)
+		}
+		appCleanup()
+	})
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+	connection := e2eDialGRPC(t, ctx, grpcAddress, runDone, &runErr)
+	t.Cleanup(func() { _ = connection.Close() })
+
+	statusCode, applicationBody := e2eHTTPCreate(t, httpAddress, adminToken, "Restore_Review_E2E_App")
+	if statusCode != http.StatusCreated {
+		t.Fatalf("create predecessor application status = %d; body = %s", statusCode, applicationBody)
+	}
+	var application applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(applicationBody, &application); err != nil {
+		t.Fatalf("decode predecessor application: %v", err)
+	}
+	createStatus, _, createBody := e2eHTTPCreateVersion(
+		t, httpAddress, adminToken, application.GetId(), "v6.0.0", []string{"user.profile.v1"}, []string{"profile.basic"}, nil,
+	)
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create predecessor version status = %d; body = %s", createStatus, createBody)
+	}
+	var created applicationversionv1.CreateApplicationVersionResponse
+	if err := protojson.Unmarshal(createBody, &created); err != nil {
+		t.Fatalf("decode predecessor version: %v", err)
+	}
+	submitStatus, _, submitBody := e2eHTTPSubmitReview(t, httpAddress, adminToken, application.GetId(), created.GetVersionId(), 1)
+	if submitStatus != http.StatusCreated {
+		t.Fatalf("submit predecessor review status = %d; body = %s", submitStatus, submitBody)
+	}
+	var submitted applicationreviewv1.SubmitApplicationVersionReviewResponse
+	if err := protojson.Unmarshal(submitBody, &submitted); err != nil {
+		t.Fatalf("decode predecessor review: %v", err)
+	}
+	reviewID := submitted.GetReview().GetReviewId()
+	decidedAt := time.Now().UTC().Truncate(time.Millisecond)
+	reason := "E2E rejection precondition"
+	if result, err := database.Collection("application_reviews").UpdateOne(
+		ctx,
+		bson.D{{Key: "reviewId", Value: reviewID}, {Key: "status", Value: "PENDING"}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "status", Value: "REJECTED"},
+			{Key: "decision", Value: bson.D{
+				{Key: "outcome", Value: "REJECTED"},
+				{Key: "reviewPolicyVersion", Value: "review.v1"},
+				{Key: "confirmedCheckIds", Value: bson.A{}},
+				{Key: "reason", Value: reason},
+				{Key: "decidedBy", Value: "auth-e2e-reviewer"},
+				{Key: "decidedAt", Value: decidedAt},
+				{Key: "approvalValidation", Value: nil},
+			}},
+		}}},
+	); err != nil || result.ModifiedCount != 1 {
+		t.Fatalf("seed rejected review: result=%#v error=%v", result, err)
+	}
+	if result, err := database.Collection("application_versions").UpdateOne(
+		ctx,
+		bson.D{{Key: "versionId", Value: created.GetVersionId()}, {Key: "reviewStatus", Value: "SUBMITTED"}, {Key: "revision", Value: int64(2)}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "reviewStatus", Value: "REJECTED"}, {Key: "revision", Value: int64(3)},
+			{Key: "updatedBy", Value: "auth-e2e-reviewer"}, {Key: "updatedAt", Value: decidedAt},
+		}}},
+	); err != nil || result.ModifiedCount != 1 {
+		t.Fatalf("seed rejected version: result=%#v error=%v", result, err)
+	}
+
+	// Authorization and optimistic concurrency fail without changing either
+	// document before the successful command.
+	otherStatus, otherBody := e2eHTTPRestoreReview(t, httpAddress, otherToken, application.GetId(), created.GetVersionId(), reviewID, 3)
+	if otherStatus != http.StatusForbidden || !bytes.Contains(otherBody, []byte(transport.ReasonApplicationAdminRequired)) {
+		t.Fatalf("non-admin response = status:%d body:%s", otherStatus, otherBody)
+	}
+	staleStatus, staleBody := e2eHTTPRestoreReview(t, httpAddress, adminToken, application.GetId(), created.GetVersionId(), reviewID, 2)
+	if staleStatus != http.StatusConflict || !bytes.Contains(staleBody, []byte(transport.ReasonApplicationVersionRevisionConflict)) {
+		t.Fatalf("stale response = status:%d body:%s", staleStatus, staleBody)
+	}
+	if version := e2eFindApplicationVersion(t, database, created.GetVersionId()); version.ReviewStatus != "REJECTED" || version.Revision != 3 {
+		t.Fatalf("failed restore changed version: %#v", version)
+	}
+
+	restoreStatus, restoreBody := e2eHTTPRestoreReview(t, httpAddress, adminToken, application.GetId(), created.GetVersionId(), reviewID, 3)
+	if restoreStatus != http.StatusOK {
+		t.Fatalf("restore response = status:%d body:%s", restoreStatus, restoreBody)
+	}
+	var restored applicationreviewv1.RestoreRejectedApplicationVersionToDraftResponse
+	if err := protojson.Unmarshal(restoreBody, &restored); err != nil {
+		t.Fatalf("decode restore response: %v; body=%s", err, restoreBody)
+	}
+	if restored.GetReview().GetStatus() != "REJECTED" || restored.GetReview().GetDraftRestoration().GetRestoredBy() != adminID ||
+		restored.GetReview().GetDraftRestoration().GetResultVersionRevision() != 4 ||
+		restored.GetVersion().GetReviewStatus() != "DRAFT" || restored.GetVersion().GetRevision() != 4 || restored.GetVersion().GetUpdatedBy() != adminID {
+		t.Fatalf("restored response = %v", &restored)
+	}
+	var storedReview e2eApplicationReviewDocument
+	if err := database.Collection("application_reviews").FindOne(ctx, bson.D{{Key: "reviewId", Value: reviewID}}).Decode(&storedReview); err != nil {
+		t.Fatalf("read restored review: %v", err)
+	}
+	storedVersion := e2eFindApplicationVersion(t, database, created.GetVersionId())
+	if storedReview.Status != "REJECTED" || storedReview.DraftRestoration == nil || storedReview.DraftRestoration.RestoredBy != adminID ||
+		storedReview.DraftRestoration.ResultVersionRevision != 4 || storedVersion.ReviewStatus != "DRAFT" || storedVersion.Revision != 4 ||
+		!storedVersion.UpdatedAt.Equal(storedReview.DraftRestoration.RestoredAt) {
+		t.Fatalf("persisted restoration = review:%#v version:%#v", storedReview, storedVersion)
+	}
+
+	// Native gRPC observes the same one-time invariant and stable error reason.
+	grpcClient := applicationreviewv1.NewApplicationReviewClient(connection)
+	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, adminToken))
+	_, err = grpcClient.RestoreRejectedApplicationVersionToDraft(grpcCtx, &applicationreviewv1.RestoreRejectedApplicationVersionToDraftRequest{
+		ApplicationId: application.GetId(), VersionId: created.GetVersionId(), ReviewId: reviewID,
+		Command: &applicationreviewv1.RestoreRejectedApplicationVersionToDraftCommand{ExpectedVersionRevision: 4},
+	})
+	current := status.Convert(err)
+	if current.Code() != codes.Aborted || e2eErrorReason(current) != transport.ReasonApplicationReviewAlreadyRestored {
+		t.Fatalf("repeated gRPC restore = code:%v reason:%q error:%v", current.Code(), e2eErrorReason(current), err)
+	}
+}
+
 // e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
 // database. migrate controls whether migrations are applied explicitly.
 func e2eIsolatedDatabase(t *testing.T, ctx context.Context, migrate bool) (*drivermongo.Client, *drivermongo.Database) {
@@ -1139,6 +1316,46 @@ func e2eHTTPSubmitReview(
 		t.Fatalf("read submit-review response: %v", err)
 	}
 	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eHTTPRestoreReview(
+	t *testing.T,
+	address, token, applicationID, versionID, reviewID string,
+	expectedVersionRevision int64,
+) (int, []byte) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{"expectedVersionRevision": expectedVersionRevision})
+	if err != nil {
+		t.Fatalf("encode restore-review request: %v", err)
+	}
+	path := strings.Replace(transport.RestoreApplicationVersionInternalPath, "{application_id}", applicationID, 1)
+	path = strings.Replace(path, "{version_id}", versionID, 1)
+	path = strings.Replace(path, "{review_id}", reviewID, 1)
+	request, err := http.NewRequest(http.MethodPost, "http://"+address+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build restore-review request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(transport.IdentityHeader, token)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read restore-review response: %v", err)
+	}
+	return response.StatusCode, body
+}
+
+func e2eErrorReason(current *status.Status) string {
+	for _, detail := range current.Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok {
+			return info.GetReason()
+		}
+	}
+	return ""
 }
 
 func e2eAssertReviewPersisted(

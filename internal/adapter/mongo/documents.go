@@ -68,19 +68,19 @@ type applicationVersionReviewSnapshotDocument struct {
 }
 
 type applicationReviewDocument struct {
-	ReviewID               string                                   `bson:"reviewId"`
-	ApplicationID          string                                   `bson:"applicationId"`
-	VersionID              string                                   `bson:"versionId"`
-	Attempt                int32                                    `bson:"attempt"`
-	SourceVersionRevision  int64                                    `bson:"sourceVersionRevision"`
-	Status                 string                                   `bson:"status"`
-	Decision               *applicationReviewDecisionDocument       `bson:"decision"`
-	DraftRestoration       any                                      `bson:"draftRestoration"`
-	Snapshot               applicationVersionReviewSnapshotDocument `bson:"snapshot"`
-	ScopeCatalogRevision   int64                                    `bson:"scopeCatalogRevision"`
-	PreflightPolicyVersion string                                   `bson:"preflightPolicyVersion"`
-	SubmittedBy            string                                   `bson:"submittedBy"`
-	SubmittedAt            time.Time                                `bson:"submittedAt"`
+	ReviewID               string                                     `bson:"reviewId"`
+	ApplicationID          string                                     `bson:"applicationId"`
+	VersionID              string                                     `bson:"versionId"`
+	Attempt                int32                                      `bson:"attempt"`
+	SourceVersionRevision  int64                                      `bson:"sourceVersionRevision"`
+	Status                 string                                     `bson:"status"`
+	Decision               *applicationReviewDecisionDocument         `bson:"decision"`
+	DraftRestoration       *applicationReviewDraftRestorationDocument `bson:"draftRestoration"`
+	Snapshot               applicationVersionReviewSnapshotDocument   `bson:"snapshot"`
+	ScopeCatalogRevision   int64                                      `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string                                     `bson:"preflightPolicyVersion"`
+	SubmittedBy            string                                     `bson:"submittedBy"`
+	SubmittedAt            time.Time                                  `bson:"submittedAt"`
 }
 
 type applicationReviewDecisionDocument struct {
@@ -96,6 +96,12 @@ type applicationReviewDecisionDocument struct {
 type applicationReviewApprovalValidationDocument struct {
 	ScopeCatalogRevision   int64  `bson:"scopeCatalogRevision"`
 	PreflightPolicyVersion string `bson:"preflightPolicyVersion"`
+}
+
+type applicationReviewDraftRestorationDocument struct {
+	RestoredBy            string    `bson:"restoredBy"`
+	RestoredAt            time.Time `bson:"restoredAt"`
+	ResultVersionRevision int64     `bson:"resultVersionRevision"`
 }
 
 func applicationToDocument(application *domain.Application) (applicationDocument, error) {
@@ -380,6 +386,17 @@ func applicationReviewFromDocument(document applicationReviewDocument) (*reviewd
 	} else if document.Decision != nil {
 		return nil, corruptApplicationReview("pending review carries a decision")
 	}
+	var restoration *reviewdomain.ApplicationReviewDraftRestoration
+	if document.DraftRestoration != nil {
+		restoration, err = reviewdomain.NewApplicationReviewDraftRestoration(
+			shared.AuthID(document.DraftRestoration.RestoredBy),
+			document.DraftRestoration.RestoredAt,
+			document.DraftRestoration.ResultVersionRevision,
+		)
+		if err != nil {
+			return nil, corruptApplicationReview("invalid draft restoration")
+		}
+	}
 	review, err := reviewdomain.RestoreApplicationReview(
 		reviewID,
 		applicationID,
@@ -393,6 +410,7 @@ func applicationReviewFromDocument(document applicationReviewDocument) (*reviewd
 		document.SubmittedAt,
 		status,
 		decision,
+		restoration,
 	)
 	if err != nil {
 		return nil, corruptApplicationReview("invalid application review")

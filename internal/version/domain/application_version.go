@@ -249,6 +249,34 @@ func (version *ApplicationVersion) ReplaceDraft(
 	return &copy, nil
 }
 
+func (version *ApplicationVersion) RestoreDraft(
+	expectedRevision int64,
+	restoredBy shared.AuthID,
+	restoredAt time.Time,
+) (*ApplicationVersion, error) {
+	if version == nil {
+		return nil, NewInternalError(nil)
+	}
+	if expectedRevision < 1 {
+		return nil, ErrApplicationVersionRevisionRequired
+	}
+	if version.reviewStatus != ReviewStatusRejected {
+		return nil, ErrApplicationVersionNotRejected
+	}
+	if version.revision != expectedRevision {
+		return nil, ErrApplicationVersionRevisionConflict
+	}
+	if !restoredBy.IsValid() || restoredAt.IsZero() {
+		return nil, NewInternalError(nil)
+	}
+	copy := *version
+	copy.reviewStatus = ReviewStatusDraft
+	copy.revision++
+	copy.updatedBy = restoredBy
+	copy.updatedAt = restoredAt.UTC()
+	return &copy, nil
+}
+
 func (version *ApplicationVersion) hasReplacement(replacement DraftApplicationVersionReplacement) bool {
 	return version.versionLabel == replacement.versionLabel &&
 		version.launchURL == replacement.launchURL &&
