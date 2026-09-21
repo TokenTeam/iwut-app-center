@@ -40,12 +40,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-No implementation work package is currently active. UC-APP-001 and UC-APP-002
-are `ACCEPTED / CORE_COMPLETE`. UC-APP-003 and UC-APP-004 now have working
-Domain, UseCase, MongoDB repository, explicit migration (0003 and 0004) and
-real replica-set integration coverage; their external design/implementation
-registration and the remaining Transport, composition-root and end-to-end work
-are tracked in the implementation entry point.
+No implementation work package is currently active. UC-APP-001 through
+UC-APP-005 are `ACCEPTED / CORE_COMPLETE`. UC-APP-005 has working Domain,
+UseCase, narrow external ports, MongoDB decision repository, explicit 0005
+migration, permanent System rejection for suspended administrators/submitters,
+and real replica-set transaction/concurrency coverage. Real Auth, ConfCenter,
+suspension, URL-inspection and API transports remain separate future packages.
+
+UC-APP-005 test obligations: BR-REV-010 through BR-REV-018 are covered by named
+tests in `internal/review/domain`, `internal/review/usecase` and the decision
+repository integration suite. BR-REV-019 (review/publication separation) has no
+local test because no publication capability exists yet, so the invariant holds
+vacuously; its obligation belongs to the UC-APP-007 work package, which must
+assert that a decision never writes a test/grey/stable slot or an OAuth client.
+BR-REV-020 is a limitation statement about remote content and needs no test.
 
 Before the next implementation begins, replace this paragraph with a bounded
 package that lists: target UC, the brief path for that UC, code scope, explicit
