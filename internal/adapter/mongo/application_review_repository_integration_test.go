@@ -326,15 +326,47 @@ func TestApplicationReviewMigrationIntegration_ValidatorsAndUniqueIndexes(t *tes
 	}
 	reviews := database.Collection(applicationReviewsCollectionName)
 
+	// 0005 accepts one decision object, but an APPROVED decision must carry the
+	// approval validation produced by the external re-checks.
 	invalid := base
-	invalid.Decision = bson.D{{Key: "reviewerId", Value: "unexpected"}}
+	invalid.ReviewID = nextIntegrationApplicationReviewID(t).String()
+	invalid.VersionID = nextIntegrationApplicationVersionID(t).String()
+	invalid.Attempt = 3
+	invalid.SourceVersionRevision = 3
+	invalid.Status = "APPROVED"
+	invalid.Decision = &applicationReviewDecisionDocument{
+		Outcome:             "APPROVED",
+		ReviewPolicyVersion: "review.v1",
+		ConfirmedCheckIDs:   []string{"content-reviewed"},
+		DecidedBy:           "auth-reviewer",
+		DecidedAt:           time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC),
+	}
 	if _, err := reviews.InsertOne(t.Context(), invalid); err == nil {
-		t.Fatal("validator accepted non-null decision for UC-APP-004 insert")
+		t.Fatal("validator accepted an APPROVED decision without approval validation")
 	} else {
 		assertDocumentValidationFailure(t, err)
 	}
 	if _, err := reviews.InsertOne(t.Context(), base); err != nil {
 		t.Fatalf("insert valid base review: %v", err)
+	}
+
+	rejectedReason := "应用用途说明不足。"
+	validDecision := base
+	validDecision.ReviewID = nextIntegrationApplicationReviewID(t).String()
+	validDecision.VersionID = nextIntegrationApplicationVersionID(t).String()
+	validDecision.Attempt = 2
+	validDecision.SourceVersionRevision = 2
+	validDecision.Status = "REJECTED"
+	validDecision.Decision = &applicationReviewDecisionDocument{
+		Outcome:             "REJECTED",
+		ReviewPolicyVersion: "review.v1",
+		ConfirmedCheckIDs:   []string{},
+		Reason:              &rejectedReason,
+		DecidedBy:           "auth-reviewer",
+		DecidedAt:           time.Date(2026, time.September, 20, 15, 0, 0, 0, time.UTC),
+	}
+	if _, err := reviews.InsertOne(t.Context(), validDecision); err != nil {
+		t.Fatalf("insert valid rejected decision: %v", err)
 	}
 
 	tests := []struct {

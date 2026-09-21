@@ -883,9 +883,6 @@ func TestApplicationReviewMigration_ExtendsLifecycleOnlyToSubmitted(t *testing.T
 	if err := migrator.applyMigration(t.Context(), applicationReviewMigrationID, migrator.applyApplicationReviewMigration); err != nil {
 		t.Fatalf("apply 0004: %v", err)
 	}
-	if err := migrator.Migrate(t.Context()); err != nil {
-		t.Fatalf("repeat migrations: %v", err)
-	}
 	assertCollectionCount(t, database, migrationLedgerCollectionName, 4)
 
 	// 0004 enables SUBMITTED...
@@ -901,6 +898,38 @@ func TestApplicationReviewMigration_ExtendsLifecycleOnlyToSubmitted(t *testing.T
 		)
 		assertDocumentValidationFailure(t, err)
 	}
+
+	if err := migrator.applyMigration(t.Context(), applicationReviewDecisionMigrationID, migrator.applyApplicationReviewDecisionMigration); err != nil {
+		t.Fatalf("apply 0005: %v", err)
+	}
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 5)
+
+	// 0005 enables the two decision outcomes.
+	for _, status := range []string{"APPROVED", "REJECTED"} {
+		_, err := versions.UpdateOne(
+			t.Context(),
+			bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: "SUBMITTED"}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: status}}}},
+		)
+		if err != nil {
+			t.Fatalf("write %s enabled by 0005: %v", status, err)
+		}
+		_, err = versions.UpdateOne(
+			t.Context(),
+			bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: status}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "SUBMITTED"}}}},
+		)
+		if err != nil {
+			t.Fatalf("reset %s to SUBMITTED: %v", status, err)
+		}
+	}
+	// 0005 still leaves REVOKED to a future migration.
+	_, err = versions.UpdateOne(
+		t.Context(),
+		bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: "SUBMITTED"}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "REVOKED"}}}},
+	)
+	assertDocumentValidationFailure(t, err)
 }
 
 // insertLegacyApplicationDocument writes an Application exactly as the 0001

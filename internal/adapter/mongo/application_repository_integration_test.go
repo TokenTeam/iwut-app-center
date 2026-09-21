@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 4)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 5)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -340,7 +340,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 4)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 5)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
@@ -375,6 +375,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		applicationVersionMigrationID,
 		applicationVersionDraftUpdateMigrationID,
 		applicationReviewMigrationID,
+		applicationReviewDecisionMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -405,6 +406,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: applicationVersionMigrationID, apply: sequential.applyApplicationVersionMigration},
 		{id: applicationVersionDraftUpdateMigrationID, apply: sequential.applyApplicationVersionDraftUpdateMigration},
 		{id: applicationReviewMigrationID, apply: sequential.applyApplicationReviewMigration},
+		{id: applicationReviewDecisionMigrationID, apply: sequential.applyApplicationReviewDecisionMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)

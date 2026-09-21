@@ -23,6 +23,7 @@ const (
 	applicationVersionSequenceUniqueIndexName = "uq_application_versions_application_id_sequence"
 	applicationVersionLabelUniqueIndexName    = "uq_application_versions_application_id_version_label"
 	applicationReviewMigrationID              = "0004_application_review_submission"
+	applicationReviewDecisionMigrationID      = "0005_application_review_decision"
 	applicationReviewIDUniqueIndexName        = "uq_application_reviews_review_id"
 	applicationReviewAttemptUniqueIndexName   = "uq_application_reviews_version_id_attempt"
 	applicationReviewSourceUniqueIndexName    = "uq_application_reviews_version_id_source_revision"
@@ -62,6 +63,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationVersionMigrationID, apply: migrator.applyApplicationVersionMigration},
 		{id: applicationVersionDraftUpdateMigrationID, apply: migrator.applyApplicationVersionDraftUpdateMigration},
 		{id: applicationReviewMigrationID, apply: migrator.applyApplicationReviewMigration},
+		{id: applicationReviewDecisionMigrationID, apply: migrator.applyApplicationReviewDecisionMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -248,6 +250,19 @@ func (migrator *Migrator) applyApplicationReviewMigration(ctx context.Context) e
 	return nil
 }
 
+// applyApplicationReviewDecisionMigration is the 0005 stage. It is the only
+// stage allowed to add APPROVED/REJECTED to the Version lifecycle and to open
+// the one-time decision object on ApplicationReview. It adds no collection.
+func (migrator *Migrator) applyApplicationReviewDecisionMigration(ctx context.Context) error {
+	if err := migrator.ensureValidatedCollection(ctx, applicationVersionsCollectionName, applicationVersionDecisionValidator()); err != nil {
+		return err
+	}
+	if err := migrator.ensureValidatedCollection(ctx, applicationReviewsCollectionName, applicationReviewDecisionValidator()); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (migrator *Migrator) ensureValidatedCollection(ctx context.Context, name string, validator bson.D) error {
 	err := migrator.database.CreateCollection(
 		ctx,
@@ -406,6 +421,13 @@ func applicationVersionValidator() bson.D {
 	return applicationVersionValidatorForLifecycle(bson.A{"DRAFT", "SUBMITTED"}, false)
 }
 
+// applicationVersionDecisionValidator is the 0005 schema. It adds the two
+// decision outcomes UC-APP-005 writes and still leaves REVOKED to a future
+// migration.
+func applicationVersionDecisionValidator() bson.D {
+	return applicationVersionValidatorForLifecycle(bson.A{"DRAFT", "SUBMITTED", "APPROVED", "REJECTED"}, false)
+}
+
 func applicationVersionValidatorForLifecycle(reviewStatuses bson.A, initialOnly bool) bson.D {
 	revisionSchema := bson.D{
 		{Key: "bsonType", Value: "long"},
@@ -493,7 +515,39 @@ func applicationVersionValidatorForLifecycle(reviewStatuses bson.A, initialOnly 
 	}}}
 }
 
+// applicationReviewValidator is the 0004 schema: only a PENDING Review without
+// a decision may exist.
 func applicationReviewValidator() bson.D {
+	return applicationReviewValidatorForDecision(false)
+}
+
+// applicationReviewDecisionValidator is the 0005 schema. It allows exactly one
+// decision object on an APPROVED/REJECTED Review and keeps PENDING Reviews
+// decision-free.
+func applicationReviewDecisionValidator() bson.D {
+	return applicationReviewValidatorForDecision(true)
+}
+
+func applicationReviewValidatorForDecision(includeDecision bool) bson.D {
+	statuses := bson.A{"PENDING"}
+	decisionSchema := bson.D{{Key: "bsonType", Value: "null"}}
+	expressions := bson.A{
+		bson.D{{Key: "$gt", Value: bson.A{"$snapshot.rpcApiMaxVersionExclusive", "$snapshot.rpcApiMinVersion"}}},
+		bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$snapshot.launchUrl"}}, 2048}}},
+		bson.D{{Key: "$eq", Value: bson.A{
+			bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$snapshot.requiredScopes", "$snapshot.optionalScopes"}}}}},
+			0,
+		}}},
+	}
+	if includeDecision {
+		statuses = bson.A{"PENDING", "APPROVED", "REJECTED"}
+		decisionSchema = bson.D{{Key: "oneOf", Value: bson.A{
+			bson.D{{Key: "bsonType", Value: "null"}},
+			applicationReviewDecisionSchema(),
+		}}}
+		expressions = append(expressions, applicationReviewDecisionConsistencyExpression())
+	}
+
 	return bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$jsonSchema", Value: bson.D{
 			{Key: "bsonType", Value: "object"},
@@ -510,8 +564,8 @@ func applicationReviewValidator() bson.D {
 				{Key: "versionId", Value: uuidV7Schema()},
 				{Key: "attempt", Value: bson.D{{Key: "bsonType", Value: "int"}, {Key: "minimum", Value: int32(1)}}},
 				{Key: "sourceVersionRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
-				{Key: "status", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "enum", Value: bson.A{"PENDING"}}}},
-				{Key: "decision", Value: bson.D{{Key: "bsonType", Value: "null"}}},
+				{Key: "status", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "enum", Value: statuses}}},
+				{Key: "decision", Value: decisionSchema},
 				{Key: "draftRestoration", Value: bson.D{{Key: "bsonType", Value: "null"}}},
 				{Key: "snapshot", Value: applicationReviewSnapshotSchema()},
 				{Key: "scopeCatalogRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
@@ -523,14 +577,98 @@ func applicationReviewValidator() bson.D {
 				{Key: "submittedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
 			}},
 		}}},
-		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
-			bson.D{{Key: "$gt", Value: bson.A{"$snapshot.rpcApiMaxVersionExclusive", "$snapshot.rpcApiMinVersion"}}},
-			bson.D{{Key: "$lte", Value: bson.A{bson.D{{Key: "$strLenBytes", Value: "$snapshot.launchUrl"}}, 2048}}},
-			bson.D{{Key: "$eq", Value: bson.A{
-				bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$snapshot.requiredScopes", "$snapshot.optionalScopes"}}}}},
-				0,
+		bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: expressions}}}},
+	}}}
+}
+
+func applicationReviewDecisionSchema() bson.D {
+	return bson.D{
+		{Key: "bsonType", Value: "object"},
+		{Key: "required", Value: bson.A{
+			"outcome", "reviewPolicyVersion", "confirmedCheckIds", "reason",
+			"decidedBy", "decidedAt", "approvalValidation",
+		}},
+		{Key: "additionalProperties", Value: false},
+		{Key: "properties", Value: bson.D{
+			{Key: "outcome", Value: bson.D{
+				{Key: "bsonType", Value: "string"},
+				{Key: "enum", Value: bson.A{"APPROVED", "REJECTED"}},
+			}},
+			{Key: "reviewPolicyVersion", Value: bson.D{
+				{Key: "bsonType", Value: "string"},
+				{Key: "pattern", Value: "^[A-Za-z0-9._-]{1,50}$"},
+			}},
+			{Key: "confirmedCheckIds", Value: bson.D{
+				{Key: "bsonType", Value: "array"},
+				{Key: "uniqueItems", Value: true},
+				{Key: "items", Value: nonEmptyStringSchema()},
+			}},
+			{Key: "reason", Value: bson.D{{Key: "oneOf", Value: bson.A{
+				bson.D{{Key: "bsonType", Value: "null"}},
+				bson.D{
+					{Key: "bsonType", Value: "string"},
+					{Key: "minLength", Value: 1},
+				},
+			}}}},
+			{Key: "decidedBy", Value: nonEmptyStringSchema()},
+			{Key: "decidedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
+			{Key: "approvalValidation", Value: bson.D{{Key: "oneOf", Value: bson.A{
+				bson.D{{Key: "bsonType", Value: "null"}},
+				bson.D{
+					{Key: "bsonType", Value: "object"},
+					{Key: "required", Value: bson.A{"scopeCatalogRevision", "preflightPolicyVersion"}},
+					{Key: "additionalProperties", Value: false},
+					{Key: "properties", Value: bson.D{
+						{Key: "scopeCatalogRevision", Value: bson.D{
+							{Key: "bsonType", Value: "long"},
+							{Key: "minimum", Value: int64(1)},
+						}},
+						{Key: "preflightPolicyVersion", Value: bson.D{
+							{Key: "bsonType", Value: "string"},
+							{Key: "pattern", Value: "^[A-Za-z0-9._-]{1,50}$"},
+						}},
+					}},
+				},
+			}}}},
+		}},
+	}
+}
+
+// applicationReviewDecisionConsistencyExpression keeps status and decision in
+// lockstep: PENDING has no decision, APPROVED/REJECTED has a decision whose
+// outcome matches status, and REJECTED carries no approvalValidation.
+func applicationReviewDecisionConsistencyExpression() bson.D {
+	return bson.D{{Key: "$or", Value: bson.A{
+		bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$eq", Value: bson.A{"$status", "PENDING"}}},
+			bson.D{{Key: "$eq", Value: bson.A{"$decision", nil}}},
+		}}},
+		bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$ne", Value: bson.A{"$status", "PENDING"}}},
+			bson.D{{Key: "$ne", Value: bson.A{"$decision", nil}}},
+			bson.D{{Key: "$eq", Value: bson.A{"$decision.outcome", "$status"}}},
+			bson.D{{Key: "$cond", Value: bson.A{
+				bson.D{{Key: "$eq", Value: bson.A{"$status", "APPROVED"}}},
+				bson.D{{Key: "$ne", Value: bson.A{"$decision.approvalValidation", nil}}},
+				bson.D{{Key: "$and", Value: bson.A{
+					bson.D{{Key: "$eq", Value: bson.A{"$status", "REJECTED"}}},
+					bson.D{{Key: "$eq", Value: bson.A{"$decision.approvalValidation", nil}}},
+					bson.D{{Key: "$eq", Value: bson.A{"$decision.confirmedCheckIds", bson.A{}}}},
+					bson.D{{Key: "$ne", Value: bson.A{"$decision.reason", nil}}},
+				}}},
 			}}},
-		}}}}},
+			// BR-REV-015 counts Unicode code points, not bytes, so a multibyte
+			// reason is never rejected by a byte-length limit. $cond does not
+			// evaluate the length branch for the nullable APPROVED reason.
+			bson.D{{Key: "$cond", Value: bson.A{
+				bson.D{{Key: "$eq", Value: bson.A{"$decision.reason", nil}}},
+				true,
+				bson.D{{Key: "$lte", Value: bson.A{
+					bson.D{{Key: "$strLenCP", Value: "$decision.reason"}},
+					2000,
+				}}},
+			}}},
+		}}},
 	}}}
 }
 

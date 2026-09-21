@@ -60,7 +60,24 @@ type LaunchURL string
 
 type ReviewStatus string
 
-const ReviewStatusPending ReviewStatus = "PENDING"
+const (
+	ReviewStatusPending  ReviewStatus = "PENDING"
+	ReviewStatusApproved ReviewStatus = "APPROVED"
+	ReviewStatusRejected ReviewStatus = "REJECTED"
+)
+
+func (status ReviewStatus) valid() bool {
+	switch status {
+	case ReviewStatusPending, ReviewStatusApproved, ReviewStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// SubmittedVersionReviewStatus is the ApplicationVersion lifecycle value a
+// decidable Review must observe.
+const SubmittedVersionReviewStatus = "SUBMITTED"
 
 type ApplicationVersionReviewSnapshot struct {
 	versionLabel              string
@@ -116,6 +133,17 @@ func (snapshot ApplicationVersionReviewSnapshot) OptionalScopes() []ScopeName {
 	return append([]ScopeName{}, snapshot.optionalScopes...)
 }
 
+// Equal reports whether two snapshots carry exactly the same reviewed content.
+func (snapshot ApplicationVersionReviewSnapshot) Equal(other ApplicationVersionReviewSnapshot) bool {
+	return snapshot.versionLabel == other.versionLabel &&
+		snapshot.launchURL == other.launchURL &&
+		snapshot.rpcAPIMinVersion == other.rpcAPIMinVersion &&
+		snapshot.rpcAPIMaxVersionExclusive == other.rpcAPIMaxVersionExclusive &&
+		slices.Equal(snapshot.requiredCapabilities, other.requiredCapabilities) &&
+		slices.Equal(snapshot.requiredScopes, other.requiredScopes) &&
+		slices.Equal(snapshot.optionalScopes, other.optionalScopes)
+}
+
 type SubmissionCandidate struct {
 	applicationID shared.ApplicationID
 	versionID     ApplicationVersionID
@@ -169,6 +197,8 @@ type ApplicationReview struct {
 	preflightPolicyVersion PreflightPolicyVersion
 	submittedBy            shared.AuthID
 	submittedAt            time.Time
+	status                 ReviewStatus
+	decision               *ApplicationReviewDecision
 }
 
 func NewPendingApplicationReview(
@@ -195,6 +225,52 @@ func NewPendingApplicationReview(
 		preflightPolicyVersion: preflightPolicyVersion,
 		submittedBy:            submittedBy,
 		submittedAt:            submittedAt.UTC(),
+		status:                 ReviewStatusPending,
+	}, nil
+}
+
+// RestoreApplicationReview reconstructs a persisted Review after every stored
+// field has been converted to its domain value type by the adapter.
+func RestoreApplicationReview(
+	reviewID ApplicationReviewID,
+	applicationID shared.ApplicationID,
+	versionID ApplicationVersionID,
+	attempt ReviewAttempt,
+	sourceVersionRevision int64,
+	snapshot ApplicationVersionReviewSnapshot,
+	scopeCatalogRevision ScopeCatalogRevision,
+	preflightPolicyVersion PreflightPolicyVersion,
+	submittedBy shared.AuthID,
+	submittedAt time.Time,
+	status ReviewStatus,
+	decision *ApplicationReviewDecision,
+) (*ApplicationReview, error) {
+	if !reviewID.IsValid() || !applicationID.IsValid() || !versionID.IsValid() || attempt < 1 ||
+		sourceVersionRevision < 1 || scopeCatalogRevision < 1 ||
+		!policyVersionPattern.MatchString(preflightPolicyVersion.String()) || !submittedBy.IsValid() ||
+		submittedAt.IsZero() || !status.valid() {
+		return nil, NewInternalError(nil)
+	}
+	if status == ReviewStatusPending {
+		if decision != nil {
+			return nil, NewInternalError(nil)
+		}
+	} else if decision == nil || decision.Outcome() != ReviewDecision(status) {
+		return nil, NewInternalError(nil)
+	}
+	return &ApplicationReview{
+		reviewID:               reviewID,
+		applicationID:          applicationID,
+		versionID:              versionID,
+		attempt:                attempt,
+		sourceVersionRevision:  sourceVersionRevision,
+		snapshot:               snapshot,
+		scopeCatalogRevision:   scopeCatalogRevision,
+		preflightPolicyVersion: preflightPolicyVersion,
+		submittedBy:            submittedBy,
+		submittedAt:            submittedAt.UTC(),
+		status:                 status,
+		decision:               copyDecision(decision),
 	}, nil
 }
 
@@ -203,9 +279,12 @@ func (review *ApplicationReview) ApplicationID() shared.ApplicationID { return r
 func (review *ApplicationReview) VersionID() ApplicationVersionID     { return review.versionID }
 func (review *ApplicationReview) Attempt() ReviewAttempt              { return review.attempt }
 func (review *ApplicationReview) SourceVersionRevision() int64        { return review.sourceVersionRevision }
-func (review *ApplicationReview) Status() ReviewStatus                { return ReviewStatusPending }
-func (review *ApplicationReview) HasDecision() bool                   { return false }
+func (review *ApplicationReview) Status() ReviewStatus                { return review.status }
+func (review *ApplicationReview) HasDecision() bool                   { return review.decision != nil }
 func (review *ApplicationReview) HasDraftRestoration() bool           { return false }
+func (review *ApplicationReview) Decision() *ApplicationReviewDecision {
+	return copyDecision(review.decision)
+}
 func (review *ApplicationReview) Snapshot() ApplicationVersionReviewSnapshot {
 	copy := review.snapshot
 	copy.requiredCapabilities = review.snapshot.RequiredCapabilities()
@@ -221,6 +300,59 @@ func (review *ApplicationReview) PreflightPolicyVersion() PreflightPolicyVersion
 }
 func (review *ApplicationReview) SubmittedBy() shared.AuthID { return review.submittedBy }
 func (review *ApplicationReview) SubmittedAt() time.Time     { return review.submittedAt }
+
+// Approve writes the single APPROVED decision for a PENDING attempt. A second
+// call, or a decision stored on the entity, fails without mutating it.
+func (review *ApplicationReview) Approve(
+	policyVersion ReviewPolicyVersion,
+	confirmedCheckIDs []ReviewCheckID,
+	optionalReason string,
+	approvalValidation *ApprovalValidation,
+	decidedBy shared.AuthID,
+	decidedAt time.Time,
+) (*ApplicationReviewDecision, error) {
+	if review == nil || review.status != ReviewStatusPending || review.decision != nil {
+		return nil, ErrApplicationReviewAlreadyDecided
+	}
+	decision, err := NewApprovedDecision(
+		policyVersion, confirmedCheckIDs, optionalReason, approvalValidation, decidedBy, decidedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	review.status = ReviewStatusApproved
+	review.decision = decision
+	return copyDecision(decision), nil
+}
+
+// Reject writes the single REJECTED decision for a PENDING attempt.
+func (review *ApplicationReview) Reject(
+	policyVersion ReviewPolicyVersion,
+	reason string,
+	decidedBy shared.AuthID,
+	decidedAt time.Time,
+) (*ApplicationReviewDecision, error) {
+	if review == nil || review.status != ReviewStatusPending || review.decision != nil {
+		return nil, ErrApplicationReviewAlreadyDecided
+	}
+	decision, err := NewRejectedDecision(policyVersion, reason, decidedBy, decidedAt)
+	if err != nil {
+		return nil, err
+	}
+	review.status = ReviewStatusRejected
+	review.decision = decision
+	return copyDecision(decision), nil
+}
+
+func copyDecision(decision *ApplicationReviewDecision) *ApplicationReviewDecision {
+	if decision == nil {
+		return nil
+	}
+	copy := *decision
+	copy.confirmedCheckIDs = append([]ReviewCheckID{}, decision.confirmedCheckIDs...)
+	copy.approvalValidation = copyApprovalValidation(decision.approvalValidation)
+	return &copy
+}
 
 type SubmittedApplicationVersion struct {
 	applicationID shared.ApplicationID
@@ -246,7 +378,9 @@ func (version *SubmittedApplicationVersion) ApplicationID() shared.ApplicationID
 func (version *SubmittedApplicationVersion) VersionID() ApplicationVersionID {
 	return version.versionID
 }
-func (version *SubmittedApplicationVersion) ReviewStatus() string     { return "SUBMITTED" }
+func (version *SubmittedApplicationVersion) ReviewStatus() string {
+	return SubmittedVersionReviewStatus
+}
 func (version *SubmittedApplicationVersion) Revision() int64          { return version.revision }
 func (version *SubmittedApplicationVersion) UpdatedBy() shared.AuthID { return version.updatedBy }
 func (version *SubmittedApplicationVersion) UpdatedAt() time.Time     { return version.updatedAt }

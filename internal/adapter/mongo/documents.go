@@ -74,13 +74,28 @@ type applicationReviewDocument struct {
 	Attempt                int32                                    `bson:"attempt"`
 	SourceVersionRevision  int64                                    `bson:"sourceVersionRevision"`
 	Status                 string                                   `bson:"status"`
-	Decision               any                                      `bson:"decision"`
+	Decision               *applicationReviewDecisionDocument       `bson:"decision"`
 	DraftRestoration       any                                      `bson:"draftRestoration"`
 	Snapshot               applicationVersionReviewSnapshotDocument `bson:"snapshot"`
 	ScopeCatalogRevision   int64                                    `bson:"scopeCatalogRevision"`
 	PreflightPolicyVersion string                                   `bson:"preflightPolicyVersion"`
 	SubmittedBy            string                                   `bson:"submittedBy"`
 	SubmittedAt            time.Time                                `bson:"submittedAt"`
+}
+
+type applicationReviewDecisionDocument struct {
+	Outcome             string                                       `bson:"outcome"`
+	ReviewPolicyVersion string                                       `bson:"reviewPolicyVersion"`
+	ConfirmedCheckIDs   []string                                     `bson:"confirmedCheckIds"`
+	Reason              *string                                      `bson:"reason"`
+	DecidedBy           string                                       `bson:"decidedBy"`
+	DecidedAt           time.Time                                    `bson:"decidedAt"`
+	ApprovalValidation  *applicationReviewApprovalValidationDocument `bson:"approvalValidation"`
+}
+
+type applicationReviewApprovalValidationDocument struct {
+	ScopeCatalogRevision   int64  `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string `bson:"preflightPolicyVersion"`
 }
 
 func applicationToDocument(application *domain.Application) (applicationDocument, error) {
@@ -318,6 +333,233 @@ func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applic
 		SubmittedBy:            review.SubmittedBy().String(),
 		SubmittedAt:            review.SubmittedAt().UTC(),
 	}, nil
+}
+
+// applicationReviewFromDocument re-enters the Domain through its constructors.
+// Stored invalidity is adapter corruption and never caller validation.
+func applicationReviewFromDocument(document applicationReviewDocument) (*reviewdomain.ApplicationReview, error) {
+	reviewID := reviewdomain.ApplicationReviewID(document.ReviewID)
+	if !reviewID.IsValid() {
+		return nil, corruptApplicationReview("invalid review ID")
+	}
+	applicationID, ok := shared.ParseApplicationID(document.ApplicationID)
+	if !ok {
+		return nil, corruptApplicationReview("invalid application ID")
+	}
+	versionID := reviewdomain.ApplicationVersionID(document.VersionID)
+	if !versionID.IsValid() {
+		return nil, corruptApplicationReview("invalid version ID")
+	}
+	attempt, err := reviewdomain.NewReviewAttempt(document.Attempt)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid attempt")
+	}
+	snapshot, err := applicationReviewSnapshotFromDocument(document.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	scopeCatalogRevision, err := reviewdomain.NewScopeCatalogRevision(document.ScopeCatalogRevision)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid scope catalog revision")
+	}
+	preflightPolicyVersion, err := reviewdomain.NewPreflightPolicyVersion(document.PreflightPolicyVersion)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid preflight policy version")
+	}
+	submittedBy := shared.AuthID(document.SubmittedBy)
+	if !submittedBy.IsValid() {
+		return nil, corruptApplicationReview("invalid submitter identity")
+	}
+	status := reviewdomain.ReviewStatus(document.Status)
+	var decision *reviewdomain.ApplicationReviewDecision
+	if status != reviewdomain.ReviewStatusPending {
+		decision, err = applicationReviewDecisionFromDocument(document.Decision)
+		if err != nil {
+			return nil, err
+		}
+	} else if document.Decision != nil {
+		return nil, corruptApplicationReview("pending review carries a decision")
+	}
+	review, err := reviewdomain.RestoreApplicationReview(
+		reviewID,
+		applicationID,
+		versionID,
+		attempt,
+		document.SourceVersionRevision,
+		*snapshot,
+		scopeCatalogRevision,
+		preflightPolicyVersion,
+		submittedBy,
+		document.SubmittedAt,
+		status,
+		decision,
+	)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid application review")
+	}
+	return review, nil
+}
+
+func applicationReviewSnapshotFromDocument(document applicationVersionReviewSnapshotDocument) (*reviewdomain.ApplicationVersionReviewSnapshot, error) {
+	if document.RequiredCapabilities == nil || document.RequiredScopes == nil || document.OptionalScopes == nil {
+		return nil, corruptApplicationReview("null snapshot set field")
+	}
+	snapshot, err := reviewdomain.NewApplicationVersionReviewSnapshot(
+		document.VersionLabel,
+		reviewdomain.LaunchURL(document.LaunchURL),
+		document.RPCApiMinVersion,
+		document.RPCApiMaxVersionExclusive,
+		append([]string{}, document.RequiredCapabilities...),
+		reviewScopeNames(document.RequiredScopes),
+		reviewScopeNames(document.OptionalScopes),
+	)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid review snapshot")
+	}
+	return snapshot, nil
+}
+
+func applicationReviewDecisionToDocument(
+	decision *reviewdomain.ApplicationReviewDecision,
+) (*applicationReviewDecisionDocument, error) {
+	if decision == nil {
+		return nil, fmt.Errorf("map application review decision document: decision is nil")
+	}
+	checkIDs := decision.ConfirmedCheckIDs()
+	document := &applicationReviewDecisionDocument{
+		Outcome:             decision.Outcome().String(),
+		ReviewPolicyVersion: decision.ReviewPolicyVersion().String(),
+		ConfirmedCheckIDs:   make([]string, len(checkIDs)),
+		DecidedBy:           decision.DecidedBy().String(),
+		DecidedAt:           decision.DecidedAt().UTC(),
+	}
+	for index, id := range checkIDs {
+		document.ConfirmedCheckIDs[index] = id.String()
+	}
+	if reason := decision.Reason(); reason != "" {
+		document.Reason = &reason
+	}
+	if validation := decision.ApprovalValidation(); validation != nil {
+		document.ApprovalValidation = &applicationReviewApprovalValidationDocument{
+			ScopeCatalogRevision:   validation.ScopeCatalogRevision().Int64(),
+			PreflightPolicyVersion: validation.PreflightPolicyVersion().String(),
+		}
+	}
+	return document, nil
+}
+
+func applicationReviewDecisionFromDocument(
+	document *applicationReviewDecisionDocument,
+) (*reviewdomain.ApplicationReviewDecision, error) {
+	if document == nil {
+		return nil, corruptApplicationReview("missing decision object")
+	}
+	outcome := reviewdomain.ReviewDecision(document.Outcome)
+	policyVersion, err := reviewdomain.NewReviewPolicyVersion(document.ReviewPolicyVersion)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid decision policy version")
+	}
+	if document.ConfirmedCheckIDs == nil {
+		return nil, corruptApplicationReview("null confirmed check IDs")
+	}
+	checkIDs := make([]reviewdomain.ReviewCheckID, len(document.ConfirmedCheckIDs))
+	for index, value := range document.ConfirmedCheckIDs {
+		id, err := reviewdomain.NewReviewCheckID(value)
+		if err != nil {
+			return nil, corruptApplicationReview("invalid confirmed check ID")
+		}
+		checkIDs[index] = id
+	}
+	reason := ""
+	if document.Reason != nil {
+		reason = *document.Reason
+	}
+	decidedBy := shared.AuthID(document.DecidedBy)
+	if !decidedBy.IsValid() || document.DecidedAt.IsZero() {
+		return nil, corruptApplicationReview("invalid decision audit")
+	}
+	switch outcome {
+	case reviewdomain.ReviewDecisionApproved:
+		if document.ApprovalValidation == nil {
+			return nil, corruptApplicationReview("approved decision lacks approval validation")
+		}
+		validation, err := reviewdomain.NewApprovalValidation(
+			reviewdomain.ScopeCatalogRevision(document.ApprovalValidation.ScopeCatalogRevision),
+			reviewdomain.PreflightPolicyVersion(document.ApprovalValidation.PreflightPolicyVersion),
+		)
+		if err != nil {
+			return nil, corruptApplicationReview("invalid approval validation")
+		}
+		decision, err := reviewdomain.NewApprovedDecision(
+			policyVersion, checkIDs, reason, validation, decidedBy, document.DecidedAt,
+		)
+		if err != nil {
+			return nil, corruptApplicationReview("invalid approved decision")
+		}
+		return decision, nil
+	case reviewdomain.ReviewDecisionRejected:
+		if document.ApprovalValidation != nil {
+			return nil, corruptApplicationReview("rejected decision carries approval validation")
+		}
+		decision, err := reviewdomain.NewRejectedDecision(policyVersion, reason, decidedBy, document.DecidedAt)
+		if err != nil {
+			return nil, corruptApplicationReview("invalid rejected decision")
+		}
+		return decision, nil
+	default:
+		return nil, corruptApplicationReview("invalid decision outcome")
+	}
+}
+
+// applicationVersionDocumentToDecisionVersion validates the current persisted
+// Version content and returns the facts a decision must compare with the
+// Review snapshot.
+func applicationVersionDocumentToDecisionVersion(
+	document applicationVersionDocument,
+) (int64, shared.AuthID, reviewdomain.ApplicationVersionReviewSnapshot, error) {
+	if _, err := versiondomain.NewVersionLabel(document.VersionLabel); err != nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid version label")
+	}
+	if _, err := versiondomain.NewLaunchURL(document.LaunchURL); err != nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid launch URL")
+	}
+	if _, err := versiondomain.NewRPCApiRange(document.RPCApiMinVersion, document.RPCApiMaxVersionExclusive); err != nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid RPC API range")
+	}
+	if document.RequiredCapabilities == nil || document.RequiredScopes == nil || document.OptionalScopes == nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("null set field")
+	}
+	capabilities, err := versiondomain.NewCapabilitySet(document.RequiredCapabilities)
+	if err != nil || !slices.Equal(capabilities.Strings(), document.RequiredCapabilities) {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid required capabilities")
+	}
+	scopes, err := versiondomain.NewScopeRequest(document.RequiredScopes, document.OptionalScopes)
+	if err != nil ||
+		!slices.Equal(scopeNamesToStrings(scopes.Required()), document.RequiredScopes) ||
+		!slices.Equal(scopeNamesToStrings(scopes.Optional()), document.OptionalScopes) {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid scope request")
+	}
+	createdBy := shared.AuthID(document.CreatedBy)
+	if !createdBy.IsValid() || document.Revision < 1 {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid creation audit")
+	}
+	snapshot, err := reviewdomain.NewApplicationVersionReviewSnapshot(
+		document.VersionLabel,
+		reviewdomain.LaunchURL(document.LaunchURL),
+		document.RPCApiMinVersion,
+		document.RPCApiMaxVersionExclusive,
+		append([]string{}, document.RequiredCapabilities...),
+		reviewScopeNames(document.RequiredScopes),
+		reviewScopeNames(document.OptionalScopes),
+	)
+	if err != nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid review snapshot")
+	}
+	return document.Revision, createdBy, *snapshot, nil
+}
+
+func corruptApplicationReview(reason string) error {
+	return fmt.Errorf("%w: %s", errCorruptApplicationReviewDocument, reason)
 }
 
 func reviewScopeNames(values []string) []reviewdomain.ScopeName {
