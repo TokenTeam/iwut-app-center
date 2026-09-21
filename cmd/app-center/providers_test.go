@@ -21,6 +21,7 @@ func validConfig() config.Config {
 		IdentityMaxTTL:          5 * time.Minute,
 		IdentityClockSkew:       30 * time.Second,
 		IdentityPublicKeyFiles:  map[string]string{"primary": "/nonexistent/identity.pem"},
+		AuthScopeCatalogTarget:  "127.0.0.1:9000",
 	}
 }
 

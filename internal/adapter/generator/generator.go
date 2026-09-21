@@ -7,6 +7,8 @@ import (
 
 	"iwut-app-center/internal/application/domain"
 	"iwut-app-center/internal/application/port"
+	versiondomain "iwut-app-center/internal/version/domain"
+	versionport "iwut-app-center/internal/version/port"
 )
 
 // UUIDv7Generator produces RFC 9562 version 7 identifiers through the
@@ -17,6 +19,24 @@ var _ port.ApplicationIDGenerator = (*UUIDv7Generator)(nil)
 
 func NewUUIDv7Generator() *UUIDv7Generator {
 	return &UUIDv7Generator{}
+}
+
+// ApplicationVersionUUIDv7Generator is separate because the two capability
+// ports intentionally return different domain ID types.
+type ApplicationVersionUUIDv7Generator struct{}
+
+var _ versionport.ApplicationVersionIDGenerator = (*ApplicationVersionUUIDv7Generator)(nil)
+
+func NewApplicationVersionUUIDv7Generator() *ApplicationVersionUUIDv7Generator {
+	return &ApplicationVersionUUIDv7Generator{}
+}
+
+func (generator *ApplicationVersionUUIDv7Generator) NewUUIDv7() (versiondomain.ApplicationVersionID, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	return versiondomain.ApplicationVersionID(id.String()), nil
 }
 
 func (generator *UUIDv7Generator) NewUUIDv7() (domain.ApplicationID, error) {
@@ -32,6 +52,7 @@ func (generator *UUIDv7Generator) NewUUIDv7() (domain.ApplicationID, error) {
 type SystemClock struct{}
 
 var _ port.Clock = (*SystemClock)(nil)
+var _ versionport.Clock = (*SystemClock)(nil)
 
 func NewSystemClock() *SystemClock {
 	return &SystemClock{}

@@ -8,11 +8,13 @@ package main
 
 import (
 	"github.com/go-kratos/kratos/v2"
+	"iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	usecase2 "iwut-app-center/internal/version/usecase"
 )
 
 // Injectors from wire.go:
@@ -47,13 +49,37 @@ func wireApp(configuration config.Config) (*kratos.App, func(), error) {
 	int32_2 := provideInitialApplicationQuota(configuration)
 	createApplicationHandler := usecase.NewCreateApplicationHandler(uuiDv7Generator, systemClock, applicationRepository, int32_2)
 	applicationService := transport.NewApplicationService(createApplicationHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService)
+	clientConn, cleanup2, err := provideAuthScopeCatalogConnection(configuration)
 	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	grpcScopeCatalogSnapshotSource, err := auth.NewGRPCScopeCatalogSnapshotSource(clientConn)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	duration := provideScopeCatalogCacheTTL(configuration)
+	scopeCatalogCache, err := auth.NewScopeCatalogCache(grpcScopeCatalogSnapshotSource, systemClock, duration)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	applicationVersionUUIDv7Generator := generator.NewApplicationVersionUUIDv7Generator()
+	applicationVersionRepository := mongo.NewApplicationVersionRepository(database)
+	createApplicationVersionHandler := usecase2.NewCreateApplicationVersionHandler(scopeCatalogCache, applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
+	applicationVersionService := transport.NewApplicationVersionService(createApplicationVersionHandler)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService)
+	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	app := provideApp(servers)
 	return app, func() {
+		cleanup2()
 		cleanup()
 	}, nil
 }

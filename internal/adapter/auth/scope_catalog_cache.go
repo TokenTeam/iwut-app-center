@@ -114,6 +114,15 @@ func (cache *ScopeCatalogCache) currentSnapshot(ctx context.Context) (*cachedSco
 				candidate.revision,
 			)
 		}
+		if cache.snapshot != nil && candidate.revision == cache.snapshot.revision &&
+			(!candidate.generatedAt.Equal(cache.snapshot.generatedAt) ||
+				!equalScopeSets(candidate.requestableScopes, cache.snapshot.requestableScopes)) {
+			return nil, fmt.Errorf(
+				"%w: Auth snapshot revision %d changed content",
+				port.ErrScopeCatalogUnavailable,
+				candidate.revision,
+			)
+		}
 		cache.snapshot = candidate
 		return candidate, nil
 	})
@@ -121,6 +130,18 @@ func (cache *ScopeCatalogCache) currentSnapshot(ctx context.Context) (*cachedSco
 		return nil, err
 	}
 	return value.(*cachedScopeCatalogSnapshot), nil
+}
+
+func equalScopeSets(left, right map[domain.ScopeName]struct{}) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for scope := range left {
+		if _, exists := right[scope]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func (cache *ScopeCatalogCache) freshSnapshot(now time.Time) *cachedScopeCatalogSnapshot {

@@ -2,12 +2,14 @@ package transport
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
 )
 
 const (
@@ -22,6 +24,10 @@ const (
 	CreateApplicationExternalPath = ServicePrefix + CreateApplicationInternalPath
 	// CreateApplicationGRPCMethod is the generated full method name.
 	CreateApplicationGRPCMethod = applicationv1.OperationApplicationCreateApplication
+	// CreateApplicationVersionInternalPath is declared by the UC-APP-002 Proto.
+	CreateApplicationVersionInternalPath = "/v1/applications/{application_id}/versions"
+	CreateApplicationVersionExternalPath = ServicePrefix + CreateApplicationVersionInternalPath
+	CreateApplicationVersionGRPCMethod   = applicationversionv1.OperationApplicationVersionCreateApplicationVersion
 )
 
 // ServerConfig carries the two listen addresses validated at startup.
@@ -36,12 +42,20 @@ type Servers struct {
 	GRPC *kgrpc.Server
 }
 
-func NewServers(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService) (*Servers, error) {
+func NewServers(
+	config ServerConfig,
+	verifier *IdentityVerifier,
+	service *ApplicationService,
+	versionService *ApplicationVersionService,
+) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
 	}
 	if service == nil {
 		return nil, errors.New("transport servers: application service is required")
+	}
+	if versionService == nil {
+		return nil, errors.New("transport servers: application version service is required")
 	}
 
 	httpServer := khttp.NewServer(
@@ -50,12 +64,14 @@ func NewServers(config ServerConfig, verifier *IdentityVerifier, service *Applic
 		khttp.ResponseEncoder(createdResponseEncoder),
 	)
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
+	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
 
 	grpcServer := kgrpc.NewServer(
 		kgrpc.Address(config.GRPCAddr),
 		kgrpc.Middleware(identityMiddleware(verifier)),
 	)
 	applicationv1.RegisterApplicationServer(grpcServer, service)
+	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 
 	return &Servers{HTTP: httpServer, GRPC: grpcServer}, nil
 }
@@ -65,7 +81,11 @@ func NewServers(config ServerConfig, verifier *IdentityVerifier, service *Applic
 // stores the status in a response writer whose WriteHeader only records the
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
-	if _, ok := v.(*applicationv1.CreateApplicationResponse); ok {
+	switch response := v.(type) {
+	case *applicationv1.CreateApplicationResponse:
+		w.WriteHeader(http.StatusCreated)
+	case *applicationversionv1.CreateApplicationVersionResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 		w.WriteHeader(http.StatusCreated)
 	}
 	return khttp.DefaultResponseEncoder(w, r, v)

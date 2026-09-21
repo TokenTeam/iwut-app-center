@@ -21,18 +21,53 @@ import (
 	"iwut-app-center/internal/shared"
 )
 
-func newTestServers(t *testing.T, handler *fakeCreateApplicationHandler) *Servers {
+func newTestServers(
+	t *testing.T,
+	handler *fakeCreateApplicationHandler,
+	versionHandlers ...*fakeCreateApplicationVersionHandler,
+) *Servers {
 	t.Helper()
 	service := NewApplicationService(handler)
+	var versionHandler *fakeCreateApplicationVersionHandler
+	if len(versionHandlers) > 0 {
+		versionHandler = versionHandlers[0]
+	}
 	servers, err := NewServers(
 		ServerConfig{HTTPAddr: "127.0.0.1:0", GRPCAddr: "127.0.0.1:0"},
 		newTestVerifier(t),
 		service,
+		NewApplicationVersionService(versionHandler),
 	)
 	if err != nil {
 		t.Fatalf("NewServers() error = %v", err)
 	}
 	return servers
+}
+
+func TestServers_UCAPP002_HTTPPathWinsAndReturnsCreatedETag(t *testing.T) {
+	t.Parallel()
+	token := signToken(t, tokenOptions{claims: validClaims(fixedNow())})
+	versionHandler := &fakeCreateApplicationVersionHandler{
+		result: newApplicationVersion(t, "auth-123", time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)),
+	}
+	servers := newTestServers(t, &fakeCreateApplicationHandler{}, versionHandler)
+	path := strings.Replace(CreateApplicationVersionInternalPath, "{application_id}", testApplicationID, 1)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		path,
+		strings.NewReader(`{"applicationId":"evil","versionLabel":"v1.0.0","launchUrl":"https://example.edu/app","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":5,"requiredCapabilities":["user.profile.v1"],"requiredScopes":["profile.basic"],"optionalScopes":["schedule.read"]}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(IdentityHeader, token)
+	recorder := httptest.NewRecorder()
+	servers.HTTP.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated || recorder.Header().Get("ETag") != `"1"` {
+		t.Fatalf("response = status:%d ETag:%q body:%s", recorder.Code, recorder.Header().Get("ETag"), recorder.Body.String())
+	}
+	if versionHandler.command.ApplicationID != testApplicationID {
+		t.Fatalf("handler application ID = %q, want path value %q", versionHandler.command.ApplicationID, testApplicationID)
+	}
 }
 
 func doHTTPCreateApplication(t *testing.T, servers *Servers, token, body string) *httptest.ResponseRecorder {

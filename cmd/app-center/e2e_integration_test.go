@@ -19,18 +19,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
+	scopecatalogv1 "iwut-app-center/api/gen/go/auth_center/v1/scope_catalog"
 	mongoadapter "iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/config"
@@ -42,13 +48,14 @@ import (
 const mongoIntegrationURIEnv = "MONGODB_INTEGRATION_URI"
 
 const (
-	e2eIssuer      = "https://auth.e2e.test"
-	e2eAudience    = "iwut-app-center"
-	e2eKeyID       = "e2e-primary"
-	e2eHTTPName    = "Course_Table_E2E"
-	e2eGRPCName    = "Course_Table_GRPC"
-	e2eHTTPAdminID = "auth-e2e-http"
-	e2eGRPCAdminID = "auth-e2e-grpc"
+	e2eIssuer           = "https://auth.e2e.test"
+	e2eAudience         = "iwut-app-center"
+	e2eKeyID            = "e2e-primary"
+	e2eHTTPName         = "Course_Table_E2E"
+	e2eGRPCName         = "Course_Table_GRPC"
+	e2eHTTPAdminID      = "auth-e2e-http"
+	e2eGRPCAdminID      = "auth-e2e-grpc"
+	e2eUnusedAuthTarget = "127.0.0.1:1"
 )
 
 // e2eApplicationDocument mirrors only the persisted business/ownership fields
@@ -69,6 +76,51 @@ type e2eQuotaDocument struct {
 	UsedCount int32  `bson:"usedCount"`
 }
 
+type e2eApplicationVersionDocument struct {
+	VersionID                 string    `bson:"versionId"`
+	ApplicationID             string    `bson:"applicationId"`
+	Sequence                  int32     `bson:"sequence"`
+	VersionLabel              string    `bson:"versionLabel"`
+	LaunchURL                 string    `bson:"launchUrl"`
+	RPCApiMinVersion          int32     `bson:"rpcApiMinVersion"`
+	RPCApiMaxVersionExclusive int32     `bson:"rpcApiMaxVersionExclusive"`
+	RequiredCapabilities      []string  `bson:"requiredCapabilities"`
+	RequiredScopes            []string  `bson:"requiredScopes"`
+	OptionalScopes            []string  `bson:"optionalScopes"`
+	ReviewStatus              string    `bson:"reviewStatus"`
+	CreatedBy                 string    `bson:"createdBy"`
+	CreatedAt                 time.Time `bson:"createdAt"`
+	Revision                  int64     `bson:"revision"`
+	UpdatedBy                 string    `bson:"updatedBy"`
+	UpdatedAt                 time.Time `bson:"updatedAt"`
+}
+
+type e2eScopeCatalogServer struct {
+	scopecatalogv1.UnimplementedScopeCatalogServer
+	calls       atomic.Int32
+	unavailable atomic.Bool
+}
+
+func (server *e2eScopeCatalogServer) GetScopeCatalogSnapshot(
+	context.Context,
+	*scopecatalogv1.GetScopeCatalogSnapshotRequest,
+) (*scopecatalogv1.GetScopeCatalogSnapshotResponse, error) {
+	server.calls.Add(1)
+	if server.unavailable.Load() {
+		return nil, status.Error(codes.Unavailable, "scope catalog unavailable")
+	}
+	return &scopecatalogv1.GetScopeCatalogSnapshotResponse{
+		Revision:    11,
+		GeneratedAt: timestamppb.New(time.Date(2026, time.September, 21, 0, 0, 0, 0, time.UTC)),
+		Scopes: []*scopecatalogv1.ScopeDefinition{
+			{Name: "calendar.read", Requestable: true},
+			{Name: "legacy.profile", Requestable: false},
+			{Name: "profile.basic", Requestable: true},
+			{Name: "schedule.read", Requestable: true},
+		},
+	}, nil
+}
+
 // TestE2E_UCAPP001_ServeRequiresExplicitMigration proves the composed server
 // never migrates on its own: wireApp against a fresh database must fail closed
 // and leave the schema untouched.
@@ -81,13 +133,14 @@ func TestE2E_UCAPP001_ServeRequiresExplicitMigration(t *testing.T) {
 
 	addresses := e2eReserveAddresses(t, 2)
 	configuration, err := config.Load(e2eEnvironment(map[string]string{
-		config.MongoURIEnv:           os.Getenv(mongoIntegrationURIEnv),
-		config.MongoDatabaseEnv:      database.Name(),
-		config.HTTPAddrEnv:           addresses[0],
-		config.GRPCAddrEnv:           addresses[1],
-		config.IdentityIssuerEnv:     e2eIssuer,
-		config.IdentityAudienceEnv:   e2eAudience,
-		config.IdentityPublicKeysEnv: e2eKeyID + "=" + publicKeyPath,
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               addresses[0],
+		config.GRPCAddrEnv:               addresses[1],
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: e2eUnusedAuthTarget,
 	}))
 	if err != nil {
 		t.Fatalf("load configuration: %v", err)
@@ -137,13 +190,14 @@ func TestE2E_UCAPP001_CreateApplicationOverRealHTTPAndGRPC(t *testing.T) {
 	addresses := e2eReserveAddresses(t, 2)
 	httpAddress, grpcAddress := addresses[0], addresses[1]
 	configuration, err := config.Load(e2eEnvironment(map[string]string{
-		config.MongoURIEnv:           os.Getenv(mongoIntegrationURIEnv),
-		config.MongoDatabaseEnv:      database.Name(),
-		config.HTTPAddrEnv:           httpAddress,
-		config.GRPCAddrEnv:           grpcAddress,
-		config.IdentityIssuerEnv:     e2eIssuer,
-		config.IdentityAudienceEnv:   e2eAudience,
-		config.IdentityPublicKeysEnv: e2eKeyID + "=" + publicKeyPath,
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               httpAddress,
+		config.GRPCAddrEnv:               grpcAddress,
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: e2eUnusedAuthTarget,
 	}))
 	if err != nil {
 		t.Fatalf("load configuration: %v", err)
@@ -230,6 +284,125 @@ func TestE2E_UCAPP001_CreateApplicationOverRealHTTPAndGRPC(t *testing.T) {
 		t.Fatalf("authentication failure leaked the token: %s", invalidBody)
 	}
 	e2eAssertCollectionCount(t, database, "applications", 2)
+}
+
+// TestE2E_UCAPP002_CreateApplicationVersionOverRealHTTP crosses the complete
+// consumer path: generated HTTP route, trusted JWS, Wire composition, generated
+// Auth gRPC client, fail-closed cache and the transaction-capable MongoDB
+// repository. The test Auth server implements the shared generated interface;
+// it is not a second hand-written wire model.
+func TestE2E_UCAPP002_CreateApplicationVersionOverRealHTTP(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	_, database := e2eIsolatedDatabase(t, ctx, true)
+	privateKey, publicKeyPath := e2eIdentity(t)
+	const adminID = "auth-e2e-version"
+	token := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
+
+	addresses := e2eReserveAddresses(t, 3)
+	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
+	authServer := e2eStartScopeCatalogServer(t, authAddress)
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               httpAddress,
+		config.GRPCAddrEnv:               grpcAddress,
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: authAddress,
+		config.ScopeCatalogCacheTTLEnv:   "1ns",
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+
+	app, appCleanup, err := wireApp(configuration)
+	if err != nil {
+		t.Fatalf("wireApp() error = %v", err)
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Error("app.Run() did not stop within 15s")
+		}
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Errorf("app.Run() error = %v", runErr)
+		}
+		appCleanup()
+	})
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+
+	// Create the owning Application through UC-APP-001 rather than seeding a
+	// persistence document, so UC-APP-002 begins from a real public predecessor.
+	statusCode, applicationBody := e2eHTTPCreate(t, httpAddress, token, "Version_E2E_App")
+	if statusCode != http.StatusCreated {
+		t.Fatalf("create predecessor application status = %d; body = %s", statusCode, applicationBody)
+	}
+	var applicationResponse applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(applicationBody, &applicationResponse); err != nil {
+		t.Fatalf("decode predecessor application: %v", err)
+	}
+
+	versionStatus, versionHeader, versionBody := e2eHTTPCreateVersion(
+		t,
+		httpAddress,
+		token,
+		applicationResponse.GetId(),
+		"v1.0.0",
+		[]string{"user.profile.v1", "camera.read.v1"},
+		[]string{"schedule.read", "calendar.read"},
+		[]string{"profile.basic"},
+	)
+	if versionStatus != http.StatusCreated || versionHeader.Get("ETag") != `"1"` {
+		t.Fatalf("create version response = status:%d ETag:%q body:%s", versionStatus, versionHeader.Get("ETag"), versionBody)
+	}
+	var versionResponse applicationversionv1.CreateApplicationVersionResponse
+	if err := protojson.Unmarshal(versionBody, &versionResponse); err != nil {
+		t.Fatalf("decode version response: %v; body = %s", err, versionBody)
+	}
+	e2eAssertApplicationVersionResponse(t, &versionResponse, applicationResponse.GetId(), adminID)
+	persisted := e2eFindApplicationVersion(t, database, versionResponse.GetVersionId())
+	e2eAssertPersistedApplicationVersion(t, persisted, &versionResponse)
+	e2eAssertCollectionCount(t, database, "application_versions", 1)
+	e2eAssertNextVersionSequence(t, database, applicationResponse.GetId(), 2)
+
+	// Unknown/non-requestable Scope fails before MongoDB. With the 1ns test TTL
+	// this also proves a fresh generated-interface snapshot can be reloaded.
+	invalidStatus, _, invalidBody := e2eHTTPCreateVersion(
+		t, httpAddress, token, applicationResponse.GetId(), "v1.0.1", nil, []string{"legacy.profile"}, nil,
+	)
+	if invalidStatus != http.StatusBadRequest || !bytes.Contains(invalidBody, []byte(transport.ReasonInvalidApplicationScope)) {
+		t.Fatalf("invalid Scope response = status:%d body:%s", invalidStatus, invalidBody)
+	}
+	e2eAssertCollectionCount(t, database, "application_versions", 1)
+	e2eAssertNextVersionSequence(t, database, applicationResponse.GetId(), 2)
+
+	// A failed refresh is fail-closed: no stale snapshot is used and neither a
+	// version nor the Application sequence allocation is partially committed.
+	authServer.unavailable.Store(true)
+	unavailableStatus, _, unavailableBody := e2eHTTPCreateVersion(
+		t, httpAddress, token, applicationResponse.GetId(), "v1.0.2", nil, []string{"profile.basic"}, nil,
+	)
+	if unavailableStatus != http.StatusServiceUnavailable || !bytes.Contains(unavailableBody, []byte(transport.ReasonScopeCatalogUnavailable)) {
+		t.Fatalf("unavailable Auth response = status:%d body:%s", unavailableStatus, unavailableBody)
+	}
+	e2eAssertCollectionCount(t, database, "application_versions", 1)
+	e2eAssertNextVersionSequence(t, database, applicationResponse.GetId(), 2)
+	if calls := authServer.calls.Load(); calls < 3 {
+		t.Fatalf("Auth Scope Catalog calls = %d, want at least 3 refresh attempts", calls)
+	}
 }
 
 // e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
@@ -355,6 +528,32 @@ func e2eReserveAddresses(t *testing.T, count int) []string {
 	return addresses
 }
 
+func e2eStartScopeCatalogServer(t *testing.T, address string) *e2eScopeCatalogServer {
+	t.Helper()
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("listen for test Auth Scope Catalog: %v", err)
+	}
+	service := &e2eScopeCatalogServer{}
+	server := grpc.NewServer()
+	scopecatalogv1.RegisterScopeCatalogServer(server, service)
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				t.Errorf("test Auth Scope Catalog server: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("test Auth Scope Catalog server did not stop")
+		}
+	})
+	return service
+}
+
 func e2eWaitForHTTPListener(t *testing.T, ctx context.Context, address string, runDone <-chan struct{}, runErr *error) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
@@ -429,6 +628,123 @@ func e2eHTTPCreate(t *testing.T, address, token, name string) (int, []byte) {
 		t.Fatalf("read HTTP response: %v", err)
 	}
 	return response.StatusCode, payload
+}
+
+func e2eHTTPCreateVersion(
+	t *testing.T,
+	address string,
+	token string,
+	applicationID string,
+	versionLabel string,
+	requiredCapabilities []string,
+	requiredScopes []string,
+	optionalScopes []string,
+) (int, http.Header, []byte) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"versionLabel":              versionLabel,
+		"launchUrl":                 "https://example.edu/apps/course-table/v1/",
+		"rpcApiMinVersion":          3,
+		"rpcApiMaxVersionExclusive": 5,
+		"requiredCapabilities":      requiredCapabilities,
+		"requiredScopes":            requiredScopes,
+		"optionalScopes":            optionalScopes,
+	})
+	if err != nil {
+		t.Fatalf("encode create-version request: %v", err)
+	}
+	path := strings.Replace(transport.CreateApplicationVersionInternalPath, "{application_id}", applicationID, 1)
+	request, err := http.NewRequest(http.MethodPost, "http://"+address+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build create-version request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(transport.IdentityHeader, token)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read create-version response: %v", err)
+	}
+	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eAssertApplicationVersionResponse(
+	t *testing.T,
+	response *applicationversionv1.CreateApplicationVersionResponse,
+	applicationID string,
+	adminID string,
+) {
+	t.Helper()
+	if !e2eIsUUIDv7(response.GetVersionId()) || response.GetApplicationId() != applicationID || response.GetSequence() != 1 {
+		t.Fatalf("version identity = %v", response)
+	}
+	if response.GetVersionLabel() != "v1.0.0" || response.GetLaunchUrl() != "https://example.edu/apps/course-table/v1/" ||
+		response.GetRpcApiMinVersion() != 3 || response.GetRpcApiMaxVersionExclusive() != 5 {
+		t.Fatalf("version content = %v", response)
+	}
+	if strings.Join(response.GetRequiredCapabilities(), ",") != "camera.read.v1,user.profile.v1" ||
+		strings.Join(response.GetRequiredScopes(), ",") != "calendar.read,schedule.read" ||
+		strings.Join(response.GetOptionalScopes(), ",") != "profile.basic" {
+		t.Fatalf("sorted version lists = %v", response)
+	}
+	if response.GetReviewStatus() != "DRAFT" || response.GetRevision() != 1 ||
+		response.GetCreatedBy() != adminID || response.GetUpdatedBy() != adminID ||
+		!response.GetCreatedAt().AsTime().Equal(response.GetUpdatedAt().AsTime()) {
+		t.Fatalf("version lifecycle/audit = %v", response)
+	}
+}
+
+func e2eFindApplicationVersion(t *testing.T, database *drivermongo.Database, versionID string) e2eApplicationVersionDocument {
+	t.Helper()
+	var document e2eApplicationVersionDocument
+	if err := database.Collection("application_versions").FindOne(
+		t.Context(), bson.D{{Key: "versionId", Value: versionID}},
+	).Decode(&document); err != nil {
+		t.Fatalf("read persisted application version %s: %v", versionID, err)
+	}
+	return document
+}
+
+func e2eAssertPersistedApplicationVersion(
+	t *testing.T,
+	document e2eApplicationVersionDocument,
+	response *applicationversionv1.CreateApplicationVersionResponse,
+) {
+	t.Helper()
+	if document.VersionID != response.GetVersionId() || document.ApplicationID != response.GetApplicationId() ||
+		document.Sequence != response.GetSequence() || document.VersionLabel != response.GetVersionLabel() ||
+		document.ReviewStatus != "DRAFT" || document.Revision != 1 {
+		t.Fatalf("persisted version identity/state = %#v; response = %v", document, response)
+	}
+	if strings.Join(document.RequiredCapabilities, ",") != strings.Join(response.GetRequiredCapabilities(), ",") ||
+		strings.Join(document.RequiredScopes, ",") != strings.Join(response.GetRequiredScopes(), ",") ||
+		strings.Join(document.OptionalScopes, ",") != strings.Join(response.GetOptionalScopes(), ",") {
+		t.Fatalf("persisted version lists = %#v; response = %v", document, response)
+	}
+	if document.CreatedBy != response.GetCreatedBy() || document.UpdatedBy != response.GetUpdatedBy() ||
+		!document.CreatedAt.Equal(response.GetCreatedAt().AsTime().Truncate(time.Millisecond)) ||
+		!document.UpdatedAt.Equal(response.GetUpdatedAt().AsTime().Truncate(time.Millisecond)) {
+		t.Fatalf("persisted version audit = %#v; response = %v", document, response)
+	}
+}
+
+func e2eAssertNextVersionSequence(t *testing.T, database *drivermongo.Database, applicationID string, want int32) {
+	t.Helper()
+	var document struct {
+		NextVersionSequence int32 `bson:"nextVersionSequence"`
+	}
+	if err := database.Collection("applications").FindOne(
+		t.Context(), bson.D{{Key: "id", Value: applicationID}},
+	).Decode(&document); err != nil {
+		t.Fatalf("read nextVersionSequence for %s: %v", applicationID, err)
+	}
+	if document.NextVersionSequence != want {
+		t.Fatalf("nextVersionSequence = %d, want %d", document.NextVersionSequence, want)
+	}
 }
 
 func e2eAssertResponse(t *testing.T, label string, response *applicationv1.CreateApplicationResponse, wantName, wantAdminID string) {

@@ -40,52 +40,36 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-001 API Delivery.** Target UC: UC-APP-001 (CreateApplication).
-Brief: `../../docs/app-center/briefs/UC-APP-001.md`, generated from
-`docs/tools/brief-specs/UC-APP-001.json`. The brief embeds the platform
-trusted-identity and routing contracts because this is the first
-trusted-identity consumer; regenerate the brief when any selected source
-changes.
+**UC-APP-002 API Delivery and E2E.** Target UC: UC-APP-002
+(CreateApplicationVersion). Brief:
+`../../docs/app-center/briefs/UC-APP-002.md`, generated from
+`docs/tools/brief-specs/UC-APP-002.json`. The brief embeds the Auth Scope
+Catalog v1 contract; regenerate it when a selected source changes.
 
 Code scope:
 
-- `internal/adapter/transport/` — Kratos v2.9.2 HTTP + gRPC servers,
-  `app_center.v1.application.Application` transport service, trusted-identity
-  JWS verification middleware/interceptor, and the ADR-005 error mapping.
-- `internal/adapter/transport/` contract test asserting the external
-  `/app-center/v1/applications` → internal `/v1/applications` mapping and the
-  gRPC full method against the generated Proto.
-- `internal/adapter/generator/` — UUIDv7 generator and system clock adapters.
-- `internal/adapter/mongo/` — composition-boundary database constructor,
-  read-only deployment readiness check (transaction-capable topology plus the
-  latest recorded migration), and the explicit `Migrator`.
-- `internal/config/` — server, MongoDB and trusted-identity settings with
-  startup validation of missing or invalid values; `LoadMongo` is shared by
-  `serve` and `migrate`.
-- `cmd/app-center/` — `github.com/goforj/wire` ProviderSets, injector and the
-  generated `wire_gen.go` composition root, plus the explicit `serve` and
-  `migrate` commands. `serve` never migrates automatically.
-- `api/` — git submodule pinning the independent API repository, carrying the
-  first formal `app_center.v1.application` Proto and its generated
-  Go/gRPC/Kratos HTTP code; `make -C api proto-check` regenerates in a temp
-  directory and fails on drift.
-- `cmd/app-center/e2e_integration_test.go` — opt-in UC-APP-001 end-to-end test
-  that explicitly migrates an isolated database, starts the real `wireApp`
-  composition root over real Kratos HTTP and native gRPC listeners, presents
-  real RS256 compact JWS identities, and asserts the persisted ownership rows.
-- `scripts/test-mongo-integration.sh` / `make test-mongo` — one command runs the
-  MongoDB adapter integration suite and the UC-APP-001 E2E against the same
-  isolated transaction-capable replica set.
-- Root `Makefile` and `README.md` — generate/build/test/migrate/run order,
-  required environment variables and the transaction-capable MongoDB contract.
+- `api/` — add the formal resource-oriented UC-APP-002 Proto and consume the
+  shared Auth Scope Catalog generated client without reviving legacy APIs.
+- `internal/adapter/auth/` — native gRPC snapshot source plus the existing
+  bounded fail-closed cache; production code contains no hardcoded catalog.
+- `internal/adapter/transport/` — add UC-APP-002 HTTP + gRPC conversion,
+  centralized ADR-005 error mapping, `201 Created` and `ETag: "1"`.
+- `internal/config/` and `cmd/app-center/` — validate the Auth endpoint, own the
+  client connection lifecycle and assemble the UC-APP-002 handler with Wire.
+- `cmd/app-center/e2e_integration_test.go` — extend the real-listener MongoDB
+  E2E with a generated-interface test Auth gRPC server, real JWS and persisted
+  version assertions.
+- Contract/unit/integration tests cover API field exclusion, route mapping,
+  Auth wire validation, cache failure and UC-APP-002 transport mappings.
 
 Explicit non-goals:
 
-- No other use case, query or command; no UC-APP-002…UC-APP-005 transport.
-- No legacy App Center code, API envelope, `nameKey`, counter or compatibility
-  layer.
-- No Auth database reads, no per-request Auth callback and no unsigned JSON
-  header support.
+- No UC-APP-003…UC-APP-005 transport and no legacy API compatibility layer.
+- No Auth database reads, production hardcoded Scope catalog or unsigned JSON
+  identity header.
+- No invented internal-service credential: until that platform contract is
+  accepted the consumer connection is explicitly unauthenticated and this work
+  remains non-production; tests use only the generated Auth interface.
 - No Gateway or Auth Center code change; the Gateway prefix strip is only
   recorded and asserted in the contract test.
 - No gRPC-Web wrapper in this service (terminated at Traefik).

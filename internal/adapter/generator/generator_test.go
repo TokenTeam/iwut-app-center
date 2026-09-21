@@ -25,6 +25,17 @@ func TestUUIDv7Generator_ProducesValidIDs(t *testing.T) {
 	}
 }
 
+func TestApplicationVersionUUIDv7Generator_ProducesValidID(t *testing.T) {
+	t.Parallel()
+	id, err := NewApplicationVersionUUIDv7Generator().NewUUIDv7()
+	if err != nil {
+		t.Fatalf("NewUUIDv7() error = %v", err)
+	}
+	if !id.IsValid() {
+		t.Fatalf("NewUUIDv7() = %q, not a valid ApplicationVersion UUIDv7", id)
+	}
+}
+
 func TestSystemClock_ReturnsUTCTime(t *testing.T) {
 	t.Parallel()
 

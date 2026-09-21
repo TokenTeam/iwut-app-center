@@ -7,11 +7,13 @@ import (
 	"github.com/go-kratos/kratos/v2"
 	"github.com/goforj/wire"
 
+	"iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	versionusecase "iwut-app-center/internal/version/usecase"
 )
 
 // wireApp is the composition root injector. Generate wire_gen.go with:
@@ -22,13 +24,18 @@ import (
 func wireApp(configuration config.Config) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		auth.ProviderSet,
 		mongo.ProviderSet,
 		transport.ProviderSet,
 		usecase.NewCreateApplicationHandler,
+		versionusecase.NewCreateApplicationVersionHandler,
 		wire.Bind(new(transport.CreateApplicationHandler), new(*usecase.CreateApplicationHandler)),
+		wire.Bind(new(transport.CreateApplicationVersionHandler), new(*versionusecase.CreateApplicationVersionHandler)),
 		provideMongoClient,
 		provideMongoDatabase,
 		provideInitialApplicationQuota,
+		provideScopeCatalogCacheTTL,
+		provideAuthScopeCatalogConnection,
 		provideIdentityConfig,
 		provideServerConfig,
 		provideApp,

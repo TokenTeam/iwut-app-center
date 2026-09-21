@@ -7,12 +7,17 @@ import (
 
 	"github.com/go-kratos/kratos/v2"
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
+	authadapter "iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/port"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	versionport "iwut-app-center/internal/version/port"
+	versionusecase "iwut-app-center/internal/version/usecase"
 )
 
 const (
@@ -54,6 +59,25 @@ func provideInitialApplicationQuota(configuration config.Config) int32 {
 	return configuration.InitialApplicationQuota
 }
 
+func provideScopeCatalogCacheTTL(configuration config.Config) time.Duration {
+	return configuration.ScopeCatalogCacheTTL
+}
+
+// provideAuthScopeCatalogConnection owns the temporary unauthenticated native
+// gRPC channel. The platform service-identity contract is still open, so this
+// connection must not be treated as production-ready.
+func provideAuthScopeCatalogConnection(configuration config.Config) (*grpc.ClientConn, func(), error) {
+	connection, err := grpc.NewClient(
+		configuration.AuthScopeCatalogTarget,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create Auth Scope Catalog gRPC client: %w", err)
+	}
+	cleanup := func() { _ = connection.Close() }
+	return connection, cleanup, nil
+}
+
 func provideIdentityConfig(configuration config.Config, clock port.Clock) (transport.IdentityConfig, error) {
 	publicKeys, err := transport.LoadRSAPublicKeys(configuration.IdentityPublicKeyFiles)
 	if err != nil {
@@ -85,3 +109,6 @@ func provideApp(servers *transport.Servers) *kratos.App {
 
 // ensure the concrete handler still satisfies the transport's narrow port.
 var _ transport.CreateApplicationHandler = (*usecase.CreateApplicationHandler)(nil)
+var _ transport.CreateApplicationVersionHandler = (*versionusecase.CreateApplicationVersionHandler)(nil)
+var _ authadapter.ScopeCatalogSnapshotSource = (*authadapter.GRPCScopeCatalogSnapshotSource)(nil)
+var _ versionport.ScopeCatalog = (*authadapter.ScopeCatalogCache)(nil)

@@ -35,7 +35,8 @@ done
 
 export MONGODB_INTEGRATION_URI="mongodb://127.0.0.1:${mongo_port}/?replicaSet=rs0&directConnection=true"
 
-# One command runs both the MongoDB adapter integration suite and the UC-APP-001
-# end-to-end suite (real Kratos HTTP + gRPC, real RS256 JWS, explicit migration)
-# against the same isolated replica set.
+# One command runs the MongoDB adapter integration suite and the UC-APP-001/002
+# end-to-end suites (real Kratos HTTP + gRPC, real RS256 JWS, generated Auth
+# client/server contract, explicit migration) against the same isolated replica
+# set.
 go test -count=1 "$@" ./internal/adapter/mongo ./cmd/app-center

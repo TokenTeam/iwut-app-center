@@ -23,6 +23,7 @@ const (
 	IdentityMaxTTLEnv          = "APP_CENTER_IDENTITY_MAX_TTL"
 	IdentityClockSkewEnv       = "APP_CENTER_IDENTITY_CLOCK_SKEW"
 	IdentityPublicKeysEnv      = "APP_CENTER_IDENTITY_PUBLIC_KEYS"
+	AuthScopeCatalogTargetEnv  = "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET"
 
 	DefaultScopeCatalogCacheTTL = 5 * time.Minute
 	DefaultHTTPAddr             = ":8080"
@@ -55,6 +56,8 @@ type Config struct {
 	IdentityMaxTTL         time.Duration
 	IdentityClockSkew      time.Duration
 	IdentityPublicKeyFiles map[string]string
+
+	AuthScopeCatalogTarget string
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -138,6 +141,9 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, err
 	}
 	if configuration.IdentityAudience, err = optionalNonEmpty(lookup, IdentityAudienceEnv, DefaultIdentityAudience); err != nil {
+		return Config{}, err
+	}
+	if configuration.AuthScopeCatalogTarget, err = requiredValue(lookup, AuthScopeCatalogTargetEnv); err != nil {
 		return Config{}, err
 	}
 

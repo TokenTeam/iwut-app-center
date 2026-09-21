@@ -245,6 +245,26 @@ func TestScopeCatalogCache_BR_VER_007_RevisionRegressionFailsClosed(t *testing.T
 	}
 }
 
+func TestScopeCatalogCache_BR_SCP_003_SameRevisionMutationFailsClosed(t *testing.T) {
+	t.Parallel()
+	generatedAt := time.Date(2026, time.September, 21, 0, 0, 0, 0, time.UTC)
+	clock := &fakeScopeCatalogClock{now: time.Now()}
+	source := &fakeScopeCatalogSnapshotSource{snapshot: ScopeCatalogSnapshot{
+		Revision: 8, GeneratedAt: generatedAt, RequestableScopes: []domain.ScopeName{"profile.basic"},
+	}}
+	cache := newTestScopeCatalogCache(t, source, clock, time.Minute)
+	if _, err := cache.EnsureAllRequestable(t.Context(), []domain.ScopeName{"profile.basic"}); err != nil {
+		t.Fatalf("prime cache: %v", err)
+	}
+	clock.Advance(time.Minute)
+	source.Set(ScopeCatalogSnapshot{
+		Revision: 8, GeneratedAt: generatedAt, RequestableScopes: []domain.ScopeName{"schedule.read"},
+	}, nil)
+	if revision, err := cache.EnsureAllRequestable(t.Context(), []domain.ScopeName{"schedule.read"}); revision != 0 || !errors.Is(err, port.ErrScopeCatalogUnavailable) {
+		t.Fatalf("EnsureAllRequestable() = (%d, %v), want fail-closed", revision, err)
+	}
+}
+
 func TestNewScopeCatalogCache_RejectsInvalidWiring(t *testing.T) {
 	t.Parallel()
 

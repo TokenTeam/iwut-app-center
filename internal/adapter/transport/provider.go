@@ -7,5 +7,6 @@ import "github.com/goforj/wire"
 var ProviderSet = wire.NewSet(
 	NewIdentityVerifier,
 	NewApplicationService,
+	NewApplicationVersionService,
 	NewServers,
 )

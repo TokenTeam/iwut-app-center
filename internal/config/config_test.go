@@ -10,9 +10,10 @@ import (
 
 func requiredValues() map[string]string {
 	return map[string]string{
-		MongoURIEnv:           "mongodb://localhost:27017",
-		IdentityIssuerEnv:     "https://auth.example.test",
-		IdentityPublicKeysEnv: "primary=/etc/iwut/identity-primary.pem",
+		MongoURIEnv:               "mongodb://localhost:27017",
+		IdentityIssuerEnv:         "https://auth.example.test",
+		IdentityPublicKeysEnv:     "primary=/etc/iwut/identity-primary.pem",
+		AuthScopeCatalogTargetEnv: "127.0.0.1:9000",
 	}
 }
 
@@ -71,6 +72,7 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 		IdentityMaxTTLEnv:          "2m",
 		IdentityClockSkewEnv:       "15s",
 		IdentityPublicKeysEnv:      "k1=/keys/one.pem,k2=/keys/two.pem",
+		AuthScopeCatalogTargetEnv:  "dns:///auth-center.internal:9000",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -92,6 +94,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	}
 	if len(configuration.IdentityPublicKeyFiles) != 2 {
 		t.Fatalf("IdentityPublicKeyFiles = %#v", configuration.IdentityPublicKeyFiles)
+	}
+	if configuration.AuthScopeCatalogTarget != "dns:///auth-center.internal:9000" {
+		t.Fatalf("AuthScopeCatalogTarget = %q", configuration.AuthScopeCatalogTarget)
 	}
 }
 
@@ -136,6 +141,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "invalid identity max TTL", key: IdentityMaxTTLEnv, value: "forever"},
 		{name: "negative clock skew", key: IdentityClockSkewEnv, value: "-1s"},
 		{name: "empty clock skew", key: IdentityClockSkewEnv, value: ""},
+		{name: "empty Auth Scope Catalog target", key: AuthScopeCatalogTargetEnv, value: ""},
 	}
 
 	for _, testCase := range testCases {
@@ -151,10 +157,10 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 	}
 }
 
-func TestLoad_RequiresMongoURIAndIssuerAndKeys(t *testing.T) {
+func TestLoad_RequiresMongoURIIssuerKeysAndAuthTarget(t *testing.T) {
 	t.Parallel()
 
-	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv} {
+	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			values := requiredValues()

@@ -39,7 +39,7 @@ read-only and does not create collections or indexes.
 | `make fmt-check` | Fail if any Go file is not `gofmt`-ed |
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
-| `make test-mongo` | Run MongoDB integration and the UC-APP-001 end-to-end suite against an isolated replica set (Docker) |
+| `make test-mongo` | Run MongoDB integration and the UC-APP-001/002 end-to-end suites against an isolated replica set (Docker) |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
 | `make api-check` | Fail if the generated API code drifted from its Proto |
@@ -59,6 +59,7 @@ read-only and does not create collections or indexes.
 | `APP_CENTER_GRPC_ADDR` | no | `:9090` | gRPC listen address |
 | `APP_CENTER_INITIAL_APPLICATION_QUOTA` | no | `10` | Initial per-admin creation quota; only used to lazily create a missing quota record |
 | `APP_CENTER_SCOPE_CATALOG_CACHE_TTL` | no | `5m` | Scope Catalog cache TTL |
+| `APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET` | `serve` | — | Auth Center native gRPC target for Scope Catalog snapshots |
 | `APP_CENTER_IDENTITY_ISSUER` | `serve` | — | Expected JWS `iss` |
 | `APP_CENTER_IDENTITY_AUDIENCE` | no | `iwut-app-center` | Audience the JWS `aud` must contain |
 | `APP_CENTER_IDENTITY_MAX_TTL` | no | `5m` | Maximum `exp - iat` accepted |
@@ -75,9 +76,15 @@ version control.
 - MongoDB integration tests (schema, indexes, transactions, concurrency) run
   only when `MONGODB_INTEGRATION_URI` is set; use
   `./scripts/test-mongo-integration.sh` or `make test-mongo`.
-- The UC-APP-001 end-to-end test in `cmd/app-center` runs only when
+- The UC-APP-001/002 end-to-end tests in `cmd/app-center` run only when
   `MONGODB_INTEGRATION_URI` is set. It explicitly migrates an isolated database,
   starts the real `wireApp` composition root with real Kratos HTTP and native
-  gRPC listeners, presents real RS256 compact JWS identities and asserts the
-  persisted `applications`/`application_creation_quotas` rows. No automatic
-  migration happens during serve.
+  gRPC listeners, presents real RS256 compact JWS identities and asserts
+  persisted application/version rows. UC-APP-002 additionally uses a real test
+  Auth gRPC listener implementing the shared generated Scope Catalog interface.
+  No automatic migration happens during serve.
+
+The Auth client currently uses an unauthenticated internal gRPC channel because
+the platform service-identity credential is still an explicit open decision.
+Do not treat this bootstrap connection as production-ready or expose the Auth
+method through Gateway/Traefik.

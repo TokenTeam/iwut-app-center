@@ -8,20 +8,31 @@ import (
 	"google.golang.org/grpc/status"
 
 	"iwut-app-center/internal/application/domain"
+	versiondomain "iwut-app-center/internal/version/domain"
 )
 
 // Stable Proto error reasons. They are the machine-readable contract clients
 // branch on; the accompanying message is never parsed. Values mirror the
-// ErrorReason enum in app_center/v1/application/error_reason.proto and are
-// asserted mechanically by the API contract test.
+// ErrorReason enums in the formal v1 capability packages and are asserted
+// mechanically by API contract tests.
 const (
-	ReasonInvalidApplicationName       = "ERROR_REASON_INVALID_APPLICATION_NAME"
-	ReasonDeveloperIdentityRequired    = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
-	ReasonInvalidDeveloperIdentity     = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
-	ReasonDeveloperApprovalRequired    = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
-	ReasonApplicationNameAlreadyExists = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
-	ReasonApplicationQuotaExceeded     = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
-	ReasonInternal                     = "ERROR_REASON_INTERNAL"
+	ReasonInvalidApplicationName        = "ERROR_REASON_INVALID_APPLICATION_NAME"
+	ReasonDeveloperIdentityRequired     = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
+	ReasonInvalidDeveloperIdentity      = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
+	ReasonDeveloperApprovalRequired     = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
+	ReasonApplicationNameAlreadyExists  = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
+	ReasonApplicationQuotaExceeded      = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
+	ReasonInvalidApplicationID          = "ERROR_REASON_INVALID_APPLICATION_ID"
+	ReasonInvalidVersionLabel           = "ERROR_REASON_INVALID_VERSION_LABEL"
+	ReasonInvalidApplicationLaunchURL   = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
+	ReasonInvalidRPCApiRange            = "ERROR_REASON_INVALID_RPC_API_RANGE"
+	ReasonInvalidRequiredCapability     = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
+	ReasonInvalidApplicationScope       = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
+	ReasonApplicationNotFound           = "ERROR_REASON_APPLICATION_NOT_FOUND"
+	ReasonApplicationAdminRequired      = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
+	ReasonApplicationVersionLabelExists = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
+	ReasonScopeCatalogUnavailable       = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
+	ReasonInternal                      = "ERROR_REASON_INTERNAL"
 )
 
 type errorSpec struct {
@@ -80,6 +91,22 @@ var internalSpec = errorSpec{
 	message: "internal failure",
 }
 
+var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{
+	versiondomain.ErrorCodeInvalidApplicationID:                 {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	versiondomain.ErrorCodeInvalidVersionLabel:                  {code: codes.InvalidArgument, reason: ReasonInvalidVersionLabel, message: "version label is invalid"},
+	versiondomain.ErrorCodeInvalidApplicationLaunchURL:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationLaunchURL, message: "application launch URL is invalid"},
+	versiondomain.ErrorCodeInvalidRPCApiRange:                   {code: codes.InvalidArgument, reason: ReasonInvalidRPCApiRange, message: "RPC API range is invalid"},
+	versiondomain.ErrorCodeInvalidRequiredCapability:            {code: codes.InvalidArgument, reason: ReasonInvalidRequiredCapability, message: "required capability is invalid"},
+	versiondomain.ErrorCodeInvalidApplicationScope:              {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
+	versiondomain.ErrorCodeDeveloperIdentityRequired:            {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	versiondomain.ErrorCodeDeveloperApprovalRequired:            {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	versiondomain.ErrorCodeApplicationNotFound:                  {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	versiondomain.ErrorCodeApplicationAdminRequired:             {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	versiondomain.ErrorCodeApplicationVersionLabelAlreadyExists: {code: codes.AlreadyExists, reason: ReasonApplicationVersionLabelExists, message: "application version label already exists"},
+	versiondomain.ErrorCodeScopeCatalogUnavailable:              {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	versiondomain.ErrorCodeInternal:                             internalSpec,
+}
+
 // toTransportError maps any error crossing the transport boundary. Unknown and
 // infrastructure errors collapse to Internal without leaking cause or details.
 func toTransportError(err error) error {
@@ -96,6 +123,14 @@ func toTransportError(err error) error {
 	var domainError *domain.Error
 	if errors.As(err, &domainError) {
 		spec, ok := domainErrorSpecs[domainError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
+	}
+	var versionDomainError *versiondomain.Error
+	if errors.As(err, &versionDomainError) {
+		spec, ok := versionDomainErrorSpecs[versionDomainError.Code()]
 		if !ok {
 			spec = internalSpec
 		}
