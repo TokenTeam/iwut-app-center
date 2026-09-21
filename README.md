@@ -39,6 +39,7 @@ read-only and does not create collections or indexes.
 | `make fmt-check` | Fail if any Go file is not `gofmt`-ed |
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
+| `make test-mongo` | Run MongoDB integration and the UC-APP-001 end-to-end suite against an isolated replica set (Docker) |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
 | `make api-check` | Fail if the generated API code drifted from its Proto |
@@ -73,4 +74,10 @@ version control.
 - `go test ./...` includes the root `architecture_test.go` boundary guard.
 - MongoDB integration tests (schema, indexes, transactions, concurrency) run
   only when `MONGODB_INTEGRATION_URI` is set; use
-  `./scripts/test-mongo-integration.sh`.
+  `./scripts/test-mongo-integration.sh` or `make test-mongo`.
+- The UC-APP-001 end-to-end test in `cmd/app-center` runs only when
+  `MONGODB_INTEGRATION_URI` is set. It explicitly migrates an isolated database,
+  starts the real `wireApp` composition root with real Kratos HTTP and native
+  gRPC listeners, presents real RS256 compact JWS identities and asserts the
+  persisted `applications`/`application_creation_quotas` rows. No automatic
+  migration happens during serve.

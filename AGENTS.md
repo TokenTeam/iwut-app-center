@@ -40,7 +40,7 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-001 API Transport.** Target UC: UC-APP-001 (CreateApplication).
+**UC-APP-001 API Delivery.** Target UC: UC-APP-001 (CreateApplication).
 Brief: `../../docs/app-center/briefs/UC-APP-001.md`, generated from
 `docs/tools/brief-specs/UC-APP-001.json`. The brief embeds the platform
 trusted-identity and routing contracts because this is the first
@@ -69,6 +69,13 @@ Code scope:
   first formal `app_center.v1.application` Proto and its generated
   Go/gRPC/Kratos HTTP code; `make -C api proto-check` regenerates in a temp
   directory and fails on drift.
+- `cmd/app-center/e2e_integration_test.go` — opt-in UC-APP-001 end-to-end test
+  that explicitly migrates an isolated database, starts the real `wireApp`
+  composition root over real Kratos HTTP and native gRPC listeners, presents
+  real RS256 compact JWS identities, and asserts the persisted ownership rows.
+- `scripts/test-mongo-integration.sh` / `make test-mongo` — one command runs the
+  MongoDB adapter integration suite and the UC-APP-001 E2E against the same
+  isolated transaction-capable replica set.
 - Root `Makefile` and `README.md` — generate/build/test/migrate/run order,
   required environment variables and the transaction-capable MongoDB contract.
 
@@ -82,13 +89,18 @@ Explicit non-goals:
 - No Gateway or Auth Center code change; the Gateway prefix strip is only
   recorded and asserted in the contract test.
 - No gRPC-Web wrapper in this service (terminated at Traefik).
-- No commit and no push in any repository.
+- No push in any repository; keep API, service and documentation commits local
+  until the user chooses the publication batch.
 
 Verification commands:
 
 ```bash
 gofmt -l .
 go test ./...
+go vet ./...
+go run github.com/goforj/wire/cmd/wire@v1.2.0 diff ./cmd/app-center
+make -C api proto-check
+./scripts/test-mongo-integration.sh
 cd ../../docs && python3 -B -m unittest discover -s tools/tests
 cd ../../docs && python3 -B tools/gen_brief.py --check --all
 cd ../../docs && python3 -B tools/registry.py --check

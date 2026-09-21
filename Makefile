@@ -10,6 +10,7 @@ help:
 	@echo "  make fmt-check     fail if any Go file is not gofmt-ed"
 	@echo "  make build         compile all packages"
 	@echo "  make test          run the unit/transport/architecture suite"
+	@echo "  make test-mongo    run the MongoDB integration and UC-APP-001 E2E suites"
 	@echo "  make vet           run go vet"
 	@echo "  make wire-check    fail if wire_gen.go is stale"
 	@echo "  make api-check     fail if generated API code drifted from Proto"
@@ -39,6 +40,14 @@ build:
 .PHONY: test
 test:
 	$(GO) test ./...
+
+# Starts and removes an isolated transaction-capable replica set, then runs the
+# MongoDB adapter integration suite and the UC-APP-001 end-to-end suite. Requires
+# Docker; plain `make test` skips the MongoDB tests when MONGODB_INTEGRATION_URI
+# is absent.
+.PHONY: test-mongo
+test-mongo:
+	./scripts/test-mongo-integration.sh
 
 .PHONY: vet
 vet:

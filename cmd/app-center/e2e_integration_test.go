@@ -1,0 +1,554 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
+
+	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	mongoadapter "iwut-app-center/internal/adapter/mongo"
+	"iwut-app-center/internal/adapter/transport"
+	"iwut-app-center/internal/config"
+)
+
+// mongoIntegrationURIEnv is the same switch the MongoDB adapter integration
+// tests use. Without it these end-to-end tests skip so plain `go test ./...`
+// never needs Docker.
+const mongoIntegrationURIEnv = "MONGODB_INTEGRATION_URI"
+
+const (
+	e2eIssuer      = "https://auth.e2e.test"
+	e2eAudience    = "iwut-app-center"
+	e2eKeyID       = "e2e-primary"
+	e2eHTTPName    = "Course_Table_E2E"
+	e2eGRPCName    = "Course_Table_GRPC"
+	e2eHTTPAdminID = "auth-e2e-http"
+	e2eGRPCAdminID = "auth-e2e-grpc"
+)
+
+// e2eApplicationDocument mirrors only the persisted business/ownership fields
+// the assertions need. The test reads them directly from the isolated database
+// to prove the HTTP and gRPC calls crossed the real transaction-capable
+// repository instead of an in-process fake.
+type e2eApplicationDocument struct {
+	ID        string    `bson:"id"`
+	Name      string    `bson:"name"`
+	NameKey   string    `bson:"nameKey"`
+	AdminID   string    `bson:"adminId"`
+	CreatedAt time.Time `bson:"createdAt"`
+}
+
+type e2eQuotaDocument struct {
+	AdminID   string `bson:"adminId"`
+	Limit     int32  `bson:"limit"`
+	UsedCount int32  `bson:"usedCount"`
+}
+
+// TestE2E_UCAPP001_ServeRequiresExplicitMigration proves the composed server
+// never migrates on its own: wireApp against a fresh database must fail closed
+// and leave the schema untouched.
+func TestE2E_UCAPP001_ServeRequiresExplicitMigration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	_, database := e2eIsolatedDatabase(t, ctx, false)
+	_, publicKeyPath := e2eIdentity(t)
+
+	addresses := e2eReserveAddresses(t, 2)
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:           os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:      database.Name(),
+		config.HTTPAddrEnv:           addresses[0],
+		config.GRPCAddrEnv:           addresses[1],
+		config.IdentityIssuerEnv:     e2eIssuer,
+		config.IdentityAudienceEnv:   e2eAudience,
+		config.IdentityPublicKeysEnv: e2eKeyID + "=" + publicKeyPath,
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+
+	app, cleanup, err := wireApp(configuration)
+	if err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		if app != nil {
+			_ = app.Stop()
+		}
+		t.Fatal("wireApp() error = nil, want startup refusal for an un-migrated database")
+	}
+	if app != nil {
+		t.Fatalf("wireApp() app = %v, want nil on failure", app)
+	}
+	if !strings.Contains(err.Error(), "mongo deployment not ready") {
+		t.Fatalf("wireApp() error = %v, want a read-only readiness refusal", err)
+	}
+
+	names, listErr := database.ListCollectionNames(ctx, bson.D{})
+	if listErr != nil {
+		t.Fatalf("list collections after refused serve: %v", listErr)
+	}
+	if len(names) != 0 {
+		t.Fatalf("refused serve created collections: %v", names)
+	}
+}
+
+// TestE2E_UCAPP001_CreateApplicationOverRealHTTPAndGRPC is the full UC-APP-001
+// path: real RS256 compact JWS, the generated Kratos HTTP and native gRPC
+// listeners, the wireApp composition root, the CreateApplication use case and a
+// real transaction-capable MongoDB.
+func TestE2E_UCAPP001_CreateApplicationOverRealHTTPAndGRPC(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Explicit migration is a deployment step; only then may serve start.
+	_, database := e2eIsolatedDatabase(t, ctx, true)
+
+	privateKey, publicKeyPath := e2eIdentity(t)
+	httpToken := e2eSignIdentity(t, privateKey, e2eHTTPAdminID, "APPROVED")
+	grpcToken := e2eSignIdentity(t, privateKey, e2eGRPCAdminID, "APPROVED")
+
+	addresses := e2eReserveAddresses(t, 2)
+	httpAddress, grpcAddress := addresses[0], addresses[1]
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:           os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:      database.Name(),
+		config.HTTPAddrEnv:           httpAddress,
+		config.GRPCAddrEnv:           grpcAddress,
+		config.IdentityIssuerEnv:     e2eIssuer,
+		config.IdentityAudienceEnv:   e2eAudience,
+		config.IdentityPublicKeysEnv: e2eKeyID + "=" + publicKeyPath,
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+
+	// The real composition root. Nothing below constructs or injects an
+	// adapter, repository, verifier or server by hand.
+	app, appCleanup, err := wireApp(configuration)
+	if err != nil {
+		t.Fatalf("wireApp() error = %v", err)
+	}
+	if appCleanup == nil {
+		t.Fatal("wireApp() cleanup = nil, want a Mongo disconnect cleanup")
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Errorf("app.Run() did not stop within 15s")
+		}
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Errorf("app.Run() error = %v", runErr)
+		}
+		appCleanup()
+	})
+
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+	connection := e2eDialGRPC(t, ctx, grpcAddress, runDone, &runErr)
+	t.Cleanup(func() { _ = connection.Close() })
+
+	// (1) HTTP POST /v1/applications with x-iwut-identity -> 201 + four fields.
+	status, httpBody := e2eHTTPCreate(t, httpAddress, httpToken, e2eHTTPName)
+	if status != http.StatusCreated {
+		t.Fatalf("HTTP status = %d, want 201; body = %s", status, httpBody)
+	}
+	var httpResponse applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(httpBody, &httpResponse); err != nil {
+		t.Fatalf("decode HTTP response: %v; body = %s", err, httpBody)
+	}
+	e2eAssertResponse(t, "HTTP", &httpResponse, e2eHTTPName, e2eHTTPAdminID)
+
+	// (2) Native gRPC CreateApplication with metadata x-iwut-identity.
+	client := applicationv1.NewApplicationClient(connection)
+	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, grpcToken))
+	grpcResponse, err := client.CreateApplication(grpcCtx, &applicationv1.CreateApplicationRequest{Name: e2eGRPCName})
+	if err != nil {
+		t.Fatalf("gRPC CreateApplication() error = %v", err)
+	}
+	e2eAssertResponse(t, "gRPC", grpcResponse, e2eGRPCName, e2eGRPCAdminID)
+
+	if httpResponse.GetId() == grpcResponse.GetId() {
+		t.Fatalf("HTTP and gRPC returned the same application id %q", httpResponse.GetId())
+	}
+
+	// (3) Both requests are actually persisted under the token's administrator.
+	persistedHTTP := e2eFindApplication(t, database, httpResponse.GetId())
+	persistedGRPC := e2eFindApplication(t, database, grpcResponse.GetId())
+	e2eAssertPersisted(t, persistedHTTP, e2eHTTPName, e2eHTTPAdminID)
+	e2eAssertPersisted(t, persistedGRPC, e2eGRPCName, e2eGRPCAdminID)
+	e2eAssertCollectionCount(t, database, "applications", 2)
+	e2eAssertQuota(t, database, e2eHTTPAdminID, 10, 1)
+	e2eAssertQuota(t, database, e2eGRPCAdminID, 10, 1)
+
+	// (5) Nothing in the database carries the JWS, and an invalid identity is
+	// rejected without echoing the token or writing a partial result.
+	for _, collectionName := range []string{"applications", "application_creation_quotas", "app_center_schema_migrations"} {
+		e2eAssertNoSecret(t, database, collectionName, httpToken, grpcToken)
+	}
+	const invalidToken = "not-a-compact-jws-token"
+	invalidStatus, invalidBody := e2eHTTPCreate(t, httpAddress, invalidToken, "Should_Not_Persist")
+	if invalidStatus != http.StatusUnauthorized {
+		t.Fatalf("invalid identity status = %d, want 401; body = %s", invalidStatus, invalidBody)
+	}
+	if bytes.Contains(invalidBody, []byte(invalidToken)) {
+		t.Fatalf("authentication failure leaked the token: %s", invalidBody)
+	}
+	e2eAssertCollectionCount(t, database, "applications", 2)
+}
+
+// e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
+// database. migrate controls whether migrations are applied explicitly.
+func e2eIsolatedDatabase(t *testing.T, ctx context.Context, migrate bool) (*drivermongo.Client, *drivermongo.Database) {
+	t.Helper()
+	uri := os.Getenv(mongoIntegrationURIEnv)
+	if uri == "" {
+		t.Skipf("set %s or run scripts/test-mongo-integration.sh", mongoIntegrationURIEnv)
+	}
+	client, err := mongoadapter.NewClient(uri)
+	if err != nil {
+		t.Fatalf("connect integration MongoDB: %v", err)
+	}
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := client.Disconnect(shutdownCtx); err != nil {
+			t.Errorf("disconnect integration MongoDB: %v", err)
+		}
+	})
+	if err := mongoadapter.VerifyTransactionTopology(ctx, client); err != nil {
+		t.Fatalf("integration MongoDB: %v", err)
+	}
+
+	database, err := mongoadapter.NewDatabase(client, fmt.Sprintf("iwut_app_center_e2e_%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatalf("select integration database: %v", err)
+	}
+	t.Cleanup(func() {
+		dropCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := database.Drop(dropCtx); err != nil {
+			t.Errorf("drop integration database %s: %v", database.Name(), err)
+		}
+	})
+
+	if migrate {
+		if err := mongoadapter.NewMigrator(database).Migrate(ctx); err != nil {
+			t.Fatalf("explicit migration: %v", err)
+		}
+	}
+	return client, database
+}
+
+// e2eIdentity generates an ephemeral RS256 key pair and writes only the public
+// key to the test temporary directory. No private key or token is committed.
+func e2eIdentity(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "identity-public.pem")
+	encoded := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatalf("write public key: %v", err)
+	}
+	return privateKey, path
+}
+
+// e2eSignIdentity produces a compact RS256 JWS matching trusted-identity-v1.
+func e2eSignIdentity(t *testing.T, privateKey *rsa.PrivateKey, subject, status string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	claims := map[string]any{
+		"iss":              e2eIssuer,
+		"sub":              subject,
+		"aud":              []string{"another-service", e2eAudience},
+		"iat":              now.Unix(),
+		"nbf":              now.Add(-30 * time.Second).Unix(),
+		"exp":              now.Add(2 * time.Minute).Unix(),
+		"jti":              "e2e-" + subject,
+		"developer_status": status,
+	}
+	headerJSON, err := json.Marshal(map[string]any{"alg": "RS256", "typ": "JWT", "kid": e2eKeyID})
+	if err != nil {
+		t.Fatalf("marshal JOSE header: %v", err)
+	}
+	payloadJSON, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("marshal claims: %v", err)
+	}
+	signingInput := base64.RawURLEncoding.EncodeToString(headerJSON) + "." + base64.RawURLEncoding.EncodeToString(payloadJSON)
+	digest := sha256.Sum256([]byte(signingInput))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, digest[:])
+	if err != nil {
+		t.Fatalf("sign identity: %v", err)
+	}
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
+func e2eEnvironment(values map[string]string) config.LookupEnv {
+	return func(key string) (string, bool) {
+		value, found := values[key]
+		return value, found
+	}
+}
+
+// e2eReserveAddresses holds count listeners open simultaneously so the
+// returned ports are distinct, then releases them for Kratos to bind.
+func e2eReserveAddresses(t *testing.T, count int) []string {
+	t.Helper()
+	listeners := make([]net.Listener, 0, count)
+	addresses := make([]string, 0, count)
+	for index := 0; index < count; index++ {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("reserve listen address: %v", err)
+		}
+		listeners = append(listeners, listener)
+		addresses = append(addresses, listener.Addr().String())
+	}
+	for _, listener := range listeners {
+		if err := listener.Close(); err != nil {
+			t.Fatalf("release reserved address: %v", err)
+		}
+	}
+	return addresses
+}
+
+func e2eWaitForHTTPListener(t *testing.T, ctx context.Context, address string, runDone <-chan struct{}, runErr *error) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		select {
+		case <-runDone:
+			t.Fatalf("app.Run() exited before HTTP listener was ready: %v", *runErr)
+		default:
+		}
+		connection, err := net.DialTimeout("tcp", address, 250*time.Millisecond)
+		if err == nil {
+			_ = connection.Close()
+			return
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			t.Fatalf("HTTP listener %s not ready: %v", address, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func e2eDialGRPC(t *testing.T, ctx context.Context, address string, runDone <-chan struct{}, runErr *error) *grpc.ClientConn {
+	t.Helper()
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("create gRPC client for %s: %v", address, err)
+	}
+	connection.Connect()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		state := connection.GetState()
+		if state == connectivity.Ready {
+			return connection
+		}
+		select {
+		case <-runDone:
+			_ = connection.Close()
+			t.Fatalf("app.Run() exited before gRPC listener was ready: %v", *runErr)
+		default:
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			_ = connection.Close()
+			t.Fatalf("gRPC listener %s not ready; state = %v", address, state)
+		}
+		waitCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+		connection.WaitForStateChange(waitCtx, state)
+		cancel()
+	}
+}
+
+func e2eHTTPCreate(t *testing.T, address, token, name string) (int, []byte) {
+	t.Helper()
+	body := fmt.Sprintf(`{"name":%q}`, name)
+	request, err := http.NewRequest(
+		http.MethodPost,
+		"http://"+address+transport.CreateApplicationInternalPath,
+		strings.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("build HTTP request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(transport.IdentityHeader, token)
+	client := &http.Client{Timeout: 10 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", transport.CreateApplicationInternalPath, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read HTTP response: %v", err)
+	}
+	return response.StatusCode, payload
+}
+
+func e2eAssertResponse(t *testing.T, label string, response *applicationv1.CreateApplicationResponse, wantName, wantAdminID string) {
+	t.Helper()
+	if response.GetName() != wantName {
+		t.Fatalf("%s response name = %q, want %q", label, response.GetName(), wantName)
+	}
+	if response.GetAdminId() != wantAdminID {
+		t.Fatalf("%s response adminId = %q, want %q", label, response.GetAdminId(), wantAdminID)
+	}
+	if !e2eIsUUIDv7(response.GetId()) {
+		t.Fatalf("%s response id = %q, want a UUIDv7", label, response.GetId())
+	}
+	createdAt := response.GetCreatedAt().AsTime()
+	if createdAt.IsZero() {
+		t.Fatalf("%s response createdAt is zero", label)
+	}
+	if delta := time.Since(createdAt); delta < 0 || delta > 5*time.Minute {
+		t.Fatalf("%s response createdAt = %v, not within the last 5 minutes", label, createdAt)
+	}
+}
+
+func e2eIsUUIDv7(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index, character := range value {
+		switch index {
+		case 8, 13, 18, 23:
+			if character != '-' {
+				return false
+			}
+		case 14:
+			if character != '7' {
+				return false
+			}
+		case 19:
+			if !strings.ContainsRune("89aAbB", character) {
+				return false
+			}
+		default:
+			if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func e2eFindApplication(t *testing.T, database *drivermongo.Database, id string) e2eApplicationDocument {
+	t.Helper()
+	var document e2eApplicationDocument
+	err := database.Collection("applications").
+		FindOne(t.Context(), bson.D{{Key: "id", Value: id}}).
+		Decode(&document)
+	if err != nil {
+		t.Fatalf("read persisted application %s: %v", id, err)
+	}
+	return document
+}
+
+func e2eAssertPersisted(t *testing.T, document e2eApplicationDocument, wantName, wantAdminID string) {
+	t.Helper()
+	if document.Name != wantName {
+		t.Fatalf("persisted name = %q, want %q", document.Name, wantName)
+	}
+	if document.AdminID != wantAdminID {
+		t.Fatalf("persisted adminId = %q, want %q", document.AdminID, wantAdminID)
+	}
+	if document.NameKey != strings.ToLower(wantName) {
+		t.Fatalf("persisted nameKey = %q, want %q", document.NameKey, strings.ToLower(wantName))
+	}
+	if document.CreatedAt.IsZero() {
+		t.Fatal("persisted createdAt is zero")
+	}
+}
+
+func e2eAssertCollectionCount(t *testing.T, database *drivermongo.Database, collectionName string, want int) {
+	t.Helper()
+	count, err := database.Collection(collectionName).CountDocuments(t.Context(), bson.D{})
+	if err != nil {
+		t.Fatalf("count %s: %v", collectionName, err)
+	}
+	if count != int64(want) {
+		t.Fatalf("%s count = %d, want %d", collectionName, count, want)
+	}
+}
+
+func e2eAssertQuota(t *testing.T, database *drivermongo.Database, adminID string, wantLimit, wantUsed int32) {
+	t.Helper()
+	var quota e2eQuotaDocument
+	err := database.Collection("application_creation_quotas").
+		FindOne(t.Context(), bson.D{{Key: "adminId", Value: adminID}}).
+		Decode(&quota)
+	if err != nil {
+		t.Fatalf("read quota for %s: %v", adminID, err)
+	}
+	if quota.Limit != wantLimit || quota.UsedCount != wantUsed {
+		t.Fatalf("quota for %s = (limit=%d, used=%d), want (%d, %d)", adminID, quota.Limit, quota.UsedCount, wantLimit, wantUsed)
+	}
+}
+
+// e2eAssertNoSecret fails if any raw document in the collection contains a JWS
+// or private-key fragment.
+func e2eAssertNoSecret(t *testing.T, database *drivermongo.Database, collectionName string, secrets ...string) {
+	t.Helper()
+	cursor, err := database.Collection(collectionName).Find(t.Context(), bson.D{})
+	if err != nil {
+		t.Fatalf("scan %s for secrets: %v", collectionName, err)
+	}
+	defer func() { _ = cursor.Close(context.Background()) }()
+	for cursor.Next(t.Context()) {
+		raw := cursor.Current
+		for _, secret := range secrets {
+			if secret != "" && bytes.Contains(raw, []byte(secret)) {
+				t.Fatalf("collection %s persisted secret material", collectionName)
+			}
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		t.Fatalf("scan %s for secrets: %v", collectionName, err)
+	}
+}
