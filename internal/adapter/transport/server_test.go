@@ -50,6 +50,7 @@ func newTestServersWithUpdate(
 		newTestVerifier(t),
 		service,
 		NewApplicationVersionService(versionHandler, updateHandler),
+		NewApplicationReviewService(nil),
 	)
 	if err != nil {
 		t.Fatalf("NewServers() error = %v", err)

@@ -40,33 +40,40 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-003 API Delivery and E2E.** Target UC: UC-APP-003
-(UpdateDraftApplicationVersion). Brief:
-`../../docs/app-center/briefs/UC-APP-003.md`, generated from
-`docs/tools/brief-specs/UC-APP-003.json`. The brief embeds the Auth Scope
-Catalog v1 contract; regenerate it when a selected source changes.
+**UC-APP-004 API Delivery and E2E.** Target UC: UC-APP-004
+(SubmitApplicationVersionReview). Brief:
+`../../docs/app-center/briefs/UC-APP-004.md`, generated from
+`docs/tools/brief-specs/UC-APP-004.json`. The brief embeds the Auth Scope
+Catalog v1 and App Center routing contracts; regenerate it when a selected
+source changes.
 
 Code scope:
 
-- `api/` — add the resource-oriented UC-APP-003 PUT method and messages without
-  allowing HTTP bodies to supply revision or server-owned fields.
-- `internal/adapter/transport/` — add UC-APP-003 HTTP + gRPC conversion,
-  `If-Match` parsing for HTTP, centralized ADR-005 error mapping and ETag.
-- `cmd/app-center/` — assemble the existing UC-APP-003 core handler with Wire.
-- `cmd/app-center/e2e_integration_test.go` — extend the real-listener MongoDB
-  E2E with the generated Auth interface, real JWS and persisted replacement,
-  no-op, stale-revision and fail-closed assertions.
-- Contract/unit tests cover resource route mapping, full replacement field
-  exclusion, protocol-specific revision input and UC-APP-003 error mappings.
+- `api/` — add the resource-oriented UC-APP-004 POST method and response
+  messages; the body contains only `expectedRevision` and no server-owned
+  review, snapshot, state or audit fields.
+- `internal/adapter/preflight/` — implement the DNS-only public HTTPS launch
+  URL policy with an injectable resolver; it performs no HTTP request.
+- `internal/adapter/transport/` — add UC-APP-004 HTTP + gRPC conversion,
+  centralized ADR-005 error mapping and the created Review Location header.
+- `cmd/app-center/` — assemble the existing UC-APP-004 core handler, real Auth
+  Scope Catalog consumer and real preflight adapter with Wire.
+- `cmd/app-center/e2e_integration_test.go` — cross real listeners, JWS, the
+  generated Auth interface, the real policy with a deterministic resolver and
+  a transaction-capable MongoDB.
+- Contract/unit tests cover routing, request-field exclusion, public/special
+  address policy and UC-APP-004 error mappings.
 
 Explicit non-goals:
 
-- No UC-APP-004…UC-APP-005 transport and no legacy API compatibility layer.
+- No UC-APP-005 transport and no legacy API compatibility layer.
 - No Auth database reads, production hardcoded Scope catalog or unsigned JSON
   identity header.
 - No invented internal-service credential: until that platform contract is
   accepted the consumer connection is explicitly unauthenticated and this work
   remains non-production; tests use only the generated Auth interface.
+- No HTTP fetcher, redirect follower or headless browser; DNS is the only
+  launch URL inspection performed by this work package.
 - No Gateway or Auth Center code change; the Gateway prefix strip is only
   recorded and asserted in the contract test.
 - No gRPC-Web wrapper in this service (terminated at Traefik).

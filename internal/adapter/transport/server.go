@@ -9,6 +9,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
 )
 
@@ -25,12 +26,15 @@ const (
 	// CreateApplicationGRPCMethod is the generated full method name.
 	CreateApplicationGRPCMethod = applicationv1.OperationApplicationCreateApplication
 	// CreateApplicationVersionInternalPath is declared by the UC-APP-002 Proto.
-	CreateApplicationVersionInternalPath = "/v1/applications/{application_id}/versions"
-	CreateApplicationVersionExternalPath = ServicePrefix + CreateApplicationVersionInternalPath
-	CreateApplicationVersionGRPCMethod   = applicationversionv1.OperationApplicationVersionCreateApplicationVersion
-	UpdateApplicationVersionInternalPath = "/v1/applications/{application_id}/versions/{version_id}"
-	UpdateApplicationVersionExternalPath = ServicePrefix + UpdateApplicationVersionInternalPath
-	UpdateApplicationVersionGRPCMethod   = applicationversionv1.OperationApplicationVersionUpdateApplicationVersion
+	CreateApplicationVersionInternalPath       = "/v1/applications/{application_id}/versions"
+	CreateApplicationVersionExternalPath       = ServicePrefix + CreateApplicationVersionInternalPath
+	CreateApplicationVersionGRPCMethod         = applicationversionv1.OperationApplicationVersionCreateApplicationVersion
+	UpdateApplicationVersionInternalPath       = "/v1/applications/{application_id}/versions/{version_id}"
+	UpdateApplicationVersionExternalPath       = ServicePrefix + UpdateApplicationVersionInternalPath
+	UpdateApplicationVersionGRPCMethod         = applicationversionv1.OperationApplicationVersionUpdateApplicationVersion
+	SubmitApplicationVersionReviewInternalPath = "/v1/applications/{application_id}/versions/{version_id}/reviews"
+	SubmitApplicationVersionReviewExternalPath = ServicePrefix + SubmitApplicationVersionReviewInternalPath
+	SubmitApplicationVersionReviewGRPCMethod   = applicationreviewv1.OperationApplicationReviewSubmitApplicationVersionReview
 )
 
 // ServerConfig carries the two listen addresses validated at startup.
@@ -50,6 +54,7 @@ func NewServers(
 	verifier *IdentityVerifier,
 	service *ApplicationService,
 	versionService *ApplicationVersionService,
+	reviewService *ApplicationReviewService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -60,6 +65,9 @@ func NewServers(
 	if versionService == nil {
 		return nil, errors.New("transport servers: application version service is required")
 	}
+	if reviewService == nil {
+		return nil, errors.New("transport servers: application review service is required")
+	}
 
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
@@ -68,6 +76,7 @@ func NewServers(
 	)
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
+	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
 
 	grpcServer := kgrpc.NewServer(
 		kgrpc.Address(config.GRPCAddr),
@@ -75,6 +84,7 @@ func NewServers(
 	)
 	applicationv1.RegisterApplicationServer(grpcServer, service)
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
+	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
 
 	return &Servers{HTTP: httpServer, GRPC: grpcServer}, nil
 }
@@ -92,6 +102,14 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.WriteHeader(http.StatusCreated)
 	case *applicationversionv1.UpdateApplicationVersionResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
+	case *applicationreviewv1.SubmitApplicationVersionReviewResponse:
+		if review := response.GetReview(); review != nil {
+			w.Header().Set("Location", fmt.Sprintf(
+				"/v1/applications/%s/versions/%s/reviews/%s",
+				review.GetApplicationId(), review.GetVersionId(), review.GetReviewId(),
+			))
+		}
+		w.WriteHeader(http.StatusCreated)
 	}
 	return khttp.DefaultResponseEncoder(w, r, v)
 }

@@ -12,10 +12,13 @@ import (
 
 	authadapter "iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/mongo"
+	"iwut-app-center/internal/adapter/preflight"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/port"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	reviewport "iwut-app-center/internal/review/port"
+	reviewusecase "iwut-app-center/internal/review/usecase"
 	versionport "iwut-app-center/internal/version/port"
 	versionusecase "iwut-app-center/internal/version/usecase"
 )
@@ -107,9 +110,15 @@ func provideApp(servers *transport.Servers) *kratos.App {
 	)
 }
 
+func wireApp(configuration config.Config) (*kratos.App, func(), error) {
+	return wireAppWithResolver(configuration, preflight.NewNetResolver())
+}
+
 // ensure the concrete handler still satisfies the transport's narrow port.
 var _ transport.CreateApplicationHandler = (*usecase.CreateApplicationHandler)(nil)
 var _ transport.CreateApplicationVersionHandler = (*versionusecase.CreateApplicationVersionHandler)(nil)
 var _ transport.UpdateDraftApplicationVersionHandler = (*versionusecase.UpdateDraftApplicationVersionHandler)(nil)
+var _ transport.SubmitApplicationVersionReviewHandler = (*reviewusecase.SubmitApplicationVersionReviewHandler)(nil)
 var _ authadapter.ScopeCatalogSnapshotSource = (*authadapter.GRPCScopeCatalogSnapshotSource)(nil)
 var _ versionport.ScopeCatalog = (*authadapter.ScopeCatalogCache)(nil)
+var _ reviewport.ScopeCatalog = (*authadapter.ReviewScopeCatalog)(nil)

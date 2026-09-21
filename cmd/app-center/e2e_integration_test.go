@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
 	scopecatalogv1 "iwut-app-center/api/gen/go/auth_center/v1/scope_catalog"
 	mongoadapter "iwut-app-center/internal/adapter/mongo"
@@ -95,10 +97,39 @@ type e2eApplicationVersionDocument struct {
 	UpdatedAt                 time.Time `bson:"updatedAt"`
 }
 
+type e2eApplicationReviewDocument struct {
+	ReviewID               string `bson:"reviewId"`
+	ApplicationID          string `bson:"applicationId"`
+	VersionID              string `bson:"versionId"`
+	Attempt                int32  `bson:"attempt"`
+	SourceVersionRevision  int64  `bson:"sourceVersionRevision"`
+	Status                 string `bson:"status"`
+	ScopeCatalogRevision   int64  `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string `bson:"preflightPolicyVersion"`
+	SubmittedBy            string `bson:"submittedBy"`
+}
+
+type e2eDNSResolver struct {
+	addresses map[string][]netip.Addr
+	errors    map[string]error
+}
+
+func (resolver *e2eDNSResolver) LookupNetIP(_ context.Context, network, host string) ([]netip.Addr, error) {
+	if network != "ip" {
+		return nil, fmt.Errorf("unexpected network %q", network)
+	}
+	if err := resolver.errors[host]; err != nil {
+		return nil, err
+	}
+	return append([]netip.Addr{}, resolver.addresses[host]...), nil
+}
+
 type e2eScopeCatalogServer struct {
 	scopecatalogv1.UnimplementedScopeCatalogServer
 	calls       atomic.Int32
+	revision    atomic.Int64
 	unavailable atomic.Bool
+	denyProfile atomic.Bool
 }
 
 func (server *e2eScopeCatalogServer) GetScopeCatalogSnapshot(
@@ -110,12 +141,12 @@ func (server *e2eScopeCatalogServer) GetScopeCatalogSnapshot(
 		return nil, status.Error(codes.Unavailable, "scope catalog unavailable")
 	}
 	return &scopecatalogv1.GetScopeCatalogSnapshotResponse{
-		Revision:    11,
+		Revision:    server.revision.Load(),
 		GeneratedAt: timestamppb.New(time.Date(2026, time.September, 21, 0, 0, 0, 0, time.UTC)),
 		Scopes: []*scopecatalogv1.ScopeDefinition{
 			{Name: "calendar.read", Requestable: true},
 			{Name: "legacy.profile", Requestable: false},
-			{Name: "profile.basic", Requestable: true},
+			{Name: "profile.basic", Requestable: !server.denyProfile.Load()},
 			{Name: "schedule.read", Requestable: true},
 		},
 	}, nil
@@ -571,6 +602,207 @@ func TestE2E_UCAPP003_UpdateDraftApplicationVersionOverRealHTTP(t *testing.T) {
 	e2eAssertVersionUnchanged(t, database, created.GetVersionId(), "v1.1.1", 3, updatedAt)
 }
 
+// TestE2E_UCAPP004_SubmitApplicationVersionReview crosses both generated
+// transports, a real JWS verifier, generated Auth gRPC consumer/cache, the real
+// DNS-only preflight policy (only its resolver is deterministic), Wire and the
+// transaction-capable MongoDB repository.
+func TestE2E_UCAPP004_SubmitApplicationVersionReview(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	_, database := e2eIsolatedDatabase(t, ctx, true)
+	privateKey, publicKeyPath := e2eIdentity(t)
+	const adminID = "auth-e2e-submit-review"
+	token := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
+
+	addresses := e2eReserveAddresses(t, 3)
+	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
+	authServer := e2eStartScopeCatalogServer(t, authAddress)
+	resolver := &e2eDNSResolver{
+		addresses: map[string][]netip.Addr{
+			"reviewable.e2e.edu": {netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("2606:4700:4700::1111")},
+			"private.e2e.edu":    {netip.MustParseAddr("10.0.0.8")},
+		},
+		errors: map[string]error{"dns-down.e2e.edu": errors.New("test DNS unavailable")},
+	}
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               httpAddress,
+		config.GRPCAddrEnv:               grpcAddress,
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: authAddress,
+		config.ScopeCatalogCacheTTLEnv:   "1ns",
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+
+	app, appCleanup, err := wireAppWithResolver(configuration, resolver)
+	if err != nil {
+		t.Fatalf("wireAppWithResolver() error = %v", err)
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Error("app.Run() did not stop within 15s")
+		}
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Errorf("app.Run() error = %v", runErr)
+		}
+		appCleanup()
+	})
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+	connection := e2eDialGRPC(t, ctx, grpcAddress, runDone, &runErr)
+	t.Cleanup(func() { _ = connection.Close() })
+
+	statusCode, applicationBody := e2eHTTPCreate(t, httpAddress, token, "Submit_Review_E2E_App")
+	if statusCode != http.StatusCreated {
+		t.Fatalf("create predecessor application status = %d; body = %s", statusCode, applicationBody)
+	}
+	var application applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(applicationBody, &application); err != nil {
+		t.Fatalf("decode predecessor application: %v", err)
+	}
+
+	createDraft := func(t *testing.T, label, launchURL string) *applicationversionv1.UpdateApplicationVersionResponse {
+		t.Helper()
+		createStatus, _, createBody := e2eHTTPCreateVersion(
+			t, httpAddress, token, application.GetId(), label, []string{"user.profile.v1"}, []string{"profile.basic"}, nil,
+		)
+		if createStatus != http.StatusCreated {
+			t.Fatalf("create predecessor version status = %d; body = %s", createStatus, createBody)
+		}
+		var created applicationversionv1.CreateApplicationVersionResponse
+		if err := protojson.Unmarshal(createBody, &created); err != nil {
+			t.Fatalf("decode predecessor version: %v", err)
+		}
+		updateStatus, _, updateBody := e2eHTTPUpdateVersion(
+			t, httpAddress, token, application.GetId(), created.GetVersionId(), `"1"`, label, launchURL,
+			3, 5, []string{"user.profile.v1"}, []string{"profile.basic"}, nil,
+		)
+		if updateStatus != http.StatusOK {
+			t.Fatalf("prepare predecessor version status = %d; body = %s", updateStatus, updateBody)
+		}
+		var updated applicationversionv1.UpdateApplicationVersionResponse
+		if err := protojson.Unmarshal(updateBody, &updated); err != nil {
+			t.Fatalf("decode prepared version: %v", err)
+		}
+		return &updated
+	}
+
+	// HTTP success proves 201, Location, complete snapshot/result and persisted
+	// all-or-nothing lifecycle transition.
+	httpDraft := createDraft(t, "v4.0.0-http", "https://reviewable.e2e.edu/http")
+	submitStatus, submitHeader, submitBody := e2eHTTPSubmitReview(
+		t, httpAddress, token, application.GetId(), httpDraft.GetVersionId(), 2,
+	)
+	if submitStatus != http.StatusCreated {
+		t.Fatalf("submit review response = status:%d body:%s", submitStatus, submitBody)
+	}
+	var submitted applicationreviewv1.SubmitApplicationVersionReviewResponse
+	if err := protojson.Unmarshal(submitBody, &submitted); err != nil {
+		t.Fatalf("decode submit response: %v; body = %s", err, submitBody)
+	}
+	review := submitted.GetReview()
+	version := submitted.GetVersion()
+	wantLocation := "/v1/applications/" + application.GetId() + "/versions/" + httpDraft.GetVersionId() + "/reviews/" + review.GetReviewId()
+	if submitHeader.Get("Location") != wantLocation || !e2eIsUUIDv7(review.GetReviewId()) {
+		t.Fatalf("Location/review ID = %q / %q", submitHeader.Get("Location"), review.GetReviewId())
+	}
+	if review.GetStatus() != "PENDING" || review.GetAttempt() != 1 || review.GetSourceVersionRevision() != 2 ||
+		review.GetScopeCatalogRevision() != 11 || review.GetPreflightPolicyVersion() != "submit-v1" ||
+		review.GetSubmittedBy() != adminID || review.GetSnapshot().GetLaunchUrl() != "https://reviewable.e2e.edu/http" ||
+		version.GetReviewStatus() != "SUBMITTED" || version.GetRevision() != 3 || version.GetUpdatedBy() != adminID {
+		t.Fatalf("submitted response = %v", &submitted)
+	}
+	e2eAssertReviewPersisted(t, database, review)
+	e2eAssertCollectionCount(t, database, "application_reviews", 1)
+	persistedHTTPVersion := e2eFindApplicationVersion(t, database, httpDraft.GetVersionId())
+	if persistedHTTPVersion.ReviewStatus != "SUBMITTED" || persistedHTTPVersion.Revision != 3 {
+		t.Fatalf("persisted submitted version = %#v", persistedHTTPVersion)
+	}
+
+	// Native gRPC carries expected_revision in the generated command and reaches
+	// the same real policy/repository graph.
+	grpcDraft := createDraft(t, "v4.0.0-grpc", "https://reviewable.e2e.edu/grpc")
+	grpcClient := applicationreviewv1.NewApplicationReviewClient(connection)
+	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, token))
+	grpcSubmitted, err := grpcClient.SubmitApplicationVersionReview(grpcCtx, &applicationreviewv1.SubmitApplicationVersionReviewRequest{
+		ApplicationId: application.GetId(),
+		VersionId:     grpcDraft.GetVersionId(),
+		Command:       &applicationreviewv1.SubmitApplicationVersionReviewCommand{ExpectedRevision: 2},
+	})
+	if err != nil || grpcSubmitted.GetVersion().GetRevision() != 3 || grpcSubmitted.GetReview().GetStatus() != "PENDING" {
+		t.Fatalf("gRPC SubmitApplicationVersionReview() = (%v, %v)", grpcSubmitted, err)
+	}
+	e2eAssertCollectionCount(t, database, "application_reviews", 2)
+
+	// A private answer is a policy failure (422), DNS failure is dependency
+	// unavailable (503), and neither may create a Review or mutate the draft.
+	privateDraft := createDraft(t, "v4.0.0-private", "https://private.e2e.edu/app")
+	privateBefore := e2eFindApplicationVersion(t, database, privateDraft.GetVersionId())
+	privateStatus, _, privateBody := e2eHTTPSubmitReview(t, httpAddress, token, application.GetId(), privateDraft.GetVersionId(), 2)
+	if privateStatus != http.StatusUnprocessableEntity || !bytes.Contains(privateBody, []byte(transport.ReasonApplicationLaunchURLNotReviewable)) {
+		t.Fatalf("private URL response = status:%d body:%s", privateStatus, privateBody)
+	}
+	e2eAssertReviewFailureUnchanged(t, database, privateBefore, 2)
+
+	dnsDraft := createDraft(t, "v4.0.0-dns", "https://dns-down.e2e.edu/app")
+	dnsBefore := e2eFindApplicationVersion(t, database, dnsDraft.GetVersionId())
+	dnsStatus, _, dnsBody := e2eHTTPSubmitReview(t, httpAddress, token, application.GetId(), dnsDraft.GetVersionId(), 2)
+	if dnsStatus != http.StatusServiceUnavailable || !bytes.Contains(dnsBody, []byte(transport.ReasonLaunchURLInspectionUnavailable)) {
+		t.Fatalf("DNS unavailable response = status:%d body:%s", dnsStatus, dnsBody)
+	}
+	e2eAssertReviewFailureUnchanged(t, database, dnsBefore, 2)
+
+	// A stale revision fails before external preflight and preserves both sides.
+	staleStatus, _, staleBody := e2eHTTPSubmitReview(t, httpAddress, token, application.GetId(), privateDraft.GetVersionId(), 1)
+	if staleStatus != http.StatusConflict || !bytes.Contains(staleBody, []byte(transport.ReasonApplicationVersionRevisionConflict)) {
+		t.Fatalf("stale revision response = status:%d body:%s", staleStatus, staleBody)
+	}
+	e2eAssertReviewFailureUnchanged(t, database, privateBefore, 2)
+
+	// A scope that became non-requestable after draft editing is revalidated at
+	// submission and fails with 422 without a Review or lifecycle mutation.
+	scopeInvalidDraft := createDraft(t, "v4.0.0-invalid-scope", "https://reviewable.e2e.edu/invalid-scope")
+	scopeInvalidBefore := e2eFindApplicationVersion(t, database, scopeInvalidDraft.GetVersionId())
+	authServer.revision.Store(12)
+	authServer.denyProfile.Store(true)
+	invalidScopeStatus, _, invalidScopeBody := e2eHTTPSubmitReview(
+		t, httpAddress, token, application.GetId(), scopeInvalidDraft.GetVersionId(), 2,
+	)
+	authServer.denyProfile.Store(false)
+	authServer.revision.Store(13)
+	if invalidScopeStatus != http.StatusUnprocessableEntity || !bytes.Contains(invalidScopeBody, []byte(transport.ReasonInvalidApplicationScope)) {
+		t.Fatalf("invalid Scope response = status:%d body:%s", invalidScopeStatus, invalidScopeBody)
+	}
+	e2eAssertReviewFailureUnchanged(t, database, scopeInvalidBefore, 2)
+
+	// Expired Scope Catalog cache fails closed when Auth is unavailable; the
+	// DNS policy and MongoDB Submit cannot turn it into a partial success.
+	scopeDraft := createDraft(t, "v4.0.0-scope", "https://reviewable.e2e.edu/scope")
+	scopeBefore := e2eFindApplicationVersion(t, database, scopeDraft.GetVersionId())
+	authServer.unavailable.Store(true)
+	scopeStatus, _, scopeBody := e2eHTTPSubmitReview(t, httpAddress, token, application.GetId(), scopeDraft.GetVersionId(), 2)
+	if scopeStatus != http.StatusServiceUnavailable || !bytes.Contains(scopeBody, []byte(transport.ReasonScopeCatalogUnavailable)) {
+		t.Fatalf("Scope Catalog unavailable response = status:%d body:%s", scopeStatus, scopeBody)
+	}
+	e2eAssertReviewFailureUnchanged(t, database, scopeBefore, 2)
+}
+
 // e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
 // database. migrate controls whether migrations are applied explicitly.
 func e2eIsolatedDatabase(t *testing.T, ctx context.Context, migrate bool) (*drivermongo.Client, *drivermongo.Database) {
@@ -701,6 +933,7 @@ func e2eStartScopeCatalogServer(t *testing.T, address string) *e2eScopeCatalogSe
 		t.Fatalf("listen for test Auth Scope Catalog: %v", err)
 	}
 	service := &e2eScopeCatalogServer{}
+	service.revision.Store(11)
 	server := grpc.NewServer()
 	scopecatalogv1.RegisterScopeCatalogServer(server, service)
 	done := make(chan error, 1)
@@ -876,6 +1109,72 @@ func e2eHTTPUpdateVersion(
 		t.Fatalf("read update-version response: %v", err)
 	}
 	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eHTTPSubmitReview(
+	t *testing.T,
+	address, token, applicationID, versionID string,
+	expectedRevision int64,
+) (int, http.Header, []byte) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{"expectedRevision": expectedRevision})
+	if err != nil {
+		t.Fatalf("encode submit-review request: %v", err)
+	}
+	path := strings.Replace(transport.SubmitApplicationVersionReviewInternalPath, "{application_id}", applicationID, 1)
+	path = strings.Replace(path, "{version_id}", versionID, 1)
+	request, err := http.NewRequest(http.MethodPost, "http://"+address+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build submit-review request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(transport.IdentityHeader, token)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read submit-review response: %v", err)
+	}
+	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eAssertReviewPersisted(
+	t *testing.T,
+	database *drivermongo.Database,
+	review *applicationreviewv1.ApplicationReviewResource,
+) {
+	t.Helper()
+	var document e2eApplicationReviewDocument
+	if err := database.Collection("application_reviews").FindOne(
+		t.Context(), bson.D{{Key: "reviewId", Value: review.GetReviewId()}},
+	).Decode(&document); err != nil {
+		t.Fatalf("read persisted review %s: %v", review.GetReviewId(), err)
+	}
+	if document.ReviewID != review.GetReviewId() || document.ApplicationID != review.GetApplicationId() ||
+		document.VersionID != review.GetVersionId() || document.Attempt != review.GetAttempt() ||
+		document.SourceVersionRevision != review.GetSourceVersionRevision() || document.Status != "PENDING" ||
+		document.ScopeCatalogRevision != review.GetScopeCatalogRevision() ||
+		document.PreflightPolicyVersion != review.GetPreflightPolicyVersion() || document.SubmittedBy != review.GetSubmittedBy() {
+		t.Fatalf("persisted review = %#v; response = %v", document, review)
+	}
+}
+
+func e2eAssertReviewFailureUnchanged(
+	t *testing.T,
+	database *drivermongo.Database,
+	before e2eApplicationVersionDocument,
+	wantReviewCount int,
+) {
+	t.Helper()
+	after := e2eFindApplicationVersion(t, database, before.VersionID)
+	if after.ReviewStatus != before.ReviewStatus || after.Revision != before.Revision ||
+		after.UpdatedBy != before.UpdatedBy || !after.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Fatalf("failed review submission mutated version: before=%#v after=%#v", before, after)
+	}
+	e2eAssertCollectionCount(t, database, "application_reviews", wantReviewCount)
 }
 
 func e2eAssertVersionUnchanged(

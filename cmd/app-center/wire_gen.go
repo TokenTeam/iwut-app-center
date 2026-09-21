@@ -11,9 +11,11 @@ import (
 	"iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
+	"iwut-app-center/internal/adapter/preflight"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	usecase3 "iwut-app-center/internal/review/usecase"
 	usecase2 "iwut-app-center/internal/version/usecase"
 )
 
@@ -24,7 +26,7 @@ import (
 //	wire gen ./cmd/app-center
 //
 // Do not hand-edit the generated file.
-func wireApp(configuration config.Config) (*kratos.App, func(), error) {
+func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	serverConfig := provideServerConfig(configuration)
 	systemClock := generator.NewSystemClock()
 	identityConfig, err := provideIdentityConfig(configuration, systemClock)
@@ -72,7 +74,13 @@ func wireApp(configuration config.Config) (*kratos.App, func(), error) {
 	createApplicationVersionHandler := usecase2.NewCreateApplicationVersionHandler(scopeCatalogCache, applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
 	updateDraftApplicationVersionHandler := usecase2.NewUpdateDraftApplicationVersionHandler(scopeCatalogCache, systemClock, applicationVersionRepository)
 	applicationVersionService := transport.NewApplicationVersionService(createApplicationVersionHandler, updateDraftApplicationVersionHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService)
+	reviewScopeCatalog := auth.NewReviewScopeCatalog(scopeCatalogCache)
+	launchURLSubmissionPolicy := preflight.NewLaunchURLSubmissionPolicy(resolver)
+	applicationReviewUUIDv7Generator := generator.NewApplicationReviewUUIDv7Generator()
+	applicationReviewRepository := mongo.NewApplicationReviewRepository(database)
+	submitApplicationVersionReviewHandler := usecase3.NewSubmitApplicationVersionReviewHandler(reviewScopeCatalog, launchURLSubmissionPolicy, applicationReviewUUIDv7Generator, systemClock, applicationReviewRepository)
+	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService)
 	if err != nil {
 		cleanup2()
 		cleanup()

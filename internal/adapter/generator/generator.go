@@ -7,6 +7,8 @@ import (
 
 	"iwut-app-center/internal/application/domain"
 	"iwut-app-center/internal/application/port"
+	reviewdomain "iwut-app-center/internal/review/domain"
+	reviewport "iwut-app-center/internal/review/port"
 	versiondomain "iwut-app-center/internal/version/domain"
 	versionport "iwut-app-center/internal/version/port"
 )
@@ -31,6 +33,22 @@ func NewApplicationVersionUUIDv7Generator() *ApplicationVersionUUIDv7Generator {
 	return &ApplicationVersionUUIDv7Generator{}
 }
 
+type ApplicationReviewUUIDv7Generator struct{}
+
+var _ reviewport.ApplicationReviewIDGenerator = (*ApplicationReviewUUIDv7Generator)(nil)
+
+func NewApplicationReviewUUIDv7Generator() *ApplicationReviewUUIDv7Generator {
+	return &ApplicationReviewUUIDv7Generator{}
+}
+
+func (generator *ApplicationReviewUUIDv7Generator) NewUUIDv7() (reviewdomain.ApplicationReviewID, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	return reviewdomain.ApplicationReviewID(id.String()), nil
+}
+
 func (generator *ApplicationVersionUUIDv7Generator) NewUUIDv7() (versiondomain.ApplicationVersionID, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -53,6 +71,7 @@ type SystemClock struct{}
 
 var _ port.Clock = (*SystemClock)(nil)
 var _ versionport.Clock = (*SystemClock)(nil)
+var _ reviewport.Clock = (*SystemClock)(nil)
 
 func NewSystemClock() *SystemClock {
 	return &SystemClock{}

@@ -4,6 +4,7 @@ import (
 	"github.com/goforj/wire"
 
 	"iwut-app-center/internal/application/port"
+	reviewport "iwut-app-center/internal/review/port"
 	versionport "iwut-app-center/internal/version/port"
 )
 
@@ -13,6 +14,8 @@ import (
 var ProviderSet = wire.NewSet(
 	NewApplicationRepository,
 	NewApplicationVersionRepository,
+	NewApplicationReviewRepository,
 	wire.Bind(new(port.ApplicationRepository), new(*ApplicationRepository)),
 	wire.Bind(new(versionport.ApplicationVersionRepository), new(*ApplicationVersionRepository)),
+	wire.Bind(new(reviewport.ApplicationReviewRepository), new(*ApplicationReviewRepository)),
 )

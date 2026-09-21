@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"iwut-app-center/internal/application/domain"
+	reviewdomain "iwut-app-center/internal/review/domain"
 	versiondomain "iwut-app-center/internal/version/domain"
 )
 
@@ -36,6 +37,8 @@ const (
 	ReasonApplicationVersionNotFound         = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
 	ReasonApplicationVersionNotDraft         = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
 	ReasonApplicationVersionRevisionConflict = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
+	ReasonApplicationLaunchURLNotReviewable  = "ERROR_REASON_APPLICATION_LAUNCH_URL_NOT_REVIEWABLE"
+	ReasonLaunchURLInspectionUnavailable     = "ERROR_REASON_LAUNCH_URL_INSPECTION_UNAVAILABLE"
 	ReasonInternal                           = "ERROR_REASON_INTERNAL"
 )
 
@@ -115,6 +118,21 @@ var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{
 	versiondomain.ErrorCodeInternal:                             internalSpec,
 }
 
+var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
+	reviewdomain.ErrorCodeDeveloperIdentityRequired:          {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	reviewdomain.ErrorCodeDeveloperApprovalRequired:          {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	reviewdomain.ErrorCodeApplicationVersionRevisionRequired: {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
+	reviewdomain.ErrorCodeApplicationVersionNotFound:         {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
+	reviewdomain.ErrorCodeApplicationAdminRequired:           {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	reviewdomain.ErrorCodeApplicationVersionNotDraft:         {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
+	reviewdomain.ErrorCodeApplicationVersionRevisionConflict: {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
+	reviewdomain.ErrorCodeApplicationLaunchURLNotReviewable:  {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
+	reviewdomain.ErrorCodeLaunchURLInspectionUnavailable:     {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
+	reviewdomain.ErrorCodeInvalidApplicationScope:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
+	reviewdomain.ErrorCodeScopeCatalogUnavailable:            {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	reviewdomain.ErrorCodeInternal:                           internalSpec,
+}
+
 // toTransportError maps any error crossing the transport boundary. Unknown and
 // infrastructure errors collapse to Internal without leaking cause or details.
 func toTransportError(err error) error {
@@ -139,6 +157,14 @@ func toTransportError(err error) error {
 	var versionDomainError *versiondomain.Error
 	if errors.As(err, &versionDomainError) {
 		spec, ok := versionDomainErrorSpecs[versionDomainError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
+	}
+	var reviewDomainError *reviewdomain.Error
+	if errors.As(err, &reviewDomainError) {
+		spec, ok := reviewDomainErrorSpecs[reviewDomainError.Code()]
 		if !ok {
 			spec = internalSpec
 		}
