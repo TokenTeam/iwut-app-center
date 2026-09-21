@@ -40,27 +40,60 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-No implementation work package is currently active. UC-APP-001 through
-UC-APP-005 are `ACCEPTED / CORE_COMPLETE`. UC-APP-005 has working Domain,
-UseCase, narrow external ports, MongoDB decision repository, explicit 0005
-migration, permanent System rejection for suspended administrators/submitters,
-and real replica-set transaction/concurrency coverage. Real Auth, ConfCenter,
-suspension, URL-inspection and API transports remain separate future packages.
+**UC-APP-001 API Transport.** Target UC: UC-APP-001 (CreateApplication).
+Brief: `../../docs/app-center/briefs/UC-APP-001.md`, generated from
+`docs/tools/brief-specs/UC-APP-001.json`. The brief embeds the platform
+trusted-identity and routing contracts because this is the first
+trusted-identity consumer; regenerate the brief when any selected source
+changes.
 
-UC-APP-005 test obligations: BR-REV-010 through BR-REV-018 are covered by named
-tests in `internal/review/domain`, `internal/review/usecase` and the decision
-repository integration suite. BR-REV-019 (review/publication separation) has no
-local test because no publication capability exists yet, so the invariant holds
-vacuously; its obligation belongs to the UC-APP-007 work package, which must
-assert that a decision never writes a test/grey/stable slot or an OAuth client.
-BR-REV-020 is a limitation statement about remote content and needs no test.
+Code scope:
 
-Before the next implementation begins, replace this paragraph with a bounded
-package that lists: target UC, the brief path for that UC, code scope, explicit
-non-goals, and verification commands. Keep the design scope in the brief spec
-(`docs/tools/brief-specs/UC-APP-XXX.json`) instead of restating section titles
-here. Do not infer UC-APP-006 or any other next package from file order, recent
-commits, or use-case numbering.
+- `internal/adapter/transport/` — Kratos v2.9.2 HTTP + gRPC servers,
+  `app_center.v1.application.Application` transport service, trusted-identity
+  JWS verification middleware/interceptor, and the ADR-005 error mapping.
+- `internal/adapter/transport/` contract test asserting the external
+  `/app-center/v1/applications` → internal `/v1/applications` mapping and the
+  gRPC full method against the generated Proto.
+- `internal/adapter/generator/` — UUIDv7 generator and system clock adapters.
+- `internal/adapter/mongo/` — composition-boundary database constructor,
+  read-only deployment readiness check (transaction-capable topology plus the
+  latest recorded migration), and the explicit `Migrator`.
+- `internal/config/` — server, MongoDB and trusted-identity settings with
+  startup validation of missing or invalid values; `LoadMongo` is shared by
+  `serve` and `migrate`.
+- `cmd/app-center/` — `github.com/goforj/wire` ProviderSets, injector and the
+  generated `wire_gen.go` composition root, plus the explicit `serve` and
+  `migrate` commands. `serve` never migrates automatically.
+- `api/` — git submodule pinning the independent API repository, carrying the
+  first formal `app_center.v1.application` Proto and its generated
+  Go/gRPC/Kratos HTTP code; `make -C api proto-check` regenerates in a temp
+  directory and fails on drift.
+- Root `Makefile` and `README.md` — generate/build/test/migrate/run order,
+  required environment variables and the transaction-capable MongoDB contract.
+
+Explicit non-goals:
+
+- No other use case, query or command; no UC-APP-002…UC-APP-005 transport.
+- No legacy App Center code, API envelope, `nameKey`, counter or compatibility
+  layer.
+- No Auth database reads, no per-request Auth callback and no unsigned JSON
+  header support.
+- No Gateway or Auth Center code change; the Gateway prefix strip is only
+  recorded and asserted in the contract test.
+- No gRPC-Web wrapper in this service (terminated at Traefik).
+- No commit and no push in any repository.
+
+Verification commands:
+
+```bash
+gofmt -l .
+go test ./...
+cd ../../docs && python3 -B -m unittest discover -s tools/tests
+cd ../../docs && python3 -B tools/gen_brief.py --check --all
+cd ../../docs && python3 -B tools/registry.py --check
+git diff --check
+```
 
 ## Code boundaries
 
