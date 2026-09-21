@@ -40,31 +40,28 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-002 API Delivery and E2E.** Target UC: UC-APP-002
-(CreateApplicationVersion). Brief:
-`../../docs/app-center/briefs/UC-APP-002.md`, generated from
-`docs/tools/brief-specs/UC-APP-002.json`. The brief embeds the Auth Scope
+**UC-APP-003 API Delivery and E2E.** Target UC: UC-APP-003
+(UpdateDraftApplicationVersion). Brief:
+`../../docs/app-center/briefs/UC-APP-003.md`, generated from
+`docs/tools/brief-specs/UC-APP-003.json`. The brief embeds the Auth Scope
 Catalog v1 contract; regenerate it when a selected source changes.
 
 Code scope:
 
-- `api/` — add the formal resource-oriented UC-APP-002 Proto and consume the
-  shared Auth Scope Catalog generated client without reviving legacy APIs.
-- `internal/adapter/auth/` — native gRPC snapshot source plus the existing
-  bounded fail-closed cache; production code contains no hardcoded catalog.
-- `internal/adapter/transport/` — add UC-APP-002 HTTP + gRPC conversion,
-  centralized ADR-005 error mapping, `201 Created` and `ETag: "1"`.
-- `internal/config/` and `cmd/app-center/` — validate the Auth endpoint, own the
-  client connection lifecycle and assemble the UC-APP-002 handler with Wire.
+- `api/` — add the resource-oriented UC-APP-003 PUT method and messages without
+  allowing HTTP bodies to supply revision or server-owned fields.
+- `internal/adapter/transport/` — add UC-APP-003 HTTP + gRPC conversion,
+  `If-Match` parsing for HTTP, centralized ADR-005 error mapping and ETag.
+- `cmd/app-center/` — assemble the existing UC-APP-003 core handler with Wire.
 - `cmd/app-center/e2e_integration_test.go` — extend the real-listener MongoDB
-  E2E with a generated-interface test Auth gRPC server, real JWS and persisted
-  version assertions.
-- Contract/unit/integration tests cover API field exclusion, route mapping,
-  Auth wire validation, cache failure and UC-APP-002 transport mappings.
+  E2E with the generated Auth interface, real JWS and persisted replacement,
+  no-op, stale-revision and fail-closed assertions.
+- Contract/unit tests cover resource route mapping, full replacement field
+  exclusion, protocol-specific revision input and UC-APP-003 error mappings.
 
 Explicit non-goals:
 
-- No UC-APP-003…UC-APP-005 transport and no legacy API compatibility layer.
+- No UC-APP-004…UC-APP-005 transport and no legacy API compatibility layer.
 - No Auth database reads, production hardcoded Scope catalog or unsigned JSON
   identity header.
 - No invented internal-service credential: until that platform contract is

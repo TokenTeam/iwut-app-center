@@ -26,6 +26,31 @@ type fakeCreateApplicationVersionHandler struct {
 	command  versionusecase.CreateApplicationVersionCommand
 }
 
+type fakeUpdateDraftApplicationVersionHandler struct {
+	result        *versiondomain.ApplicationVersion
+	err           error
+	calls         int
+	identity      versionusecase.DeveloperIdentity
+	applicationID shared.ApplicationID
+	versionID     versiondomain.ApplicationVersionID
+	command       versionusecase.UpdateDraftApplicationVersionCommand
+}
+
+func (handler *fakeUpdateDraftApplicationVersionHandler) Handle(
+	_ context.Context,
+	identity versionusecase.DeveloperIdentity,
+	applicationID shared.ApplicationID,
+	versionID versiondomain.ApplicationVersionID,
+	command versionusecase.UpdateDraftApplicationVersionCommand,
+) (*versiondomain.ApplicationVersion, error) {
+	handler.calls++
+	handler.identity = identity
+	handler.applicationID = applicationID
+	handler.versionID = versionID
+	handler.command = command
+	return handler.result, handler.err
+}
+
 func (handler *fakeCreateApplicationVersionHandler) Handle(
 	_ context.Context,
 	identity versionusecase.DeveloperIdentity,
@@ -70,6 +95,22 @@ func newApplicationVersion(t *testing.T, adminID string, createdAt time.Time) *v
 	return version
 }
 
+func updatedApplicationVersion(t *testing.T, adminID string, createdAt time.Time) *versiondomain.ApplicationVersion {
+	t.Helper()
+	version := newApplicationVersion(t, adminID, createdAt)
+	label, _ := versiondomain.NewVersionLabel("v1.1.0")
+	launchURL, _ := versiondomain.NewLaunchURL("http://192.168.1.20:8081/")
+	rpcRange, _ := versiondomain.NewRPCApiRange(3, 6)
+	capabilities, _ := versiondomain.NewCapabilitySet([]string{"camera.read.v1", "user.profile.v1"})
+	scopes, _ := versiondomain.NewScopeRequest([]string{"profile.basic"}, []string{"schedule.read"})
+	replacement, _ := versiondomain.NewDraftApplicationVersionReplacement(label, launchURL, rpcRange, capabilities, scopes)
+	updated, err := version.ReplaceDraft(1, replacement, shared.AuthID(adminID), createdAt.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ReplaceDraft() error = %v", err)
+	}
+	return updated
+}
+
 func versionRequest() *applicationversionv1.CreateApplicationVersionRequest {
 	return &applicationversionv1.CreateApplicationVersionRequest{
 		ApplicationId:             testApplicationID,
@@ -87,7 +128,7 @@ func TestApplicationVersionService_UCAPP002_MapsIdentityCommandAndCompleteRespon
 	t.Parallel()
 	createdAt := time.Date(2026, time.September, 21, 13, 0, 0, 0, time.UTC)
 	handler := &fakeCreateApplicationVersionHandler{result: newApplicationVersion(t, "auth-123", createdAt)}
-	service := NewApplicationVersionService(handler)
+	service := NewApplicationVersionService(handler, nil)
 	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "auth-123", DeveloperStatus: "APPROVED"})
 
 	response, err := service.CreateApplicationVersion(ctx, versionRequest())
@@ -129,7 +170,7 @@ func TestApplicationVersionService_UCAPP002_ErrorMappings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			service := NewApplicationVersionService(&fakeCreateApplicationVersionHandler{err: test.err})
+			service := NewApplicationVersionService(&fakeCreateApplicationVersionHandler{err: test.err}, nil)
 			_, err := service.CreateApplicationVersion(ctx, versionRequest())
 			current := status.Convert(err)
 			if current.Code() != test.code || errorReason(current) != test.reason {
@@ -145,10 +186,73 @@ func TestApplicationVersionService_UCAPP002_ErrorMappings(t *testing.T) {
 func TestApplicationVersionService_UCAPP002_NilResultFailsInternal(t *testing.T) {
 	t.Parallel()
 	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "auth-123", DeveloperStatus: "APPROVED"})
-	service := NewApplicationVersionService(&fakeCreateApplicationVersionHandler{})
+	service := NewApplicationVersionService(&fakeCreateApplicationVersionHandler{}, nil)
 	_, err := service.CreateApplicationVersion(ctx, versionRequest())
 	if current := status.Convert(err); current.Code() != codes.Internal || errorReason(current) != ReasonInternal {
 		t.Fatalf("status = (%v, %q)", current.Code(), errorReason(current))
+	}
+}
+
+func updateVersionRequest() *applicationversionv1.UpdateApplicationVersionRequest {
+	return &applicationversionv1.UpdateApplicationVersionRequest{
+		ApplicationId:    testApplicationID,
+		VersionId:        testApplicationVersionID,
+		ExpectedRevision: 1,
+		Replacement: &applicationversionv1.DraftApplicationVersionReplacement{
+			VersionLabel:              "v1.1.0",
+			LaunchUrl:                 "http://192.168.1.20:8081/",
+			RpcApiMinVersion:          3,
+			RpcApiMaxVersionExclusive: 6,
+			RequiredCapabilities:      []string{"user.profile.v1", "camera.read.v1"},
+			RequiredScopes:            []string{"profile.basic"},
+			OptionalScopes:            []string{"schedule.read"},
+		},
+	}
+}
+
+func TestApplicationVersionService_UCAPP003_MapsGRPCRevisionReplacementAndCompleteResponse(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, time.September, 21, 13, 0, 0, 0, time.UTC)
+	handler := &fakeUpdateDraftApplicationVersionHandler{result: updatedApplicationVersion(t, "auth-123", createdAt)}
+	service := NewApplicationVersionService(nil, handler)
+	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "auth-123", DeveloperStatus: "APPROVED"})
+
+	response, err := service.UpdateApplicationVersion(ctx, updateVersionRequest())
+	if err != nil {
+		t.Fatalf("UpdateApplicationVersion() error = %v", err)
+	}
+	if handler.calls != 1 || handler.command.ExpectedRevision != 1 || handler.applicationID.String() != testApplicationID || handler.versionID.String() != testApplicationVersionID {
+		t.Fatalf("handler input = calls:%d application:%s version:%s command:%#v", handler.calls, handler.applicationID, handler.versionID, handler.command)
+	}
+	if response.GetRevision() != 2 || response.GetVersionLabel() != "v1.1.0" || response.GetUpdatedBy() != "auth-123" {
+		t.Fatalf("response = %v", response)
+	}
+}
+
+func TestApplicationVersionService_UCAPP003_ErrorMappings(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		err    error
+		code   codes.Code
+		reason string
+	}{
+		{name: "revision required", err: versiondomain.ErrApplicationVersionRevisionRequired, code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired},
+		{name: "version missing", err: versiondomain.ErrApplicationVersionNotFound, code: codes.NotFound, reason: ReasonApplicationVersionNotFound},
+		{name: "not draft", err: versiondomain.ErrApplicationVersionNotDraft, code: codes.Aborted, reason: ReasonApplicationVersionNotDraft},
+		{name: "revision conflict", err: versiondomain.ErrApplicationVersionRevisionConflict, code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict},
+	}
+	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "auth-123", DeveloperStatus: "APPROVED"})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			service := NewApplicationVersionService(nil, &fakeUpdateDraftApplicationVersionHandler{err: test.err})
+			_, err := service.UpdateApplicationVersion(ctx, updateVersionRequest())
+			current := status.Convert(err)
+			if current.Code() != test.code || errorReason(current) != test.reason {
+				t.Fatalf("status = (%v, %q)", current.Code(), errorReason(current))
+			}
+		})
 	}
 }
 

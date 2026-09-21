@@ -405,6 +405,172 @@ func TestE2E_UCAPP002_CreateApplicationVersionOverRealHTTP(t *testing.T) {
 	}
 }
 
+// TestE2E_UCAPP003_UpdateDraftApplicationVersionOverRealHTTP crosses the real
+// PUT route, JWS verifier, Wire graph, generated Auth client/cache and MongoDB
+// transaction. It also proves no-op and failed preconditions do not mutate the
+// persisted revision or audit fields.
+func TestE2E_UCAPP003_UpdateDraftApplicationVersionOverRealHTTP(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	_, database := e2eIsolatedDatabase(t, ctx, true)
+	privateKey, publicKeyPath := e2eIdentity(t)
+	const adminID = "auth-e2e-update-version"
+	token := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
+
+	addresses := e2eReserveAddresses(t, 3)
+	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
+	authServer := e2eStartScopeCatalogServer(t, authAddress)
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               httpAddress,
+		config.GRPCAddrEnv:               grpcAddress,
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: authAddress,
+		config.ScopeCatalogCacheTTLEnv:   "1ns",
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+
+	app, appCleanup, err := wireApp(configuration)
+	if err != nil {
+		t.Fatalf("wireApp() error = %v", err)
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Error("app.Run() did not stop within 15s")
+		}
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Errorf("app.Run() error = %v", runErr)
+		}
+		appCleanup()
+	})
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+	connection := e2eDialGRPC(t, ctx, grpcAddress, runDone, &runErr)
+	t.Cleanup(func() { _ = connection.Close() })
+
+	statusCode, applicationBody := e2eHTTPCreate(t, httpAddress, token, "Update_Version_E2E_App")
+	if statusCode != http.StatusCreated {
+		t.Fatalf("create predecessor application status = %d; body = %s", statusCode, applicationBody)
+	}
+	var application applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(applicationBody, &application); err != nil {
+		t.Fatalf("decode predecessor application: %v", err)
+	}
+	versionStatus, _, versionBody := e2eHTTPCreateVersion(
+		t, httpAddress, token, application.GetId(), "v1.0.0", []string{"user.profile.v1"}, []string{"profile.basic"}, nil,
+	)
+	if versionStatus != http.StatusCreated {
+		t.Fatalf("create predecessor version status = %d; body = %s", versionStatus, versionBody)
+	}
+	var created applicationversionv1.CreateApplicationVersionResponse
+	if err := protojson.Unmarshal(versionBody, &created); err != nil {
+		t.Fatalf("decode predecessor version: %v", err)
+	}
+
+	updateStatus, updateHeader, updateBody := e2eHTTPUpdateVersion(
+		t, httpAddress, token, application.GetId(), created.GetVersionId(), `"1"`,
+		"v1.1.0-beta", "http://192.168.1.20:8081/", 3, 6,
+		[]string{"user.profile.v1", "camera.read.v1"}, []string{"schedule.read", "profile.basic"}, []string{"calendar.read"},
+	)
+	if updateStatus != http.StatusOK || updateHeader.Get("ETag") != `"2"` {
+		t.Fatalf("update response = status:%d ETag:%q body:%s", updateStatus, updateHeader.Get("ETag"), updateBody)
+	}
+	var updated applicationversionv1.UpdateApplicationVersionResponse
+	if err := protojson.Unmarshal(updateBody, &updated); err != nil {
+		t.Fatalf("decode update response: %v; body = %s", err, updateBody)
+	}
+	if updated.GetRevision() != 2 || updated.GetVersionLabel() != "v1.1.0-beta" || updated.GetLaunchUrl() != "http://192.168.1.20:8081/" ||
+		strings.Join(updated.GetRequiredCapabilities(), ",") != "camera.read.v1,user.profile.v1" ||
+		strings.Join(updated.GetRequiredScopes(), ",") != "profile.basic,schedule.read" ||
+		strings.Join(updated.GetOptionalScopes(), ",") != "calendar.read" {
+		t.Fatalf("updated response = %v", &updated)
+	}
+	persisted := e2eFindApplicationVersion(t, database, created.GetVersionId())
+	if persisted.Revision != 2 || persisted.VersionLabel != updated.GetVersionLabel() || persisted.UpdatedBy != adminID {
+		t.Fatalf("persisted update = %#v", persisted)
+	}
+	updatedAt := persisted.UpdatedAt
+
+	// Same normalized sets are a no-op: the ETag and audit timestamp remain 2.
+	noOpStatus, noOpHeader, noOpBody := e2eHTTPUpdateVersion(
+		t, httpAddress, token, application.GetId(), created.GetVersionId(), `"2"`,
+		"v1.1.0-beta", "http://192.168.1.20:8081/", 3, 6,
+		[]string{"camera.read.v1", "user.profile.v1"}, []string{"profile.basic", "schedule.read"}, []string{"calendar.read"},
+	)
+	if noOpStatus != http.StatusOK || noOpHeader.Get("ETag") != `"2"` {
+		t.Fatalf("no-op response = status:%d ETag:%q body:%s", noOpStatus, noOpHeader.Get("ETag"), noOpBody)
+	}
+	noOpPersisted := e2eFindApplicationVersion(t, database, created.GetVersionId())
+	if noOpPersisted.Revision != 2 || !noOpPersisted.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("no-op changed revision/audit: before=%s after=%#v", updatedAt, noOpPersisted)
+	}
+
+	// Native gRPC carries the same precondition in expected_revision rather
+	// than an HTTP header and reaches the same composed handler/repository.
+	grpcClient := applicationversionv1.NewApplicationVersionClient(connection)
+	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, token))
+	grpcUpdated, err := grpcClient.UpdateApplicationVersion(grpcCtx, &applicationversionv1.UpdateApplicationVersionRequest{
+		ApplicationId:    application.GetId(),
+		VersionId:        created.GetVersionId(),
+		ExpectedRevision: 2,
+		Replacement: &applicationversionv1.DraftApplicationVersionReplacement{
+			VersionLabel:              "v1.1.1",
+			LaunchUrl:                 "https://example.edu/apps/course-table/v1.1.1/",
+			RpcApiMinVersion:          3,
+			RpcApiMaxVersionExclusive: 6,
+			RequiredCapabilities:      []string{"camera.read.v1"},
+			RequiredScopes:            []string{"profile.basic"},
+			OptionalScopes:            []string{"calendar.read"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("gRPC UpdateApplicationVersion() error = %v", err)
+	}
+	if grpcUpdated.GetRevision() != 3 || grpcUpdated.GetVersionLabel() != "v1.1.1" {
+		t.Fatalf("gRPC updated response = %v", grpcUpdated)
+	}
+	grpcPersisted := e2eFindApplicationVersion(t, database, created.GetVersionId())
+	if grpcPersisted.Revision != 3 || grpcPersisted.VersionLabel != "v1.1.1" {
+		t.Fatalf("gRPC persisted update = %#v", grpcPersisted)
+	}
+	updatedAt = grpcPersisted.UpdatedAt
+
+	staleStatus, _, staleBody := e2eHTTPUpdateVersion(
+		t, httpAddress, token, application.GetId(), created.GetVersionId(), `"2"`,
+		"v1.2.0", "https://example.edu/v1.2", 3, 6, nil, []string{"profile.basic"}, nil,
+	)
+	if staleStatus != http.StatusPreconditionFailed || !bytes.Contains(staleBody, []byte(transport.ReasonApplicationVersionRevisionConflict)) {
+		t.Fatalf("stale revision response = status:%d body:%s", staleStatus, staleBody)
+	}
+	e2eAssertVersionUnchanged(t, database, created.GetVersionId(), "v1.1.1", 3, updatedAt)
+
+	authServer.unavailable.Store(true)
+	unavailableStatus, _, unavailableBody := e2eHTTPUpdateVersion(
+		t, httpAddress, token, application.GetId(), created.GetVersionId(), `"3"`,
+		"v1.2.0", "https://example.edu/v1.2", 3, 6, nil, []string{"profile.basic"}, nil,
+	)
+	if unavailableStatus != http.StatusServiceUnavailable || !bytes.Contains(unavailableBody, []byte(transport.ReasonScopeCatalogUnavailable)) {
+		t.Fatalf("unavailable Auth response = status:%d body:%s", unavailableStatus, unavailableBody)
+	}
+	e2eAssertVersionUnchanged(t, database, created.GetVersionId(), "v1.1.1", 3, updatedAt)
+}
+
 // e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
 // database. migrate controls whether migrations are applied explicitly.
 func e2eIsolatedDatabase(t *testing.T, ctx context.Context, migrate bool) (*drivermongo.Client, *drivermongo.Database) {
@@ -670,6 +836,60 @@ func e2eHTTPCreateVersion(
 		t.Fatalf("read create-version response: %v", err)
 	}
 	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eHTTPUpdateVersion(
+	t *testing.T,
+	address, token, applicationID, versionID, ifMatch, versionLabel, launchURL string,
+	minVersion, maxVersion int32,
+	requiredCapabilities, requiredScopes, optionalScopes []string,
+) (int, http.Header, []byte) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"versionLabel":              versionLabel,
+		"launchUrl":                 launchURL,
+		"rpcApiMinVersion":          minVersion,
+		"rpcApiMaxVersionExclusive": maxVersion,
+		"requiredCapabilities":      requiredCapabilities,
+		"requiredScopes":            requiredScopes,
+		"optionalScopes":            optionalScopes,
+	})
+	if err != nil {
+		t.Fatalf("encode update-version request: %v", err)
+	}
+	path := strings.Replace(transport.UpdateApplicationVersionInternalPath, "{application_id}", applicationID, 1)
+	path = strings.Replace(path, "{version_id}", versionID, 1)
+	request, err := http.NewRequest(http.MethodPut, "http://"+address+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build update-version request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(transport.IdentityHeader, token)
+	request.Header.Set("If-Match", ifMatch)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("PUT %s: %v", path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read update-version response: %v", err)
+	}
+	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eAssertVersionUnchanged(
+	t *testing.T,
+	database *drivermongo.Database,
+	versionID, versionLabel string,
+	revision int64,
+	updatedAt time.Time,
+) {
+	t.Helper()
+	document := e2eFindApplicationVersion(t, database, versionID)
+	if document.VersionLabel != versionLabel || document.Revision != revision || !document.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("version changed after failed update: %#v", document)
+	}
 }
 
 func e2eAssertApplicationVersionResponse(

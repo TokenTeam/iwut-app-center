@@ -28,6 +28,9 @@ const (
 	CreateApplicationVersionInternalPath = "/v1/applications/{application_id}/versions"
 	CreateApplicationVersionExternalPath = ServicePrefix + CreateApplicationVersionInternalPath
 	CreateApplicationVersionGRPCMethod   = applicationversionv1.OperationApplicationVersionCreateApplicationVersion
+	UpdateApplicationVersionInternalPath = "/v1/applications/{application_id}/versions/{version_id}"
+	UpdateApplicationVersionExternalPath = ServicePrefix + UpdateApplicationVersionInternalPath
+	UpdateApplicationVersionGRPCMethod   = applicationversionv1.OperationApplicationVersionUpdateApplicationVersion
 )
 
 // ServerConfig carries the two listen addresses validated at startup.
@@ -87,6 +90,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 	case *applicationversionv1.CreateApplicationVersionResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 		w.WriteHeader(http.StatusCreated)
+	case *applicationversionv1.UpdateApplicationVersionResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 	}
 	return khttp.DefaultResponseEncoder(w, r, v)
 }

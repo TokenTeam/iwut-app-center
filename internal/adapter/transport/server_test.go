@@ -19,6 +19,7 @@ import (
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
 	"iwut-app-center/internal/application/domain"
 	"iwut-app-center/internal/shared"
+	versiondomain "iwut-app-center/internal/version/domain"
 )
 
 func newTestServers(
@@ -26,22 +27,93 @@ func newTestServers(
 	handler *fakeCreateApplicationHandler,
 	versionHandlers ...*fakeCreateApplicationVersionHandler,
 ) *Servers {
+	return newTestServersWithUpdate(t, handler, firstCreateVersionHandler(versionHandlers), nil)
+}
+
+func firstCreateVersionHandler(handlers []*fakeCreateApplicationVersionHandler) *fakeCreateApplicationVersionHandler {
+	if len(handlers) == 0 {
+		return nil
+	}
+	return handlers[0]
+}
+
+func newTestServersWithUpdate(
+	t *testing.T,
+	handler *fakeCreateApplicationHandler,
+	versionHandler *fakeCreateApplicationVersionHandler,
+	updateHandler *fakeUpdateDraftApplicationVersionHandler,
+) *Servers {
 	t.Helper()
 	service := NewApplicationService(handler)
-	var versionHandler *fakeCreateApplicationVersionHandler
-	if len(versionHandlers) > 0 {
-		versionHandler = versionHandlers[0]
-	}
 	servers, err := NewServers(
 		ServerConfig{HTTPAddr: "127.0.0.1:0", GRPCAddr: "127.0.0.1:0"},
 		newTestVerifier(t),
 		service,
-		NewApplicationVersionService(versionHandler),
+		NewApplicationVersionService(versionHandler, updateHandler),
 	)
 	if err != nil {
 		t.Fatalf("NewServers() error = %v", err)
 	}
 	return servers
+}
+
+func TestServers_UCAPP003_HTTPIfMatchWinsBodyAndReturnsETag(t *testing.T) {
+	t.Parallel()
+	token := signToken(t, tokenOptions{claims: validClaims(fixedNow())})
+	updateHandler := &fakeUpdateDraftApplicationVersionHandler{
+		result: updatedApplicationVersion(t, "auth-123", time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)),
+	}
+	servers := newTestServersWithUpdate(t, &fakeCreateApplicationHandler{}, nil, updateHandler)
+	path := strings.Replace(UpdateApplicationVersionInternalPath, "{application_id}", testApplicationID, 1)
+	path = strings.Replace(path, "{version_id}", testApplicationVersionID, 1)
+	request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"versionLabel":"v1.1.0","launchUrl":"http://192.168.1.20:8081/","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":6,"requiredCapabilities":[],"requiredScopes":[],"optionalScopes":[],"expectedRevision":999,"revision":999,"reviewStatus":"APPROVED"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(IdentityHeader, token)
+	request.Header.Set("If-Match", `"1"`)
+	recorder := httptest.NewRecorder()
+	servers.HTTP.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK || recorder.Header().Get("ETag") != `"2"` {
+		t.Fatalf("response = status:%d ETag:%q body:%s", recorder.Code, recorder.Header().Get("ETag"), recorder.Body.String())
+	}
+	if updateHandler.command.ExpectedRevision != 1 {
+		t.Fatalf("expected revision = %d, want If-Match value 1", updateHandler.command.ExpectedRevision)
+	}
+}
+
+func TestServers_UCAPP003_HTTPPreconditions(t *testing.T) {
+	t.Parallel()
+	token := signToken(t, tokenOptions{claims: validClaims(fixedNow())})
+	tests := []struct {
+		name       string
+		ifMatch    string
+		handlerErr error
+		wantStatus int
+		wantReason string
+	}{
+		{name: "missing If-Match", wantStatus: http.StatusPreconditionRequired, wantReason: ReasonApplicationVersionRevisionRequired},
+		{name: "malformed If-Match", ifMatch: "1", wantStatus: http.StatusBadRequest, wantReason: ReasonApplicationVersionRevisionRequired},
+		{name: "stale revision", ifMatch: `"1"`, handlerErr: versiondomain.ErrApplicationVersionRevisionConflict, wantStatus: http.StatusPreconditionFailed, wantReason: ReasonApplicationVersionRevisionConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := &fakeUpdateDraftApplicationVersionHandler{err: test.handlerErr}
+			servers := newTestServersWithUpdate(t, &fakeCreateApplicationHandler{}, nil, handler)
+			path := strings.Replace(UpdateApplicationVersionInternalPath, "{application_id}", testApplicationID, 1)
+			path = strings.Replace(path, "{version_id}", testApplicationVersionID, 1)
+			request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"versionLabel":"v1.1.0","launchUrl":"https://example.edu/app","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":5}`))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set(IdentityHeader, token)
+			if test.ifMatch != "" {
+				request.Header.Set("If-Match", test.ifMatch)
+			}
+			recorder := httptest.NewRecorder()
+			servers.HTTP.ServeHTTP(recorder, request)
+			if recorder.Code != test.wantStatus || !strings.Contains(recorder.Body.String(), test.wantReason) {
+				t.Fatalf("response = status:%d body:%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
 }
 
 func TestServers_UCAPP002_HTTPPathWinsAndReturnsCreatedETag(t *testing.T) {

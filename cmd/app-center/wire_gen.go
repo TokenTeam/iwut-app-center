@@ -70,7 +70,8 @@ func wireApp(configuration config.Config) (*kratos.App, func(), error) {
 	applicationVersionUUIDv7Generator := generator.NewApplicationVersionUUIDv7Generator()
 	applicationVersionRepository := mongo.NewApplicationVersionRepository(database)
 	createApplicationVersionHandler := usecase2.NewCreateApplicationVersionHandler(scopeCatalogCache, applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
-	applicationVersionService := transport.NewApplicationVersionService(createApplicationVersionHandler)
+	updateDraftApplicationVersionHandler := usecase2.NewUpdateDraftApplicationVersionHandler(scopeCatalogCache, systemClock, applicationVersionRepository)
+	applicationVersionService := transport.NewApplicationVersionService(createApplicationVersionHandler, updateDraftApplicationVersionHandler)
 	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService)
 	if err != nil {
 		cleanup2()

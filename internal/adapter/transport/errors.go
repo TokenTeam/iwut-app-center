@@ -16,23 +16,27 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
-	ReasonInvalidApplicationName        = "ERROR_REASON_INVALID_APPLICATION_NAME"
-	ReasonDeveloperIdentityRequired     = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
-	ReasonInvalidDeveloperIdentity      = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
-	ReasonDeveloperApprovalRequired     = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
-	ReasonApplicationNameAlreadyExists  = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
-	ReasonApplicationQuotaExceeded      = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
-	ReasonInvalidApplicationID          = "ERROR_REASON_INVALID_APPLICATION_ID"
-	ReasonInvalidVersionLabel           = "ERROR_REASON_INVALID_VERSION_LABEL"
-	ReasonInvalidApplicationLaunchURL   = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
-	ReasonInvalidRPCApiRange            = "ERROR_REASON_INVALID_RPC_API_RANGE"
-	ReasonInvalidRequiredCapability     = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
-	ReasonInvalidApplicationScope       = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
-	ReasonApplicationNotFound           = "ERROR_REASON_APPLICATION_NOT_FOUND"
-	ReasonApplicationAdminRequired      = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
-	ReasonApplicationVersionLabelExists = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
-	ReasonScopeCatalogUnavailable       = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
-	ReasonInternal                      = "ERROR_REASON_INTERNAL"
+	ReasonInvalidApplicationName             = "ERROR_REASON_INVALID_APPLICATION_NAME"
+	ReasonDeveloperIdentityRequired          = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
+	ReasonInvalidDeveloperIdentity           = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
+	ReasonDeveloperApprovalRequired          = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
+	ReasonApplicationNameAlreadyExists       = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
+	ReasonApplicationQuotaExceeded           = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
+	ReasonInvalidApplicationID               = "ERROR_REASON_INVALID_APPLICATION_ID"
+	ReasonInvalidVersionLabel                = "ERROR_REASON_INVALID_VERSION_LABEL"
+	ReasonInvalidApplicationLaunchURL        = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
+	ReasonInvalidRPCApiRange                 = "ERROR_REASON_INVALID_RPC_API_RANGE"
+	ReasonInvalidRequiredCapability          = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
+	ReasonInvalidApplicationScope            = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
+	ReasonApplicationNotFound                = "ERROR_REASON_APPLICATION_NOT_FOUND"
+	ReasonApplicationAdminRequired           = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
+	ReasonApplicationVersionLabelExists      = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
+	ReasonScopeCatalogUnavailable            = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
+	ReasonApplicationVersionRevisionRequired = "ERROR_REASON_APPLICATION_VERSION_REVISION_REQUIRED"
+	ReasonApplicationVersionNotFound         = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
+	ReasonApplicationVersionNotDraft         = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
+	ReasonApplicationVersionRevisionConflict = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
+	ReasonInternal                           = "ERROR_REASON_INTERNAL"
 )
 
 type errorSpec struct {
@@ -104,6 +108,10 @@ var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{
 	versiondomain.ErrorCodeApplicationAdminRequired:             {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
 	versiondomain.ErrorCodeApplicationVersionLabelAlreadyExists: {code: codes.AlreadyExists, reason: ReasonApplicationVersionLabelExists, message: "application version label already exists"},
 	versiondomain.ErrorCodeScopeCatalogUnavailable:              {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	versiondomain.ErrorCodeApplicationVersionRevisionRequired:   {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
+	versiondomain.ErrorCodeApplicationVersionNotFound:           {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
+	versiondomain.ErrorCodeApplicationVersionNotDraft:           {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
+	versiondomain.ErrorCodeApplicationVersionRevisionConflict:   {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
 	versiondomain.ErrorCodeInternal:                             internalSpec,
 }
 
