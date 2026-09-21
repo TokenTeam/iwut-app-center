@@ -14,19 +14,29 @@ Do not copy those documents into this repository. If that path is unavailable, s
 
 ## Required reading
 
-Use the local-reading protocol in `../../docs/app-center/implements/README.md`.
-Before implementation work, read only:
+Default design input for an implementation work package is the generated brief,
+not the UC/ADR sources. Before implementation work, read only:
 
-1. `../../docs/app-center/implements/README.md`
-2. The exact UC/BR/ADR sections listed under the active work package below.
-3. Only the implementation-convention sections relevant to that package.
+1. `../../docs/app-center/implements/README.md` — the local-reading protocol.
+2. `../../docs/app-center/briefs/_engineering-baseline.md` — cross-cutting
+   architecture decisions; read once per session and reuse.
+3. `../../docs/app-center/briefs/UC-APP-XXX.md` — the brief for the active work
+   package named below.
 
-Do not read the complete design registry, every UC, whole domain/lifecycle
-documents, or every referenced ADR by default. Expand the working set only
-when the active package contains a precise reference or implementation exposes
-a concrete conflict or missing definition.
+If that brief does not exist yet, create or refresh
+`docs/tools/brief-specs/UC-APP-XXX.json` in the design docs repository and
+regenerate the brief before starting. Do not begin implementation without it,
+and do not fall back to reading whole UC or ADR files.
 
-Business behavior is authoritative in `UC-*` and `BR-*`. Architecture decisions are authoritative in `ADR-*`. This file does not override them.
+The brief is a derived, non-authoritative extract. Business behavior stays
+authoritative in `UC-*` and `BR-*`; architecture decisions stay authoritative in
+`ADR-*`. On any conflict the source file wins. This file does not override them.
+
+When the brief's `未纳入本 brief 的源小节` index names a section the task really
+needs, read that single section by its anchor — never the whole file. When the
+brief does not cover something, or two authoritative rules conflict, file a
+structured gap (`authority` / `conflict` / `options` / `suggested`) and route it
+to the design task instead of deciding in code.
 
 ## Current work package
 
@@ -38,9 +48,11 @@ registration and the remaining Transport, composition-root and end-to-end work
 are tracked in the implementation entry point.
 
 Before the next implementation begins, replace this paragraph with a bounded
-package that lists: target UC, exact Required BR/ADR headings, code scope,
-explicit non-goals, and verification commands. Do not infer the next package
-from file order, recent commits, or the next UC number.
+package that lists: target UC, the brief path for that UC, code scope, explicit
+non-goals, and verification commands. Keep the design scope in the brief spec
+(`docs/tools/brief-specs/UC-APP-XXX.json`) instead of restating section titles
+here. Do not infer UC-APP-006 or any other next package from file order, recent
+commits, or use-case numbering.
 
 ## Code boundaries
 
@@ -143,7 +155,9 @@ Use an English imperative title without a trailing period. Keep each commit focu
 
 Before declaring work complete:
 
-1. Re-read the target UC acceptance section and referenced BRs.
+1. Re-read the work package brief's acceptance section (`## 测试与验收`) and its
+   `BR-*` list, and confirm the brief still matches its sources:
+   `cd ../../docs && python3 tools/gen_brief.py --check --all`.
 2. Confirm no future capability entered the current package unintentionally.
 3. Run formatting, static checks available in the repository and all relevant tests; `go test ./...` must include the root architecture guard.
 4. Report which BRs are covered and any remaining test obligation.
