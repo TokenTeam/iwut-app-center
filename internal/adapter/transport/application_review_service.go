@@ -35,10 +35,22 @@ type RestoreRejectedApplicationVersionHandler interface {
 	) (*reviewdomain.RestoreRejectedVersionResult, error)
 }
 
+type DecideApplicationVersionReviewHandler interface {
+	Handle(
+		ctx context.Context,
+		identity reviewusecase.ReviewerIdentity,
+		applicationID shared.ApplicationID,
+		versionID reviewdomain.ApplicationVersionID,
+		reviewID reviewdomain.ApplicationReviewID,
+		command reviewusecase.DecideApplicationVersionReviewCommand,
+	) (*reviewdomain.ApplicationReviewDecisionResult, error)
+}
+
 type ApplicationReviewService struct {
 	applicationreviewv1.UnimplementedApplicationReviewServer
 	submitHandler  SubmitApplicationVersionReviewHandler
 	restoreHandler RestoreRejectedApplicationVersionHandler
+	decideHandler  DecideApplicationVersionReviewHandler
 }
 
 var _ applicationreviewv1.ApplicationReviewHTTPServer = (*ApplicationReviewService)(nil)
@@ -47,8 +59,78 @@ var _ applicationreviewv1.ApplicationReviewServer = (*ApplicationReviewService)(
 func NewApplicationReviewService(
 	submitHandler SubmitApplicationVersionReviewHandler,
 	restoreHandler RestoreRejectedApplicationVersionHandler,
+	decideHandler DecideApplicationVersionReviewHandler,
 ) *ApplicationReviewService {
-	return &ApplicationReviewService{submitHandler: submitHandler, restoreHandler: restoreHandler}
+	return &ApplicationReviewService{
+		submitHandler: submitHandler, restoreHandler: restoreHandler, decideHandler: decideHandler,
+	}
+}
+
+func (service *ApplicationReviewService) DecideApplicationVersionReview(
+	ctx context.Context,
+	request *applicationreviewv1.DecideApplicationVersionReviewRequest,
+) (*applicationreviewv1.DecideApplicationVersionReviewResponse, error) {
+	if service == nil || service.decideHandler == nil || request == nil {
+		return nil, toTransportError(reviewdomain.NewInternalError(nil))
+	}
+	trusted, ok := trustedIdentityFromContext(ctx)
+	if !ok || !trusted.AuthID.IsValid() {
+		return nil, toTransportError(reviewdomain.ErrReviewerIdentityRequired)
+	}
+	applicationID, valid := shared.ParseApplicationID(request.GetApplicationId())
+	versionID := reviewdomain.ApplicationVersionID(request.GetVersionId())
+	reviewID := reviewdomain.ApplicationReviewID(request.GetReviewId())
+	if !valid || !versionID.IsValid() || !reviewID.IsValid() {
+		return nil, toTransportError(reviewdomain.ErrApplicationReviewNotFound)
+	}
+	command := request.GetCommand()
+	outcome := ""
+	if command != nil {
+		switch command.GetOutcome() {
+		case applicationreviewv1.ReviewDecisionAction_APPROVE:
+			outcome = "APPROVE"
+		case applicationreviewv1.ReviewDecisionAction_REJECT:
+			outcome = "REJECT"
+		}
+	}
+	usecaseCommand := reviewusecase.DecideApplicationVersionReviewCommand{Outcome: outcome}
+	if command != nil {
+		usecaseCommand.ExpectedPolicyVersion = command.GetExpectedPolicyVersion()
+		usecaseCommand.ConfirmedCheckIDs = append([]string{}, command.GetConfirmedCheckIds()...)
+		usecaseCommand.Reason = command.GetReason()
+	}
+	result, err := service.decideHandler.Handle(
+		ctx,
+		reviewusecase.ReviewerIdentity{
+			AuthID: trusted.AuthID, Permissions: append([]string{}, trusted.Permissions...),
+		},
+		applicationID,
+		versionID,
+		reviewID,
+		usecaseCommand,
+	)
+	if err != nil {
+		if isHTTP(ctx) && isReviewDecisionValidationError(err) {
+			spec := reviewDomainErrorSpecs[reviewErrorCode(err)]
+			return nil, kratoserrors.New(http.StatusUnprocessableEntity, spec.reason, spec.message)
+		}
+		return nil, toTransportError(err)
+	}
+	if result == nil || result.Review() == nil || result.Version() == nil {
+		return nil, toTransportError(reviewdomain.NewInternalError(nil))
+	}
+	version := result.Version()
+	return &applicationreviewv1.DecideApplicationVersionReviewResponse{
+		Review: applicationReviewResource(result.Review()),
+		Version: &applicationreviewv1.DecidedApplicationVersion{
+			ApplicationId: version.ApplicationID().String(),
+			VersionId:     version.VersionID().String(),
+			ReviewStatus:  version.ReviewStatus().String(),
+			Revision:      version.Revision(),
+			UpdatedBy:     version.UpdatedBy().String(),
+			UpdatedAt:     timestamppb.New(version.UpdatedAt()),
+		},
+	}, nil
 }
 
 func (service *ApplicationReviewService) SubmitApplicationVersionReview(
@@ -212,5 +294,38 @@ func applicationReviewResource(review *reviewdomain.ApplicationReview) *applicat
 			ResultVersionRevision: restoration.ResultVersionRevision(),
 		}
 	}
+	if decision := review.Decision(); decision != nil {
+		confirmed := decision.ConfirmedCheckIDs()
+		confirmedValues := make([]string, len(confirmed))
+		for index, id := range confirmed {
+			confirmedValues[index] = id.String()
+		}
+		resource.Decision = &applicationreviewv1.ApplicationReviewDecision{
+			Outcome:             decision.Outcome().String(),
+			ReviewPolicyVersion: decision.ReviewPolicyVersion().String(),
+			ConfirmedCheckIds:   confirmedValues,
+			DecidedBy:           decision.DecidedBy().String(),
+			DecidedAt:           timestamppb.New(decision.DecidedAt()),
+		}
+		if reason := decision.Reason(); reason != "" {
+			resource.Decision.Reason = &reason
+		}
+		if validation := decision.ApprovalValidation(); validation != nil {
+			resource.Decision.ApprovalValidation = &applicationreviewv1.ApplicationReviewApprovalValidation{
+				ScopeCatalogRevision:   validation.ScopeCatalogRevision().Int64(),
+				PreflightPolicyVersion: validation.PreflightPolicyVersion().String(),
+			}
+		}
+	}
 	return resource
+}
+
+func isReviewDecisionValidationError(err error) bool {
+	return errors.Is(err, reviewdomain.ErrInvalidApplicationReviewOutcome) ||
+		errors.Is(err, reviewdomain.ErrInvalidApplicationReviewPolicyVersion) ||
+		errors.Is(err, reviewdomain.ErrApplicationReviewChecksIncomplete) ||
+		errors.Is(err, reviewdomain.ErrInvalidApplicationReviewChecks) ||
+		errors.Is(err, reviewdomain.ErrInvalidApplicationReviewReason) ||
+		errors.Is(err, reviewdomain.ErrInvalidApplicationScope) ||
+		errors.Is(err, reviewdomain.ErrApplicationLaunchURLNotReviewable)
 }

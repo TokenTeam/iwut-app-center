@@ -59,7 +59,8 @@ read-only and does not create collections or indexes.
 | `APP_CENTER_GRPC_ADDR` | no | `:9090` | gRPC listen address |
 | `APP_CENTER_INITIAL_APPLICATION_QUOTA` | no | `10` | Initial per-admin creation quota; only used to lazily create a missing quota record |
 | `APP_CENTER_SCOPE_CATALOG_CACHE_TTL` | no | `5m` | Scope Catalog cache TTL |
-| `APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET` | `serve` | — | Auth Center native gRPC target for Scope Catalog snapshots |
+| `APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET` | `serve` | — | Auth Center native gRPC target currently shared by Scope Catalog and Developer Status clients |
+| `APP_CENTER_SYSTEM_AUTH_ID` | `serve` | — | Opaque Auth ID of the provisioned non-login SYSTEM principal used for suspension-triggered rejection |
 | `APP_CENTER_IDENTITY_ISSUER` | `serve` | — | Expected JWS `iss` |
 | `APP_CENTER_IDENTITY_AUDIENCE` | no | `iwut-app-center` | Audience the JWS `aud` must contain |
 | `APP_CENTER_IDENTITY_MAX_TTL` | no | `5m` | Maximum `exp - iat` accepted |
@@ -81,7 +82,8 @@ version control.
   starts the real `wireApp` composition root with real Kratos HTTP and native
   gRPC listeners, presents real RS256 compact JWS identities and asserts
   persisted application/version rows. UC-APP-002 additionally uses a real test
-  Auth gRPC listener implementing the shared generated Scope Catalog interface.
+  Auth gRPC listener implementing the shared generated Scope Catalog and
+  Developer Status interfaces.
   No automatic migration happens during serve.
 
 The Auth client currently uses an unauthenticated internal gRPC channel because

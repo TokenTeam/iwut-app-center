@@ -241,7 +241,18 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 	if err != nil {
 		return nil, fmt.Errorf("decide application review: %w", err)
 	}
-	versionResult, err := reviewdomain.NewDecidedApplicationVersion(candidate, decision)
+	persistedDecision := decidedReview.Decision()
+	if persistedDecision == nil || updatedVersionDocument.ReviewStatus != persistedDecision.Outcome().String() ||
+		updatedVersionDocument.Revision != currentVersionRevision+1 ||
+		updatedVersionDocument.UpdatedBy != persistedDecision.DecidedBy().String() ||
+		!updatedVersionDocument.UpdatedAt.Equal(persistedDecision.DecidedAt()) {
+		return nil, reviewport.ErrApplicationReviewStateInconsistent
+	}
+	// MongoDB stores datetimes at millisecond precision. Build the returned
+	// Version summary from the persisted decision so Review and Version audit
+	// timestamps remain exactly equal even when the injected clock has finer
+	// precision.
+	versionResult, err := reviewdomain.NewDecidedApplicationVersion(candidate, persistedDecision)
 	if err != nil {
 		return nil, fmt.Errorf("decide application review: %w", err)
 	}

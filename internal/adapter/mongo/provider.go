@@ -16,8 +16,12 @@ var ProviderSet = wire.NewSet(
 	NewApplicationVersionRepository,
 	NewApplicationReviewRepository,
 	NewApplicationReviewRestorationRepository,
+	NewApplicationReviewDecisionRepository,
+	NewVersionReviewPolicyRepository,
 	wire.Bind(new(port.ApplicationRepository), new(*ApplicationRepository)),
 	wire.Bind(new(versionport.ApplicationVersionRepository), new(*ApplicationVersionRepository)),
 	wire.Bind(new(reviewport.ApplicationReviewRepository), new(*ApplicationReviewRepository)),
 	wire.Bind(new(reviewport.RejectedApplicationVersionRepository), new(*ApplicationReviewRestorationRepository)),
+	wire.Bind(new(reviewport.ApplicationReviewDecisionRepository), new(*ApplicationReviewDecisionRepository)),
+	wire.Bind(new(reviewport.ReviewPolicyProvider), new(*VersionReviewPolicyRepository)),
 )

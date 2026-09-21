@@ -19,6 +19,7 @@ import (
 	"iwut-app-center/internal/config"
 	reviewport "iwut-app-center/internal/review/port"
 	reviewusecase "iwut-app-center/internal/review/usecase"
+	"iwut-app-center/internal/shared"
 	versionport "iwut-app-center/internal/version/port"
 	versionusecase "iwut-app-center/internal/version/usecase"
 )
@@ -64,6 +65,10 @@ func provideInitialApplicationQuota(configuration config.Config) int32 {
 
 func provideScopeCatalogCacheTTL(configuration config.Config) time.Duration {
 	return configuration.ScopeCatalogCacheTTL
+}
+
+func provideSystemAuthID(configuration config.Config) shared.AuthID {
+	return shared.AuthID(configuration.SystemAuthID)
 }
 
 // provideAuthScopeCatalogConnection owns the temporary unauthenticated native
@@ -119,6 +124,7 @@ var _ transport.CreateApplicationHandler = (*usecase.CreateApplicationHandler)(n
 var _ transport.CreateApplicationVersionHandler = (*versionusecase.CreateApplicationVersionHandler)(nil)
 var _ transport.UpdateDraftApplicationVersionHandler = (*versionusecase.UpdateDraftApplicationVersionHandler)(nil)
 var _ transport.SubmitApplicationVersionReviewHandler = (*reviewusecase.SubmitApplicationVersionReviewHandler)(nil)
+var _ transport.DecideApplicationVersionReviewHandler = (*reviewusecase.DecideApplicationVersionReviewHandler)(nil)
 var _ transport.RestoreRejectedApplicationVersionHandler = (*reviewusecase.RestoreRejectedApplicationVersionHandler)(nil)
 var _ authadapter.ScopeCatalogSnapshotSource = (*authadapter.GRPCScopeCatalogSnapshotSource)(nil)
 var _ versionport.ScopeCatalog = (*authadapter.ScopeCatalogCache)(nil)

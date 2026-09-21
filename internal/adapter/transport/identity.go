@@ -27,10 +27,10 @@ const minimumRSAKeyBits = 2048
 
 var (
 	// errIdentityRequired means no identity carrier was present.
-	errIdentityRequired = errors.New("developer identity is required")
+	errIdentityRequired = errors.New("trusted identity is required")
 	// errIdentityInvalid covers every present-but-untrustworthy identity. The
 	// detailed cause is never exposed to the caller.
-	errIdentityInvalid = errors.New("developer identity is invalid")
+	errIdentityInvalid = errors.New("trusted identity is invalid")
 )
 
 // Clock is the local time source used for token lifetime checks.
@@ -155,100 +155,122 @@ type identityClaims struct {
 	Exp             *float64        `json:"exp"`
 	Jti             *string         `json:"jti"`
 	DeveloperStatus *string         `json:"developer_status"`
+	Permissions     *[]string       `json:"permissions"`
 }
 
 // Verify applies the documented validation order: structure, JOSE header, key
 // selection, signature, then claims and time.
-func (verifier *IdentityVerifier) Verify(token string) (shared.DeveloperIdentity, error) {
+func (verifier *IdentityVerifier) Verify(token string) (shared.TrustedIdentity, error) {
 	if verifier == nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if strings.TrimSpace(token) == "" {
-		return shared.DeveloperIdentity{}, errIdentityRequired
+		return shared.TrustedIdentity{}, errIdentityRequired
 	}
 	if token != strings.TrimSpace(token) {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
 	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	var header joseHeader
 	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if header.Typ != "JWT" || header.Alg != "RS256" || header.Kid == "" {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
 	publicKey, ok := verifier.publicKeys[header.Kid]
 	if !ok || publicKey == nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 	if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, digest[:], signature); err != nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	var claims identityClaims
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
-	if claims.Iss == nil || claims.Sub == nil || claims.Jti == nil || claims.DeveloperStatus == nil ||
+	if claims.Iss == nil || claims.Sub == nil || claims.Jti == nil ||
 		claims.Iat == nil || claims.Nbf == nil || claims.Exp == nil {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if *claims.Iss != verifier.issuer {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if !audienceContains(claims.Aud, verifier.audience) {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if *claims.Sub == "" || *claims.Jti == "" {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
-	status, ok := parseDeveloperStatus(*claims.DeveloperStatus)
-	if !ok {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+
+	var developerStatus shared.DeveloperStatus
+	if claims.DeveloperStatus != nil {
+		status, ok := parseDeveloperStatus(*claims.DeveloperStatus)
+		if !ok {
+			return shared.TrustedIdentity{}, errIdentityInvalid
+		}
+		developerStatus = status
+	}
+	permissions := []string(nil)
+	if claims.Permissions != nil {
+		permissions = make([]string, 0, len(*claims.Permissions))
+		seen := make(map[string]struct{}, len(*claims.Permissions))
+		for _, permission := range *claims.Permissions {
+			if permission == "" || strings.TrimSpace(permission) != permission {
+				return shared.TrustedIdentity{}, errIdentityInvalid
+			}
+			if _, duplicate := seen[permission]; duplicate {
+				return shared.TrustedIdentity{}, errIdentityInvalid
+			}
+			seen[permission] = struct{}{}
+			permissions = append(permissions, permission)
+		}
 	}
 
 	if *claims.Exp <= *claims.Iat || *claims.Exp <= *claims.Nbf {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if *claims.Exp-*claims.Iat > verifier.maxTTL.Seconds() {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
 	now := float64(verifier.clock.Now().UTC().Unix())
 	skew := verifier.clockSkew.Seconds()
 	if now > *claims.Exp+skew {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if *claims.Nbf-skew > now {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 	if *claims.Iat > now+skew {
-		return shared.DeveloperIdentity{}, errIdentityInvalid
+		return shared.TrustedIdentity{}, errIdentityInvalid
 	}
 
-	return shared.DeveloperIdentity{
+	return shared.TrustedIdentity{
 		AuthID:          shared.AuthID(*claims.Sub),
-		DeveloperStatus: status,
+		DeveloperStatus: developerStatus,
+		Permissions:     permissions,
 	}, nil
 }
 

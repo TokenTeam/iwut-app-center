@@ -29,8 +29,8 @@ var (
 	ErrDeveloperStatusUnavailable = errors.New("developer status unavailable")
 )
 
-// ReviewPolicyProvider is owned by the consuming Review capability. ConfCenter
-// will implement it; the core work package only defines and fakes it.
+// ReviewPolicyProvider is owned by the consuming Review capability. App Center
+// implements it with its immutable local policy repository.
 type ReviewPolicyProvider interface {
 	RequireUsable(
 		ctx context.Context,

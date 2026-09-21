@@ -42,7 +42,7 @@ test:
 	$(GO) test ./...
 
 # Starts and removes an isolated transaction-capable replica set, then runs the
-# MongoDB adapter integration suite and the UC-APP-001/002 end-to-end suites. Requires
+# MongoDB adapter integration suite and the App Center end-to-end suites. Requires
 # Docker; plain `make test` skips the MongoDB tests when MONGODB_INTEGRATION_URI
 # is absent.
 .PHONY: test-mongo

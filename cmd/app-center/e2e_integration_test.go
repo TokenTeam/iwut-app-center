@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ import (
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
 	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
+	developerstatusv1 "iwut-app-center/api/gen/go/auth_center/v1/developer_status"
 	scopecatalogv1 "iwut-app-center/api/gen/go/auth_center/v1/scope_catalog"
 	mongoadapter "iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
@@ -109,6 +111,22 @@ type e2eApplicationReviewDocument struct {
 	PreflightPolicyVersion string                       `bson:"preflightPolicyVersion"`
 	SubmittedBy            string                       `bson:"submittedBy"`
 	DraftRestoration       *e2eDraftRestorationDocument `bson:"draftRestoration"`
+	Decision               *e2eReviewDecisionDocument   `bson:"decision"`
+}
+
+type e2eReviewDecisionDocument struct {
+	Outcome             string                               `bson:"outcome"`
+	ReviewPolicyVersion string                               `bson:"reviewPolicyVersion"`
+	ConfirmedCheckIDs   []string                             `bson:"confirmedCheckIds"`
+	Reason              *string                              `bson:"reason"`
+	DecidedBy           string                               `bson:"decidedBy"`
+	DecidedAt           time.Time                            `bson:"decidedAt"`
+	ApprovalValidation  *e2eReviewApprovalValidationDocument `bson:"approvalValidation"`
+}
+
+type e2eReviewApprovalValidationDocument struct {
+	ScopeCatalogRevision   int64  `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string `bson:"preflightPolicyVersion"`
 }
 
 type e2eDraftRestorationDocument struct {
@@ -138,6 +156,41 @@ type e2eScopeCatalogServer struct {
 	revision    atomic.Int64
 	unavailable atomic.Bool
 	denyProfile atomic.Bool
+}
+
+type e2eDeveloperStatusServer struct {
+	developerstatusv1.UnimplementedDeveloperStatusDirectoryServer
+	mu          sync.RWMutex
+	statuses    map[string]developerstatusv1.DeveloperStatus
+	calls       atomic.Int32
+	unavailable atomic.Bool
+}
+
+func (server *e2eDeveloperStatusServer) SetStatus(authID string, current developerstatusv1.DeveloperStatus) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	server.statuses[authID] = current
+}
+
+func (server *e2eDeveloperStatusServer) BatchGetDeveloperStatuses(
+	_ context.Context,
+	request *developerstatusv1.BatchGetDeveloperStatusesRequest,
+) (*developerstatusv1.BatchGetDeveloperStatusesResponse, error) {
+	server.calls.Add(1)
+	if server.unavailable.Load() {
+		return nil, status.Error(codes.Unavailable, "developer status unavailable")
+	}
+	server.mu.RLock()
+	defer server.mu.RUnlock()
+	entries := make([]*developerstatusv1.DeveloperStatusEntry, 0, len(request.GetAuthIds()))
+	for _, authID := range request.GetAuthIds() {
+		current, exists := server.statuses[authID]
+		if !exists {
+			return nil, status.Error(codes.NotFound, "developer status not found")
+		}
+		entries = append(entries, &developerstatusv1.DeveloperStatusEntry{AuthId: authID, DeveloperStatus: current})
+	}
+	return &developerstatusv1.BatchGetDeveloperStatusesResponse{Entries: entries}, nil
 }
 
 func (server *e2eScopeCatalogServer) GetScopeCatalogSnapshot(
@@ -811,6 +864,167 @@ func TestE2E_UCAPP004_SubmitApplicationVersionReview(t *testing.T) {
 	e2eAssertReviewFailureUnchanged(t, database, scopeBefore, 2)
 }
 
+// TestE2E_UCAPP005_DecideApplicationVersionReview crosses a pure Reviewer JWS,
+// real HTTP and gRPC listeners, the generated Auth Developer Status client, a
+// generated-interface test Auth server, the Wire graph and real MongoDB.
+func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	_, database := e2eIsolatedDatabase(t, ctx, true)
+	privateKey, publicKeyPath := e2eIdentity(t)
+	const (
+		adminID    = "auth-e2e-review-admin"
+		reviewerID = "auth-e2e-reviewer"
+		systemID   = "auth-e2e-system"
+	)
+	adminToken := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
+	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review")
+	noPermissionToken := e2eSignReviewerIdentity(t, privateKey, "auth-e2e-no-review-permission")
+
+	addresses := e2eReserveAddresses(t, 3)
+	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
+	_, developerStatusServer := e2eStartAuthServer(t, authAddress)
+	developerStatusServer.SetStatus(adminID, developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED)
+	resolver := &e2eDNSResolver{addresses: map[string][]netip.Addr{
+		"example.edu": {netip.MustParseAddr("8.8.8.8")},
+	}}
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:               os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:          database.Name(),
+		config.HTTPAddrEnv:               httpAddress,
+		config.GRPCAddrEnv:               grpcAddress,
+		config.IdentityIssuerEnv:         e2eIssuer,
+		config.IdentityAudienceEnv:       e2eAudience,
+		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv: authAddress,
+		config.ScopeCatalogCacheTTLEnv:   "1ns",
+		config.SystemAuthIDEnv:           systemID,
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+	app, appCleanup, err := wireAppWithResolver(configuration, resolver)
+	if err != nil {
+		t.Fatalf("wireAppWithResolver() error = %v", err)
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Error("app.Run() did not stop within 15s")
+		}
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Errorf("app.Run() error = %v", runErr)
+		}
+		appCleanup()
+	})
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+	connection := e2eDialGRPC(t, ctx, grpcAddress, runDone, &runErr)
+	t.Cleanup(func() { _ = connection.Close() })
+
+	createStatus, applicationBody := e2eHTTPCreate(t, httpAddress, adminToken, "Review_Decision_E2E_App")
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create predecessor application status = %d; body = %s", createStatus, applicationBody)
+	}
+	var application applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(applicationBody, &application); err != nil {
+		t.Fatalf("decode predecessor application: %v", err)
+	}
+
+	createAndSubmit := func(label string) (*applicationversionv1.CreateApplicationVersionResponse, *applicationreviewv1.SubmitApplicationVersionReviewResponse) {
+		t.Helper()
+		versionStatus, _, versionBody := e2eHTTPCreateVersion(
+			t, httpAddress, adminToken, application.GetId(), label,
+			[]string{"user.profile.v1"}, []string{"profile.basic"}, nil,
+		)
+		if versionStatus != http.StatusCreated {
+			t.Fatalf("create predecessor version status = %d; body = %s", versionStatus, versionBody)
+		}
+		var version applicationversionv1.CreateApplicationVersionResponse
+		if err := protojson.Unmarshal(versionBody, &version); err != nil {
+			t.Fatalf("decode predecessor version: %v", err)
+		}
+		submitStatus, _, submitBody := e2eHTTPSubmitReview(t, httpAddress, adminToken, application.GetId(), version.GetVersionId(), 1)
+		if submitStatus != http.StatusCreated {
+			t.Fatalf("submit predecessor review status = %d; body = %s", submitStatus, submitBody)
+		}
+		var submitted applicationreviewv1.SubmitApplicationVersionReviewResponse
+		if err := protojson.Unmarshal(submitBody, &submitted); err != nil {
+			t.Fatalf("decode predecessor review: %v", err)
+		}
+		return &version, &submitted
+	}
+
+	approvedVersion, approvedReview := createAndSubmit("v5.0.0")
+	deniedStatus, deniedBody := e2eHTTPDecideReview(
+		t, httpAddress, noPermissionToken, application.GetId(), approvedVersion.GetVersionId(), approvedReview.GetReview().GetReviewId(),
+		"APPROVE", "app-version-review-v1", []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"}, "",
+	)
+	if deniedStatus != http.StatusForbidden || !bytes.Contains(deniedBody, []byte(transport.ReasonApplicationReviewPermissionRequired)) {
+		t.Fatalf("permission response = status:%d body:%s", deniedStatus, deniedBody)
+	}
+	approveStatus, approveBody := e2eHTTPDecideReview(
+		t, httpAddress, reviewerToken, application.GetId(), approvedVersion.GetVersionId(), approvedReview.GetReview().GetReviewId(),
+		"APPROVE", "app-version-review-v1", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed"}, "",
+	)
+	if approveStatus != http.StatusOK {
+		t.Fatalf("approve response = status:%d body:%s", approveStatus, approveBody)
+	}
+	var approved applicationreviewv1.DecideApplicationVersionReviewResponse
+	if err := protojson.Unmarshal(approveBody, &approved); err != nil {
+		t.Fatalf("decode approval response: %v; body=%s", err, approveBody)
+	}
+	if approved.GetReview().GetStatus() != "APPROVED" || approved.GetReview().GetDecision().GetDecidedBy() != reviewerID ||
+		approved.GetReview().GetDecision().GetApprovalValidation().GetScopeCatalogRevision() != 11 ||
+		approved.GetVersion().GetReviewStatus() != "APPROVED" || approved.GetVersion().GetRevision() != 3 {
+		t.Fatalf("approval response = %v", &approved)
+	}
+
+	_, suspendedReview := createAndSubmit("v5.0.1")
+	developerStatusServer.SetStatus(adminID, developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_SUSPENDED)
+	grpcClient := applicationreviewv1.NewApplicationReviewClient(connection)
+	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, reviewerToken))
+	autoRejected, err := grpcClient.DecideApplicationVersionReview(grpcCtx, &applicationreviewv1.DecideApplicationVersionReviewRequest{
+		ApplicationId: application.GetId(),
+		VersionId:     suspendedReview.GetReview().GetVersionId(),
+		ReviewId:      suspendedReview.GetReview().GetReviewId(),
+		Command: &applicationreviewv1.DecideApplicationVersionReviewCommand{
+			Outcome:               applicationreviewv1.ReviewDecisionAction_APPROVE,
+			ExpectedPolicyVersion: "app-version-review-v1",
+			ConfirmedCheckIds:     []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("gRPC auto-reject decision: %v", err)
+	}
+	if autoRejected.GetReview().GetStatus() != "REJECTED" || autoRejected.GetReview().GetDecision().GetDecidedBy() != systemID ||
+		autoRejected.GetReview().GetDecision().GetApprovalValidation() != nil ||
+		autoRejected.GetVersion().GetUpdatedBy() != systemID || autoRejected.GetVersion().GetReviewStatus() != "REJECTED" {
+		t.Fatalf("auto-rejection response = %v", autoRejected)
+	}
+	var stored e2eApplicationReviewDocument
+	if err := database.Collection("application_reviews").FindOne(ctx, bson.D{{Key: "reviewId", Value: suspendedReview.GetReview().GetReviewId()}}).Decode(&stored); err != nil {
+		t.Fatalf("read auto-rejected review: %v", err)
+	}
+	if stored.Decision == nil || stored.Decision.DecidedBy != systemID || stored.Decision.Outcome != "REJECTED" ||
+		stored.Decision.ApprovalValidation != nil || stored.Decision.Reason == nil {
+		t.Fatalf("persisted auto-rejection = %#v", stored)
+	}
+	if developerStatusServer.calls.Load() < 2 {
+		t.Fatalf("Auth Developer Status calls = %d, want approval and auto-rejection checks", developerStatusServer.calls.Load())
+	}
+}
+
 // TestE2E_UCAPP006_RestoreRejectedApplicationVersionToDraft starts from the
 // rejected state owned by UC-APP-005, then crosses the generated HTTP and gRPC
 // contracts, trusted JWS middleware, Wire graph and real MongoDB transaction.
@@ -1057,6 +1271,26 @@ func e2eSignIdentity(t *testing.T, privateKey *rsa.PrivateKey, subject, status s
 		"jti":              "e2e-" + subject,
 		"developer_status": status,
 	}
+	return e2eSignIdentityClaims(t, privateKey, claims)
+}
+
+func e2eSignReviewerIdentity(t *testing.T, privateKey *rsa.PrivateKey, subject string, permissions ...string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	return e2eSignIdentityClaims(t, privateKey, map[string]any{
+		"iss":         e2eIssuer,
+		"sub":         subject,
+		"aud":         []string{"another-service", e2eAudience},
+		"iat":         now.Unix(),
+		"nbf":         now.Add(-30 * time.Second).Unix(),
+		"exp":         now.Add(2 * time.Minute).Unix(),
+		"jti":         "e2e-reviewer-" + subject,
+		"permissions": permissions,
+	})
+}
+
+func e2eSignIdentityClaims(t *testing.T, privateKey *rsa.PrivateKey, claims map[string]any) string {
+	t.Helper()
 	headerJSON, err := json.Marshal(map[string]any{"alg": "RS256", "typ": "JWT", "kid": e2eKeyID})
 	if err != nil {
 		t.Fatalf("marshal JOSE header: %v", err)
@@ -1077,6 +1311,9 @@ func e2eSignIdentity(t *testing.T, privateKey *rsa.PrivateKey, subject, status s
 func e2eEnvironment(values map[string]string) config.LookupEnv {
 	return func(key string) (string, bool) {
 		value, found := values[key]
+		if !found && key == config.SystemAuthIDEnv {
+			return "auth-e2e-system", true
+		}
 		return value, found
 	}
 }
@@ -1105,14 +1342,22 @@ func e2eReserveAddresses(t *testing.T, count int) []string {
 
 func e2eStartScopeCatalogServer(t *testing.T, address string) *e2eScopeCatalogServer {
 	t.Helper()
+	scope, _ := e2eStartAuthServer(t, address)
+	return scope
+}
+
+func e2eStartAuthServer(t *testing.T, address string) (*e2eScopeCatalogServer, *e2eDeveloperStatusServer) {
+	t.Helper()
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		t.Fatalf("listen for test Auth Scope Catalog: %v", err)
 	}
-	service := &e2eScopeCatalogServer{}
-	service.revision.Store(11)
+	scopeService := &e2eScopeCatalogServer{}
+	scopeService.revision.Store(11)
+	developerService := &e2eDeveloperStatusServer{statuses: make(map[string]developerstatusv1.DeveloperStatus)}
 	server := grpc.NewServer()
-	scopecatalogv1.RegisterScopeCatalogServer(server, service)
+	scopecatalogv1.RegisterScopeCatalogServer(server, scopeService)
+	developerstatusv1.RegisterDeveloperStatusDirectoryServer(server, developerService)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -1127,7 +1372,7 @@ func e2eStartScopeCatalogServer(t *testing.T, address string) *e2eScopeCatalogSe
 			t.Error("test Auth Scope Catalog server did not stop")
 		}
 	})
-	return service
+	return scopeService, developerService
 }
 
 func e2eWaitForHTTPListener(t *testing.T, ctx context.Context, address string, runDone <-chan struct{}, runErr *error) {
@@ -1316,6 +1561,47 @@ func e2eHTTPSubmitReview(
 		t.Fatalf("read submit-review response: %v", err)
 	}
 	return response.StatusCode, response.Header.Clone(), body
+}
+
+func e2eHTTPDecideReview(
+	t *testing.T,
+	address, token, applicationID, versionID, reviewID string,
+	outcome, expectedPolicyVersion string,
+	confirmedCheckIDs []string,
+	reason string,
+) (int, []byte) {
+	t.Helper()
+	command := map[string]any{
+		"outcome":               outcome,
+		"expectedPolicyVersion": expectedPolicyVersion,
+		"confirmedCheckIds":     confirmedCheckIDs,
+	}
+	if reason != "" {
+		command["reason"] = reason
+	}
+	payload, err := json.Marshal(command)
+	if err != nil {
+		t.Fatalf("encode decide-review request: %v", err)
+	}
+	path := strings.Replace(transport.DecideApplicationVersionReviewInternalPath, "{application_id}", applicationID, 1)
+	path = strings.Replace(path, "{version_id}", versionID, 1)
+	path = strings.Replace(path, "{review_id}", reviewID, 1)
+	request, err := http.NewRequest(http.MethodPost, "http://"+address+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build decide-review request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(transport.IdentityHeader, token)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read decide-review response: %v", err)
+	}
+	return response.StatusCode, body
 }
 
 func e2eHTTPRestoreReview(

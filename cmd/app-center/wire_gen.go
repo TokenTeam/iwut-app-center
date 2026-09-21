@@ -81,7 +81,17 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	submitApplicationVersionReviewHandler := usecase3.NewSubmitApplicationVersionReviewHandler(reviewScopeCatalog, launchURLSubmissionPolicy, applicationReviewUUIDv7Generator, systemClock, applicationReviewRepository)
 	applicationReviewRestorationRepository := mongo.NewApplicationReviewRestorationRepository(database)
 	restoreRejectedApplicationVersionHandler := usecase3.NewRestoreRejectedApplicationVersionHandler(systemClock, applicationReviewRestorationRepository)
-	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler, restoreRejectedApplicationVersionHandler)
+	versionReviewPolicyRepository := mongo.NewVersionReviewPolicyRepository(database)
+	grpcDeveloperSuspensionChecker, err := auth.NewGRPCDeveloperSuspensionChecker(clientConn)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	applicationReviewDecisionRepository := mongo.NewApplicationReviewDecisionRepository(database)
+	authID := provideSystemAuthID(configuration)
+	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, systemClock, applicationReviewDecisionRepository, authID)
+	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler, restoreRejectedApplicationVersionHandler, decideApplicationVersionReviewHandler)
 	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService)
 	if err != nil {
 		cleanup2()

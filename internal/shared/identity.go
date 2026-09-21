@@ -28,3 +28,11 @@ type DeveloperIdentity struct {
 	AuthID          AuthID
 	DeveloperStatus DeveloperStatus
 }
+
+// TrustedIdentity is the transport-verified projection of trusted-identity-v1.
+// Capability transports narrow it before entering a use case.
+type TrustedIdentity struct {
+	AuthID          AuthID
+	DeveloperStatus DeveloperStatus
+	Permissions     []string
+}

@@ -14,6 +14,7 @@ func requiredValues() map[string]string {
 		IdentityIssuerEnv:         "https://auth.example.test",
 		IdentityPublicKeysEnv:     "primary=/etc/iwut/identity-primary.pem",
 		AuthScopeCatalogTargetEnv: "127.0.0.1:9000",
+		SystemAuthIDEnv:           "auth-system",
 	}
 }
 
@@ -73,6 +74,7 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 		IdentityClockSkewEnv:       "15s",
 		IdentityPublicKeysEnv:      "k1=/keys/one.pem,k2=/keys/two.pem",
 		AuthScopeCatalogTargetEnv:  "dns:///auth-center.internal:9000",
+		SystemAuthIDEnv:            "auth-system-prod",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -97,6 +99,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	}
 	if configuration.AuthScopeCatalogTarget != "dns:///auth-center.internal:9000" {
 		t.Fatalf("AuthScopeCatalogTarget = %q", configuration.AuthScopeCatalogTarget)
+	}
+	if configuration.SystemAuthID != "auth-system-prod" {
+		t.Fatalf("SystemAuthID = %q", configuration.SystemAuthID)
 	}
 }
 
@@ -142,6 +147,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "negative clock skew", key: IdentityClockSkewEnv, value: "-1s"},
 		{name: "empty clock skew", key: IdentityClockSkewEnv, value: ""},
 		{name: "empty Auth Scope Catalog target", key: AuthScopeCatalogTargetEnv, value: ""},
+		{name: "empty System Auth ID", key: SystemAuthIDEnv, value: ""},
 	}
 
 	for _, testCase := range testCases {
@@ -160,7 +166,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 func TestLoad_RequiresMongoURIIssuerKeysAndAuthTarget(t *testing.T) {
 	t.Parallel()
 
-	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv} {
+	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv, SystemAuthIDEnv} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			values := requiredValues()

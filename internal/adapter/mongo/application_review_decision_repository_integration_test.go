@@ -31,7 +31,8 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		seed := createDecidableReview(t, database, "auth-admin-approve", "decision-approve", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
-		decidedAt := time.Date(2026, time.September, 21, 9, 30, 0, 0, time.UTC)
+		decidedAt := time.Date(2026, time.September, 21, 9, 30, 0, 123456789, time.UTC)
+		persistedDecidedAt := decidedAt.Truncate(time.Millisecond)
 		decision := integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		result, err := repository.Decide(t.Context(), candidate, "auth-reviewer", decision)
@@ -41,7 +42,8 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		if result.Review().Status() != reviewdomain.ReviewStatusApproved ||
 			result.Version().ReviewStatus() != reviewdomain.ReviewDecisionApproved ||
 			result.Version().Revision() != 3 || result.Version().UpdatedBy() != "auth-reviewer" ||
-			!result.Version().UpdatedAt().Equal(decidedAt) {
+			!result.Version().UpdatedAt().Equal(persistedDecidedAt) ||
+			!result.Review().Decision().DecidedAt().Equal(persistedDecidedAt) {
 			t.Fatalf("unexpected decision result: review=%s version=%#v", result.Review().Status(), result.Version())
 		}
 
@@ -51,7 +53,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		}
 		validation := storedReview.Decision.ApprovalValidation
 		if storedReview.Decision.Outcome != "APPROVED" || storedReview.Decision.ReviewPolicyVersion != "review.v1" ||
-			storedReview.Decision.DecidedBy != "auth-reviewer" || !storedReview.Decision.DecidedAt.Equal(decidedAt) ||
+			storedReview.Decision.DecidedBy != "auth-reviewer" || !storedReview.Decision.DecidedAt.Equal(persistedDecidedAt) ||
 			storedReview.Decision.Reason != nil || validation == nil ||
 			validation.ScopeCatalogRevision != 77 || validation.PreflightPolicyVersion != "public-https.v2" ||
 			len(storedReview.Decision.ConfirmedCheckIDs) != 1 || storedReview.Decision.ConfirmedCheckIDs[0] != "content-reviewed" {
@@ -59,7 +61,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		}
 		storedVersion := readVersionDocument(t, database, seed.versionID.String())
 		if storedVersion.ReviewStatus != "APPROVED" || storedVersion.Revision != 3 ||
-			storedVersion.UpdatedBy != "auth-reviewer" || !storedVersion.UpdatedAt.Equal(decidedAt) {
+			storedVersion.UpdatedBy != "auth-reviewer" || !storedVersion.UpdatedAt.Equal(persistedDecidedAt) {
 			t.Fatalf("stored version = %#v", storedVersion)
 		}
 		assertNoPublicationCollections(t, database)

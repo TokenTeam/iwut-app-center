@@ -40,34 +40,35 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-006 Restore Rejected Version to Draft.** Brief:
-`../../docs/app-center/briefs/UC-APP-006.md`, generated from
-`docs/tools/brief-specs/UC-APP-006.json`. Regenerate it whenever a selected
+**UC-APP-005 Decide Application Version Review delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-005.md`, generated from
+`docs/tools/brief-specs/UC-APP-005.json`. Regenerate it whenever a selected
 source changes.
 
 Code scope:
 
-- `internal/review/domain`, `internal/version/domain` — add the one-time
-  restoration audit and the explicit `REJECTED -> DRAFT` transition.
-- `internal/review/usecase`, `internal/review/port` — add the restoration
-  command handler and one atomic repository port.
-- `internal/adapter/mongo` — add migration 0006, typed document mapping and a
-  transaction that fences current admin, latest attempt, revision and the
-  one-time restoration write.
-- `api/` and `internal/adapter/transport` — add the resource-oriented
-  draft-restoration POST method, stable reasons and HTTP/gRPC conversion.
-- `cmd/app-center/` — assemble the handler and repository with goforj/wire.
-- Real MongoDB tests cover rollback and concurrency; provider E2E crosses real
-  HTTP and gRPC listeners with signed DeveloperIdentity JWS.
+- `api/` — add the decision RPC and import the shared Auth Developer Status v1
+  Proto revision.
+- `internal/adapter/transport` — extend trusted-identity-v1 with reviewer
+  permissions and expose the decision command over HTTP/gRPC.
+- `internal/adapter/auth` — implement the Developer suspension consumer using
+  the generated Auth client and fail closed on contract violations.
+- `internal/adapter/mongo` — bind the existing decision repository and add the
+  immutable App Center-local VersionReviewPolicy repository/migration.
+- `internal/config` and `cmd/app-center/` — validate System Auth ID and Auth
+  Developer Status target, then assemble the complete UC with goforj/wire.
+- Provider E2E crosses signed ReviewerIdentity JWS, real HTTP/gRPC listeners,
+  real MongoDB and a test Auth Server implementing the generated interface.
 
 Explicit non-goals:
 
-- No UC-APP-005 transport, reviewer identity, Auth developer-status RPC or
-  System Auth ID work.
-- No Scope Catalog, URL preflight or ReviewPolicyProvider call during restore.
+- No production internal-service credential or Auth allowlist implementation;
+  the platform format is still unresolved and remains a production gap.
+- No reviewer permission grant/revoke management UC in Auth Center.
+- No review queue, publication, revoke, notification or browser isolation.
 - No content change, automatic resubmission, appeal, notification or legacy API
   compatibility layer.
-- No Gateway or Auth Center code change.
+- No Gateway behavior change and no Auth Center provider behavior change.
 - No gRPC-Web wrapper in this service (terminated at Traefik).
 - No push in any repository; keep API, service and documentation commits local
   until the user chooses the publication batch.

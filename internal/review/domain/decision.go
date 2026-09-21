@@ -120,7 +120,8 @@ func (status ReviewPolicyStatus) valid() bool {
 }
 
 // VersionReviewPolicy is immutable policy content keyed by ReviewPolicyVersion.
-// Formal strategies and historical versions are owned by ConfCenter.
+// Formal strategies and historical versions are owned by App Center's local
+// immutable policy repository.
 type VersionReviewPolicy struct {
 	version        ReviewPolicyVersion
 	requiredChecks []ReviewCheckDefinition

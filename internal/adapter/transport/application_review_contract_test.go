@@ -146,3 +146,75 @@ func TestAPIContract_UCAPP006_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIContract_UCAPP005_DecisionRouteAndGeneratedMethodAgree(t *testing.T) {
+	t.Parallel()
+	root := moduleRoot(t)
+	protoPath := filepath.Join(root, "api", "app_center", "v1", "application_review", "application_review.proto")
+	protoSource, err := os.ReadFile(protoPath)
+	if err != nil {
+		t.Fatalf("read proto: %v", err)
+	}
+	postPath := mustFind(t, regexp.MustCompile(`(?s)rpc\s+DecideApplicationVersionReview.*?post:\s*"([^"]+)"`), string(protoSource))
+	if postPath != DecideApplicationVersionReviewInternalPath {
+		t.Fatalf("Proto path = %q, constant = %q", postPath, DecideApplicationVersionReviewInternalPath)
+	}
+	if DecideApplicationVersionReviewExternalPath != "/app-center/v1/applications/{application_id}/versions/{version_id}/reviews/{review_id}/decision" ||
+		strings.TrimPrefix(DecideApplicationVersionReviewExternalPath, ServicePrefix) != DecideApplicationVersionReviewInternalPath {
+		t.Fatalf("external/internal mapping = %q -> %q", DecideApplicationVersionReviewExternalPath, DecideApplicationVersionReviewInternalPath)
+	}
+	if DecideApplicationVersionReviewGRPCMethod != "/app_center.v1.application_review.ApplicationReview/DecideApplicationVersionReview" {
+		t.Fatalf("gRPC method = %q", DecideApplicationVersionReviewGRPCMethod)
+	}
+	if DecideApplicationVersionReviewGRPCMethod != applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview {
+		t.Fatalf("gRPC method = %q, generated operation = %q", DecideApplicationVersionReviewGRPCMethod, applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview)
+	}
+	generated, err := os.ReadFile(filepath.Join(root, "api", "gen", "go", "app_center", "v1", "application_review", "application_review_http.pb.go"))
+	if err != nil {
+		t.Fatalf("read generated HTTP code: %v", err)
+	}
+	if !strings.Contains(string(generated), `r.POST("`+postPath+`"`) {
+		t.Fatalf("generated HTTP code is missing route %q", postPath)
+	}
+}
+
+func TestAPIContract_UCAPP005_DecisionBodyExcludesTrustedAndServerFields(t *testing.T) {
+	t.Parallel()
+	request := &applicationreviewv1.DecideApplicationVersionReviewRequest{}
+	wantOuter := []string{"application_id", "command", "review_id", "version_id"}
+	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != strings.Join(wantOuter, ",") {
+		t.Fatalf("outer request fields = %v, want %v", fields, wantOuter)
+	}
+	command := &applicationreviewv1.DecideApplicationVersionReviewCommand{}
+	wantCommand := []string{"confirmed_check_ids", "expected_policy_version", "outcome", "reason"}
+	if fields := messageFieldNames(t, command); strings.Join(fields, ",") != strings.Join(wantCommand, ",") {
+		t.Fatalf("command fields = %v, want %v", fields, wantCommand)
+	}
+	for _, field := range []string{"auth_id", "permissions", "developer_status", "decided_by", "decided_at", "approval_validation", "status"} {
+		if containsField(command, field) {
+			t.Fatalf("decision command contains trusted/server-owned field %q", field)
+		}
+	}
+}
+
+func TestAPIContract_UCAPP005_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
+	t.Parallel()
+	for _, reason := range []string{
+		ReasonReviewerIdentityRequired,
+		ReasonInvalidReviewerIdentity,
+		ReasonApplicationReviewPermissionRequired,
+		ReasonApplicationReviewAlreadyDecided,
+		ReasonApplicationReviewConflictOfInterest,
+		ReasonInvalidApplicationReviewOutcome,
+		ReasonInvalidApplicationReviewPolicyVersion,
+		ReasonApplicationReviewPolicyChanged,
+		ReasonApplicationReviewChecksIncomplete,
+		ReasonInvalidApplicationReviewChecks,
+		ReasonInvalidApplicationReviewReason,
+		ReasonDeveloperStatusUnavailable,
+	} {
+		if _, ok := applicationreviewv1.ErrorReason_value[reason]; !ok {
+			t.Fatalf("generated UC-APP-005 ErrorReason enum is missing %q", reason)
+		}
+	}
+}

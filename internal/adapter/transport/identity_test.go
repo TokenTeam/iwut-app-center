@@ -183,6 +183,22 @@ func TestIdentityVerifier_ValidTokenStringAudience(t *testing.T) {
 	}
 }
 
+func TestIdentityVerifier_ReviewerTokenWithoutDeveloperStatus(t *testing.T) {
+	t.Parallel()
+
+	claims := validClaims(fixedNow())
+	delete(claims, "developer_status")
+	claims["permissions"] = []string{"app.version.review", "future.permission"}
+	identity, err := newTestVerifier(t).Verify(signToken(t, tokenOptions{claims: claims}))
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	if identity.AuthID != tokenSubject || identity.DeveloperStatus != "" ||
+		len(identity.Permissions) != 2 || identity.Permissions[0] != "app.version.review" {
+		t.Fatalf("reviewer identity = %#v", identity)
+	}
+}
+
 func TestIdentityVerifier_RejectsInvalidTokens(t *testing.T) {
 	t.Parallel()
 
@@ -332,6 +348,22 @@ func TestIdentityVerifier_RejectsInvalidTokens(t *testing.T) {
 			},
 		},
 		{
+			name: "duplicate permission",
+			token: func(t *testing.T) string {
+				claims := validClaims(now)
+				claims["permissions"] = []string{"app.version.review", "app.version.review"}
+				return signToken(t, tokenOptions{claims: claims})
+			},
+		},
+		{
+			name: "permission with surrounding whitespace",
+			token: func(t *testing.T) string {
+				claims := validClaims(now)
+				claims["permissions"] = []string{" app.version.review"}
+				return signToken(t, tokenOptions{claims: claims})
+			},
+		},
+		{
 			name: "empty subject",
 			token: func(t *testing.T) string {
 				claims := validClaims(now)
@@ -359,7 +391,7 @@ func TestIdentityVerifier_RejectsMissingClaims(t *testing.T) {
 	t.Parallel()
 
 	now := fixedNow()
-	for _, missing := range []string{"iss", "sub", "aud", "iat", "nbf", "exp", "jti", "developer_status"} {
+	for _, missing := range []string{"iss", "sub", "aud", "iat", "nbf", "exp", "jti"} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			claims := validClaims(now)

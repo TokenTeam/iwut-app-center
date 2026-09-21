@@ -25,6 +25,9 @@ const (
 	applicationReviewMigrationID              = "0004_application_review_submission"
 	applicationReviewDecisionMigrationID      = "0005_application_review_decision"
 	applicationReviewRestorationMigrationID   = "0006_application_review_draft_restoration"
+	versionReviewPolicyMigrationID            = "0007_version_review_policy"
+	versionReviewPoliciesCollectionName       = "version_review_policies"
+	versionReviewPolicyVersionUniqueIndexName = "uq_version_review_policies_version"
 	applicationReviewIDUniqueIndexName        = "uq_application_reviews_review_id"
 	applicationReviewAttemptUniqueIndexName   = "uq_application_reviews_version_id_attempt"
 	applicationReviewSourceUniqueIndexName    = "uq_application_reviews_version_id_source_revision"
@@ -66,6 +69,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationReviewMigrationID, apply: migrator.applyApplicationReviewMigration},
 		{id: applicationReviewDecisionMigrationID, apply: migrator.applyApplicationReviewDecisionMigration},
 		{id: applicationReviewRestorationMigrationID, apply: migrator.applyApplicationReviewRestorationMigration},
+		{id: versionReviewPolicyMigrationID, apply: migrator.applyVersionReviewPolicyMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -275,6 +279,41 @@ func (migrator *Migrator) applyApplicationReviewRestorationMigration(ctx context
 	return nil
 }
 
+func (migrator *Migrator) applyVersionReviewPolicyMigration(ctx context.Context) error {
+	if err := migrator.ensureValidatedCollection(ctx, versionReviewPoliciesCollectionName, versionReviewPolicyValidator()); err != nil {
+		return err
+	}
+	collection := migrator.database.Collection(versionReviewPoliciesCollectionName)
+	if _, err := collection.Indexes().CreateOne(ctx, drivermongo.IndexModel{
+		Keys:    bson.D{{Key: "version", Value: 1}},
+		Options: options.Index().SetName(versionReviewPolicyVersionUniqueIndexName).SetUnique(true),
+	}); err != nil {
+		return fmt.Errorf("create version review policy index: %w", err)
+	}
+
+	seed := versionReviewPolicyDocument{
+		Version: "app-version-review-v1",
+		RequiredChecks: []string{
+			"content-policy-reviewed",
+			"launch-url-content-reviewed",
+			"requested-access-reviewed",
+		},
+		Status: "ACTIVE",
+	}
+	_, err := collection.InsertOne(ctx, seed)
+	if err != nil && !drivermongo.IsDuplicateKeyError(err) {
+		return fmt.Errorf("seed version review policy: %w", err)
+	}
+	var existing versionReviewPolicyDocument
+	if err := collection.FindOne(ctx, bson.D{{Key: "version", Value: seed.Version}}).Decode(&existing); err != nil {
+		return fmt.Errorf("verify version review policy seed: %w", err)
+	}
+	if !equalVersionReviewPolicyDocuments(existing, seed) {
+		return fmt.Errorf("verify version review policy seed: version %q has different immutable content", seed.Version)
+	}
+	return nil
+}
+
 func (migrator *Migrator) ensureValidatedCollection(ctx context.Context, name string, validator bson.D) error {
 	err := migrator.database.CreateCollection(
 		ctx,
@@ -306,6 +345,30 @@ func (migrator *Migrator) ensureValidatedCollection(ctx context.Context, name st
 func isNamespaceExists(err error) bool {
 	var commandError drivermongo.CommandError
 	return errors.As(err, &commandError) && commandError.Code == 48
+}
+
+func versionReviewPolicyValidator() bson.D {
+	return bson.D{{Key: "$jsonSchema", Value: bson.D{
+		{Key: "bsonType", Value: "object"},
+		{Key: "required", Value: bson.A{"version", "requiredChecks", "status"}},
+		{Key: "additionalProperties", Value: false},
+		{Key: "properties", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
+			{Key: "version", Value: bson.D{
+				{Key: "bsonType", Value: "string"},
+				{Key: "pattern", Value: "^[A-Za-z0-9._-]{1,50}$"},
+			}},
+			{Key: "requiredChecks", Value: bson.D{
+				{Key: "bsonType", Value: "array"},
+				{Key: "uniqueItems", Value: true},
+				{Key: "items", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}}},
+			}},
+			{Key: "status", Value: bson.D{
+				{Key: "bsonType", Value: "string"},
+				{Key: "enum", Value: bson.A{"ACTIVE", "RETIRED"}},
+			}},
+		}},
+	}}}
 }
 
 // applicationInitialValidator is the 0001 schema. It must stay byte-for-byte

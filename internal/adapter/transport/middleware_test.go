@@ -185,6 +185,27 @@ func TestIdentityMiddleware_RejectsMissingAndLegacyIdentity(t *testing.T) {
 	})
 }
 
+func TestIdentityMiddleware_UsesReviewerReasonsForDecisionOperation(t *testing.T) {
+	t.Parallel()
+
+	verifier := newTestVerifier(t)
+	ctx := transport.NewServerContext(context.Background(), fakeTransporter{
+		kind:      transport.KindGRPC,
+		header:    grpcHeader{values: metadata.MD{}},
+		operation: DecideApplicationVersionReviewGRPCMethod,
+	})
+	_, err := runIdentityMiddleware(t, verifier, ctx)
+	assertTransportError(t, err, codes.Unauthenticated, ReasonReviewerIdentityRequired)
+
+	invalidCtx := transport.NewServerContext(context.Background(), fakeTransporter{
+		kind:      transport.KindGRPC,
+		header:    grpcHeader{values: metadata.Pairs(IdentityHeader, "not-a-jws")},
+		operation: DecideApplicationVersionReviewGRPCMethod,
+	})
+	_, err = runIdentityMiddleware(t, verifier, invalidCtx)
+	assertTransportError(t, err, codes.Unauthenticated, ReasonInvalidReviewerIdentity)
+}
+
 func TestIdentityMiddleware_AllowsInfrastructureRPCsWithoutIdentity(t *testing.T) {
 	t.Parallel()
 

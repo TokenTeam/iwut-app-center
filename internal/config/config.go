@@ -24,6 +24,7 @@ const (
 	IdentityClockSkewEnv       = "APP_CENTER_IDENTITY_CLOCK_SKEW"
 	IdentityPublicKeysEnv      = "APP_CENTER_IDENTITY_PUBLIC_KEYS"
 	AuthScopeCatalogTargetEnv  = "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET"
+	SystemAuthIDEnv            = "APP_CENTER_SYSTEM_AUTH_ID"
 
 	DefaultScopeCatalogCacheTTL = 5 * time.Minute
 	DefaultHTTPAddr             = ":8080"
@@ -58,6 +59,7 @@ type Config struct {
 	IdentityPublicKeyFiles map[string]string
 
 	AuthScopeCatalogTarget string
+	SystemAuthID           string
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -144,6 +146,9 @@ func Load(lookup LookupEnv) (Config, error) {
 		return Config{}, err
 	}
 	if configuration.AuthScopeCatalogTarget, err = requiredValue(lookup, AuthScopeCatalogTargetEnv); err != nil {
+		return Config{}, err
+	}
+	if configuration.SystemAuthID, err = requiredValue(lookup, SystemAuthIDEnv); err != nil {
 		return Config{}, err
 	}
 
