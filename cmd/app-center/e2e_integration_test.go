@@ -375,6 +375,11 @@ func TestE2E_UCAPP001_CreateApplicationOverRealHTTPAndGRPC(t *testing.T) {
 	if bytes.Contains(invalidBody, []byte(invalidToken)) {
 		t.Fatalf("authentication failure leaked the token: %s", invalidBody)
 	}
+	ordinaryToken := e2eSignReviewerIdentity(t, privateKey, "auth-e2e-ordinary")
+	ordinaryStatus, ordinaryBody := e2eHTTPCreate(t, httpAddress, ordinaryToken, "Ordinary_User_Cannot_Create")
+	if ordinaryStatus != http.StatusForbidden || !bytes.Contains(ordinaryBody, []byte(transport.ReasonDeveloperApprovalRequired)) {
+		t.Fatalf("ordinary user response = status:%d body:%s, want 403 developer approval required", ordinaryStatus, ordinaryBody)
+	}
 	e2eAssertCollectionCount(t, database, "applications", 2)
 }
 
