@@ -181,7 +181,7 @@ func TestPublicationService_UCAPP007_HTTPErrorStatus(t *testing.T) {
 	} {
 		t.Run(tc.err.Error(), func(t *testing.T) {
 			h := &fakePlaceHandler{err: tc.err}
-			servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(h), NewTesterJoinLinkService(nil))
+			servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(h), NewTesterJoinLinkService(nil), NewTesterMembershipService(nil))
 			if err != nil {
 				t.Fatal(err)
 			}

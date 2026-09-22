@@ -35,3 +35,11 @@ func developerIdentityFromContext(ctx context.Context) (shared.DeveloperIdentity
 	}
 	return shared.DeveloperIdentity{AuthID: identity.AuthID, DeveloperStatus: identity.DeveloperStatus}, true
 }
+
+func authenticatedUserIdentityFromContext(ctx context.Context) (shared.AuthenticatedUserIdentity, bool) {
+	identity, ok := trustedIdentityFromContext(ctx)
+	if !ok || !identity.AuthID.IsValid() {
+		return shared.AuthenticatedUserIdentity{}, false
+	}
+	return shared.AuthenticatedUserIdentity{AuthID: identity.AuthID}, true
+}

@@ -122,7 +122,11 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationTesterJoinLinkRepository := mongo.NewApplicationTesterJoinLinkRepository(database)
 	createOrRotateTesterJoinLinkHandler := usecase5.NewCreateOrRotateTesterJoinLinkHandler(secureTesterJoinTokenFactory, testerJoinURLBuilder, publicationUUIDv7Generator, systemClock, applicationTesterJoinLinkRepository)
 	testerJoinLinkService := transport.NewTesterJoinLinkService(createOrRotateTesterJoinLinkHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService)
+	tokenHasher := testercredential.NewTokenHasher()
+	applicationTesterMembershipRepository := mongo.NewApplicationTesterMembershipRepository(database)
+	joinApplicationAsTesterHandler := usecase5.NewJoinApplicationAsTesterHandler(tokenHasher, publicationUUIDv7Generator, systemClock, applicationTesterMembershipRepository)
+	testerMembershipService := transport.NewTesterMembershipService(joinApplicationAsTesterHandler)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService)
 	if err != nil {
 		cleanup2()
 		cleanup()

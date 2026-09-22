@@ -40,32 +40,36 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-008 Create Or Rotate Tester Join Link delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-008.md`, generated from
-`docs/tools/brief-specs/UC-APP-008.json`. Regenerate it whenever a selected
-source changes.
+**UC-APP-009 Join Application As Tester delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-009.md`, generated from
+`docs/tools/brief-specs/UC-APP-009.json`. Regenerate it whenever a selected
+source changes. The brief selects BR-TST-010 through BR-TST-019, the shared
+identity/URL/routing contracts and ADR-006; reuse the engineering baseline.
 
 Code scope:
 
-- `internal/tester/{domain,usecase,port}` — Application-level join link,
-  expected active ID, immutable token hash and atomic rotation lifecycle.
-- `internal/adapter/mongo` — explicit migration, single-ACTIVE partial unique
-  index, immutable history facts, transactional rollback and admin write fence.
-- Capability-owned ports plus secure token and URL builder adapters — real
-  32-byte CSPRNG secret, SHA-256, and shared fragment URL contract.
-- `internal/config` — APP_CENTER_TESTER_JOIN_URL_PREFIX, default mock prefix
-  https://app.example/tester/join, strict startup validation and injection.
+- `internal/tester/{domain,usecase,port}` — Application-level immutable
+  membership episodes, canonical secret hashing, ordinary authenticated user,
+  ACTIVE idempotency and fixed capacity 100.
+- `internal/adapter/mongo` — explicit migration, ACTIVE partial unique index,
+  immutable history, shared UC008 Application coordinationRevision write fence.
+  Acquire the fence before final link validation, idempotency lookup, ACTIVE
+  count and insert in one snapshot/majority transaction; no stored counter.
+- `internal/shared` and transport — minimal authenticated user identity from
+  trusted context and UC009 authentication/error mapping, without Developer gate.
 - `api/`, transport and `cmd/app-center/` — resource Proto/HTTP/gRPC,
-  trusted developer identity, no-store sensitive response, Wire and real E2E.
+  201 new / 200 idempotent, no-store response, Wire and real MongoDB E2E.
+- Tests must prove last-slot contention, same-user concurrency, old-link
+  rejection after rotation, rollback, full-list idempotency and safe redaction.
 
 Explicit non-goals:
 
-- No UC009 membership/join command, tester capacity, standalone revoke, QR
-  image generation, frontend/landing page or actual URL hosting.
-- Mock only the URL entrance; use real tokens, hashes and persistence.
+- No removal, standalone revocation, listing or launch-target resolution APIs;
+  preserve REMOVED episode shape only for rejoin/history invariants.
+- No frontend/landing page, QR rendering or URL hosting.
 - No Auth provider/Gateway changes, Scope Catalog dependency, permission
   management, publication changes or legacy compatibility.
-- Do not modify Application business fields; adapter-only fences are allowed.
+- Do not modify Application business fields; reuse adapter-only write fences.
 - No push in any repository; keep API, service and documentation changes local.
 
 Verification commands:

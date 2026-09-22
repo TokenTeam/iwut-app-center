@@ -19,6 +19,11 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonAuthenticatedUserRequired              = "ERROR_REASON_AUTHENTICATED_USER_REQUIRED"
+	ReasonInvalidAuthenticatedUser               = "ERROR_REASON_INVALID_AUTHENTICATED_USER"
+	ReasonInvalidTesterJoinSecret                = "ERROR_REASON_INVALID_TESTER_JOIN_SECRET"
+	ReasonTesterJoinLinkInvalid                  = "ERROR_REASON_TESTER_JOIN_LINK_INVALID"
+	ReasonApplicationTesterLimitReached          = "ERROR_REASON_APPLICATION_TESTER_LIMIT_REACHED"
 	ReasonInvalidTesterJoinLinkId                = "ERROR_REASON_INVALID_TESTER_JOIN_LINK_ID"
 	ReasonApplicationTesterJoinLinkAlreadyExists = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_ALREADY_EXISTS"
 	ReasonApplicationTesterJoinLinkNotFound      = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_NOT_FOUND"
@@ -207,6 +212,10 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 }
 
 var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
+	testerdomain.ErrorCodeAuthenticatedUserRequired:              {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
+	testerdomain.ErrorCodeInvalidTesterJoinSecret:                {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinSecret, message: "tester join credential is invalid"},
+	testerdomain.ErrorCodeTesterJoinLinkInvalid:                  {code: codes.NotFound, reason: ReasonTesterJoinLinkInvalid, message: "tester join link is invalid"},
+	testerdomain.ErrorCodeApplicationTesterLimitReached:          {code: codes.Aborted, reason: ReasonApplicationTesterLimitReached, message: "application tester limit reached"},
 	testerdomain.ErrorCodeInvalidTesterJoinLinkId:                {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinLinkId, message: "tester join link ID is invalid"},
 	testerdomain.ErrorCodeApplicationTesterJoinLinkAlreadyExists: {code: codes.AlreadyExists, reason: ReasonApplicationTesterJoinLinkAlreadyExists, message: "active tester join link already exists"},
 	testerdomain.ErrorCodeApplicationTesterJoinLinkNotFound:      {code: codes.NotFound, reason: ReasonApplicationTesterJoinLinkNotFound, message: "active tester join link not found"},

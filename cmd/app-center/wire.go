@@ -32,6 +32,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		testercredential.ProviderSet,
 		provideTesterJoinURLPrefix,
 		testerusecase.NewCreateOrRotateTesterJoinLinkHandler,
+		testerusecase.NewJoinApplicationAsTesterHandler,
+		wire.Bind(new(transport.JoinApplicationAsTesterHandler), new(*testerusecase.JoinApplicationAsTesterHandler)),
 		wire.Bind(new(transport.CreateOrRotateTesterJoinLinkHandler), new(*testerusecase.CreateOrRotateTesterJoinLinkHandler)),
 		auth.ProviderSet,
 		mongo.ProviderSet,

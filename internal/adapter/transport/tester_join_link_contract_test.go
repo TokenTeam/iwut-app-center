@@ -56,9 +56,9 @@ func TestAPIContract_UCAPP008_BR_TST_005_ExpectedLinkPresence(t *testing.T) {
 			t.Fatalf("presence wrong for %s", tc.body)
 		}
 	}
-	for _, spec := range testerDomainErrorSpecs {
-		if _, ok := testerjoinlinkv1.ErrorReason_value[spec.reason]; !ok {
-			t.Fatalf("missing error reason %s", spec.reason)
+	for _, reason := range []string{ReasonDeveloperIdentityRequired, ReasonInvalidDeveloperIdentity, ReasonDeveloperApprovalRequired, ReasonInvalidApplicationID, ReasonInvalidTesterJoinLinkId, ReasonApplicationNotFound, ReasonApplicationAdminRequired, ReasonApplicationTesterJoinLinkAlreadyExists, ReasonApplicationTesterJoinLinkNotFound, ReasonApplicationTesterJoinLinkChanged, ReasonInternal} {
+		if _, ok := testerjoinlinkv1.ErrorReason_value[reason]; !ok {
+			t.Fatalf("missing error reason %s", reason)
 		}
 	}
 }

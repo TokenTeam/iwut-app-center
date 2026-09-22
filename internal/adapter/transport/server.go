@@ -3,7 +3,10 @@ package transport
 import (
 	"errors"
 	"fmt"
+	kerrors "github.com/go-kratos/kratos/v2/errors"
+	testerdomain "iwut-app-center/internal/tester/domain"
 	"net/http"
+	"strings"
 
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
@@ -13,9 +16,13 @@ import (
 	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
 	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
+	testermembershipv1 "iwut-app-center/api/gen/go/app_center/v1/tester_membership"
 )
 
 const (
+	JoinApplicationAsTesterInternalPath        = "/v1/tester-join-links/{join_link_id}/memberships"
+	JoinApplicationAsTesterExternalPath        = ServicePrefix + JoinApplicationAsTesterInternalPath
+	JoinApplicationAsTesterGRPCMethod          = testermembershipv1.OperationTesterMembershipJoinApplicationAsTester
 	CreateOrRotateTesterJoinLinkInternalPath   = "/v1/applications/{application_id}/tester-join-links"
 	CreateOrRotateTesterJoinLinkExternalPath   = ServicePrefix + CreateOrRotateTesterJoinLinkInternalPath
 	CreateOrRotateTesterJoinLinkGRPCMethod     = testerjoinlinkv1.OperationTesterJoinLinkCreateOrRotateTesterJoinLink
@@ -71,6 +78,7 @@ func NewServers(
 	reviewService *ApplicationReviewService,
 	publicationService *ApplicationPublicationService,
 	testerJoinLinkService *TesterJoinLinkService,
+	testerMembershipService *TesterMembershipService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -91,11 +99,17 @@ func NewServers(
 	if testerJoinLinkService == nil {
 		return nil, errors.New("transport servers: tester join link service is required")
 	}
+	if testerMembershipService == nil {
+		return nil, errors.New("transport servers: tester membership service is required")
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
+		khttp.Filter(testerMembershipCredentialFilter(verifier)),
 		khttp.Middleware(identityMiddleware(verifier)),
 		khttp.ResponseEncoder(createdResponseEncoder),
+		khttp.ErrorEncoder(credentialSafeErrorEncoder),
 	)
+	testermembershipv1.RegisterTesterMembershipHTTPServer(httpServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
@@ -106,6 +120,7 @@ func NewServers(
 		kgrpc.Address(config.GRPCAddr),
 		kgrpc.Middleware(identityMiddleware(verifier)),
 	)
+	testermembershipv1.RegisterTesterMembershipServer(grpcServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationServer(grpcServer, publicationService)
 	applicationv1.RegisterApplicationServer(grpcServer, service)
@@ -121,6 +136,11 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *testermembershipv1.JoinApplicationAsTesterResponse:
+		w.Header().Set("Cache-Control", "no-store")
+		if response.GetJoined() {
+			w.WriteHeader(http.StatusCreated)
+		}
 	case *testerjoinlinkv1.CreateOrRotateTesterJoinLinkResponse:
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
@@ -145,4 +165,63 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.WriteHeader(http.StatusCreated)
 	}
 	return khttp.DefaultResponseEncoder(w, r, v)
+}
+
+// HTTP binding failures occur before the service and can include raw JSON
+// values. Never return those parser details on the credential-bearing route.
+func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isTesterMembershipRequest(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := testermembershipv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = toTransportError(testerdomain.ErrInvalidTesterJoinSecret)
+			} else {
+				err = toTransportError(testerdomain.NewInternalError(nil))
+			}
+		}
+	}
+	khttp.DefaultErrorEncoder(w, r, err)
+}
+
+func isTesterMembershipRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/tester-join-links/") && strings.HasSuffix(r.URL.Path, "/memberships") && strings.Count(r.URL.Path, "/") == 4
+}
+
+// Generated bindings decode sensitive JSON before invoking Kratos middleware.
+// This narrow filter establishes authentication first; the shared middleware
+// still verifies and supplies the trusted use-case identity for both protocols.
+func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isTesterMembershipRequest(r) {
+				w.Header().Set("Cache-Control", "no-store")
+				var identityErr error
+				for _, key := range legacyIdentityHeaders {
+					for _, value := range r.Header.Values(key) {
+						if strings.TrimSpace(value) != "" {
+							identityErr = errIdentityInvalid
+						}
+					}
+				}
+				if identityErr == nil {
+					values := r.Header.Values(IdentityHeader)
+					switch {
+					case len(values) == 0:
+						identityErr = errIdentityRequired
+					case len(values) != 1:
+						identityErr = errIdentityInvalid
+					case strings.TrimSpace(values[0]) == "":
+						identityErr = errIdentityRequired
+					default:
+						_, identityErr = verifier.Verify(strings.TrimSpace(values[0]))
+					}
+				}
+				if identityErr != nil {
+					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, JoinApplicationAsTesterGRPCMethod))
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

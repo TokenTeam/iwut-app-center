@@ -29,3 +29,10 @@ func (f *SecureTesterJoinTokenFactory) NewToken() (string, [32]byte, error) {
 }
 
 var _ testerport.SecureTesterJoinTokenFactory = (*SecureTesterJoinTokenFactory)(nil)
+
+type TokenHasher struct{}
+
+func NewTokenHasher() *TokenHasher              { return &TokenHasher{} }
+func (*TokenHasher) Hash(raw [32]byte) [32]byte { return sha256.Sum256(raw[:]) }
+
+var _ testerport.TesterJoinTokenHasher = (*TokenHasher)(nil)

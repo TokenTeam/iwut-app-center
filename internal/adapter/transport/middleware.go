@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
+	testermembershipv1 "iwut-app-center/api/gen/go/app_center/v1/tester_membership"
 )
 
 // legacyIdentityHeaders are the unsigned JSON carriers of the retired system.
@@ -50,6 +51,9 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
+				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester {
+					transporter.ReplyHeader().Set("Cache-Control", "no-store")
+				}
 			}
 			if hasLegacyIdentityHeader(ctx) {
 				return nil, toIdentityTransportError(errIdentityInvalid, operation)
@@ -68,6 +72,12 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
+	if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester {
+		if errors.Is(err, errIdentityRequired) {
+			return transportStatus(codes.Unauthenticated, ReasonAuthenticatedUserRequired, "authenticated user is required")
+		}
+		return transportStatus(codes.Unauthenticated, ReasonInvalidAuthenticatedUser, "authenticated user identity is invalid")
+	}
 	if operation == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonReviewerIdentityRequired, "reviewer identity is required")

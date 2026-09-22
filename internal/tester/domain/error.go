@@ -17,6 +17,10 @@ const (
 type ErrorCode string
 
 const (
+	ErrorCodeAuthenticatedUserRequired              ErrorCode = "AuthenticatedUserRequired"
+	ErrorCodeInvalidTesterJoinSecret                ErrorCode = "InvalidTesterJoinSecret"
+	ErrorCodeTesterJoinLinkInvalid                  ErrorCode = "TesterJoinLinkInvalid"
+	ErrorCodeApplicationTesterLimitReached          ErrorCode = "ApplicationTesterLimitReached"
 	ErrorCodeDeveloperIdentityRequired              ErrorCode = "DeveloperIdentityRequired"
 	ErrorCodeDeveloperApprovalRequired              ErrorCode = "DeveloperApprovalRequired"
 	ErrorCodeInvalidApplicationId                   ErrorCode = "InvalidApplicationId"
@@ -54,6 +58,10 @@ func (e *Error) Is(target error) bool {
 }
 
 var (
+	ErrAuthenticatedUserRequired              = newError(ErrorCategoryAuthentication, ErrorCodeAuthenticatedUserRequired, "authenticated user is required", nil)
+	ErrInvalidTesterJoinSecret                = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterJoinSecret, "tester join secret is invalid", nil)
+	ErrTesterJoinLinkInvalid                  = newError(ErrorCategoryNotFound, ErrorCodeTesterJoinLinkInvalid, "tester join link is invalid", nil)
+	ErrApplicationTesterLimitReached          = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterLimitReached, "application tester limit reached", nil)
 	ErrDeveloperIdentityRequired              = newError(ErrorCategoryAuthentication, ErrorCodeDeveloperIdentityRequired, "developer identity is required", nil)
 	ErrDeveloperApprovalRequired              = newError(ErrorCategoryAuthorization, ErrorCodeDeveloperApprovalRequired, "approved developer status is required", nil)
 	ErrInvalidApplicationId                   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationId, "application ID is invalid", nil)

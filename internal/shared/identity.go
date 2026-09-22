@@ -36,3 +36,8 @@ type TrustedIdentity struct {
 	DeveloperStatus DeveloperStatus
 	Permissions     []string
 }
+
+// AuthenticatedUserIdentity contains only the verified caller subject.
+type AuthenticatedUserIdentity struct {
+	AuthID AuthID
+}
