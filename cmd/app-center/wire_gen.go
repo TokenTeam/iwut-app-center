@@ -12,11 +12,13 @@ import (
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/preflight"
+	"iwut-app-center/internal/adapter/testercredential"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
 	usecase4 "iwut-app-center/internal/publication/usecase"
 	usecase3 "iwut-app-center/internal/review/usecase"
+	usecase5 "iwut-app-center/internal/tester/usecase"
 	usecase2 "iwut-app-center/internal/version/usecase"
 )
 
@@ -109,7 +111,18 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationPublicationRepository := mongo.NewApplicationPublicationRepository(database)
 	placeApprovedVersionInTestSlotHandler := usecase4.NewPlaceApprovedVersionInTestSlotHandler(publicationScopeCatalog, publicationLaunchURLSubmissionPolicy, publicationUUIDv7Generator, systemClock, applicationPublicationRepository)
 	applicationPublicationService := transport.NewApplicationPublicationService(placeApprovedVersionInTestSlotHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService)
+	secureTesterJoinTokenFactory := testercredential.NewSecureTesterJoinTokenFactory()
+	string2 := provideTesterJoinURLPrefix(configuration)
+	testerJoinURLBuilder, err := testercredential.NewTesterJoinURLBuilder(string2)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	applicationTesterJoinLinkRepository := mongo.NewApplicationTesterJoinLinkRepository(database)
+	createOrRotateTesterJoinLinkHandler := usecase5.NewCreateOrRotateTesterJoinLinkHandler(secureTesterJoinTokenFactory, testerJoinURLBuilder, publicationUUIDv7Generator, systemClock, applicationTesterJoinLinkRepository)
+	testerJoinLinkService := transport.NewTesterJoinLinkService(createOrRotateTesterJoinLinkHandler)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService)
 	if err != nil {
 		cleanup2()
 		cleanup()

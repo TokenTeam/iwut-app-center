@@ -4,15 +4,18 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"iwut-app-center/internal/application/domain"
 )
 
 const (
+	TesterJoinURLPrefixEnv       = "APP_CENTER_TESTER_JOIN_URL_PREFIX"
 	InitialApplicationQuotaEnv   = "APP_CENTER_INITIAL_APPLICATION_QUOTA"
 	ScopeCatalogCacheTTLEnv      = "APP_CENTER_SCOPE_CATALOG_CACHE_TTL"
 	HTTPAddrEnv                  = "APP_CENTER_HTTP_ADDR"
@@ -31,6 +34,7 @@ const (
 	ServiceIdentityPrivateKeyEnv = "APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64"
 	ServiceIdentityTTLEnv        = "APP_CENTER_SERVICE_IDENTITY_TTL"
 
+	DefaultTesterJoinURLPrefix     = "https://app.example/tester/join"
 	DefaultScopeCatalogCacheTTL    = 5 * time.Minute
 	DefaultHTTPAddr                = ":8080"
 	DefaultGRPCAddr                = ":9090"
@@ -50,6 +54,7 @@ type LookupEnv func(key string) (value string, found bool)
 // receive the scalar values they need through constructors and never read the
 // environment themselves.
 type Config struct {
+	TesterJoinURLPrefix     string
 	InitialApplicationQuota int32
 	ScopeCatalogCacheTTL    time.Duration
 
@@ -111,6 +116,7 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 
 	configuration := Config{
+		TesterJoinURLPrefix:     DefaultTesterJoinURLPrefix,
 		InitialApplicationQuota: domain.InitialDeveloperApplicationQuotaLimit,
 		ScopeCatalogCacheTTL:    DefaultScopeCatalogCacheTTL,
 		HTTPAddr:                DefaultHTTPAddr,
@@ -121,6 +127,13 @@ func Load(lookup LookupEnv) (Config, error) {
 		IdentityClockSkew:       DefaultIdentityClockSkew,
 		ServiceIdentityAudience: DefaultServiceIdentityAudience,
 		ServiceIdentityTTL:      DefaultServiceIdentityTTL,
+	}
+
+	if raw, found := lookup(TesterJoinURLPrefixEnv); found {
+		if !validTesterJoinURLPrefix(raw) {
+			return Config{}, fmt.Errorf("%w: %s must be an absolute HTTP(S) URL with host and no userinfo, query, fragment or whitespace", ErrInvalidConfiguration, TesterJoinURLPrefixEnv)
+		}
+		configuration.TesterJoinURLPrefix = raw
 	}
 
 	if raw, found := lookup(InitialApplicationQuotaEnv); found {
@@ -259,4 +272,12 @@ func ParsePublicKeyFiles(raw string) (map[string]string, error) {
 		return nil, fmt.Errorf("%w: %s must declare at least one kid=path", ErrInvalidConfiguration, IdentityPublicKeysEnv)
 	}
 	return files, nil
+}
+
+func validTesterJoinURLPrefix(prefix string) bool {
+	if prefix == "" || strings.TrimSpace(prefix) != prefix || strings.ContainsAny(prefix, "?#") || strings.ContainsFunc(prefix, unicode.IsSpace) {
+		return false
+	}
+	parsed, err := url.Parse(prefix)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && parsed.Hostname() != "" && parsed.User == nil && parsed.Opaque == "" && parsed.RawQuery == "" && !parsed.ForceQuery && parsed.Fragment == ""
 }

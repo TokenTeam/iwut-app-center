@@ -11,11 +11,13 @@ import (
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/preflight"
+	"iwut-app-center/internal/adapter/testercredential"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
 	publicationusecase "iwut-app-center/internal/publication/usecase"
 	reviewusecase "iwut-app-center/internal/review/usecase"
+	testerusecase "iwut-app-center/internal/tester/usecase"
 	versionusecase "iwut-app-center/internal/version/usecase"
 )
 
@@ -27,6 +29,10 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		testercredential.ProviderSet,
+		provideTesterJoinURLPrefix,
+		testerusecase.NewCreateOrRotateTesterJoinLinkHandler,
+		wire.Bind(new(transport.CreateOrRotateTesterJoinLinkHandler), new(*testerusecase.CreateOrRotateTesterJoinLinkHandler)),
 		auth.ProviderSet,
 		mongo.ProviderSet,
 		preflight.ProviderSet,

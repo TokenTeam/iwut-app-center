@@ -40,32 +40,32 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-007 Place Approved Version In Test Slot delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-007.md`, generated from
-`docs/tools/brief-specs/UC-APP-007.json`. Regenerate it whenever a selected
+**UC-APP-008 Create Or Rotate Tester Join Link delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-008.md`, generated from
+`docs/tools/brief-specs/UC-APP-008.json`. Regenerate it whenever a selected
 source changes.
 
 Code scope:
 
-- `internal/publication/{domain,usecase,port}` — approved snapshot eligibility,
-  per-RPC-major test pointer, expected revision/no-op and immutable history.
-- `internal/adapter/mongo` — explicit Publication/History migration, atomic
-  persistence, rollback, unique constraints and real concurrency fences.
-- `internal/adapter/auth` and `internal/adapter/preflight` — adapt existing
-  Scope Catalog cache and DNS-only URL policy to publication-owned ports.
-- `api/` and `internal/adapter/transport` — generated publication RPC and
-  resource HTTP API, trusted developer identity, status/error mapping.
-- `cmd/app-center/` and config only as necessary — Wire assembly and real
-  MongoDB/HTTP/gRPC/JWS consumer E2E.
+- `internal/tester/{domain,usecase,port}` — Application-level join link,
+  expected active ID, immutable token hash and atomic rotation lifecycle.
+- `internal/adapter/mongo` — explicit migration, single-ACTIVE partial unique
+  index, immutable history facts, transactional rollback and admin write fence.
+- Capability-owned ports plus secure token and URL builder adapters — real
+  32-byte CSPRNG secret, SHA-256, and shared fragment URL contract.
+- `internal/config` — APP_CENTER_TESTER_JOIN_URL_PREFIX, default mock prefix
+  https://app.example/tester/join, strict startup validation and injection.
+- `api/`, transport and `cmd/app-center/` — resource Proto/HTTP/gRPC,
+  trusted developer identity, no-store sensitive response, Wire and real E2E.
 
 Explicit non-goals:
 
-- No tester links/memberships, launch resolution, public profile, grey/stable
-  slots, automatic publication, slot clearing or review revoke endpoint.
-- No Auth provider/Gateway changes, permission management, frontend or legacy
-  compatibility. Auth authoritative Scope Catalog remains a tracked dependency.
-- Do not change Application/Version business content, status or revision when
-  placing a test pointer; adapter-only transaction fences are permitted.
+- No UC009 membership/join command, tester capacity, standalone revoke, QR
+  image generation, frontend/landing page or actual URL hosting.
+- Mock only the URL entrance; use real tokens, hashes and persistence.
+- No Auth provider/Gateway changes, Scope Catalog dependency, permission
+  management, publication changes or legacy compatibility.
+- Do not modify Application business fields; adapter-only fences are allowed.
 - No push in any repository; keep API, service and documentation changes local.
 
 Verification commands:
@@ -102,6 +102,9 @@ internal/review/port/
 internal/publication/domain/
 internal/publication/usecase/
 internal/publication/port/
+internal/tester/domain/
+internal/tester/usecase/
+internal/tester/port/
 internal/adapter/
 ```
 

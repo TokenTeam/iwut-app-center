@@ -11,6 +11,7 @@ import (
 func validConfig() config.Config {
 	return config.Config{
 		InitialApplicationQuota: 10,
+		TesterJoinURLPrefix:     config.DefaultTesterJoinURLPrefix,
 		ScopeCatalogCacheTTL:    5 * time.Minute,
 		HTTPAddr:                "127.0.0.1:0",
 		GRPCAddr:                "127.0.0.1:0",

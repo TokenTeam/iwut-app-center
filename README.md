@@ -29,9 +29,9 @@ make run                                  # HTTP + gRPC; never migrates automati
 subcommand is given) validates at startup, before serving, that the topology
 supports transactions and that the latest migration is already recorded. It is
 read-only and does not create collections or indexes. The required schema is
-`0008_application_publication`; apply it explicitly before running this build.
-It creates Publication/History collections and adds transaction coordination
-fields used to fence publication eligibility without changing business revisions.
+`0009_application_tester_join_link`; apply it explicitly before running this
+build. It adds tester join links with unique credential hashes and at most one
+ACTIVE link per Application. Rotation preserves old links as revoked audit records.
 
 ## Commands
 
@@ -42,7 +42,7 @@ fields used to fence publication eligibility without changing business revisions
 | `make fmt-check` | Fail if any Go file is not `gofmt`-ed |
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
-| `make test-mongo` | Run MongoDB integration and the UC-APP-001–007 end-to-end suites against an isolated replica set (Docker) |
+| `make test-mongo` | Run MongoDB integration and the UC-APP-001–008 end-to-end suites against an isolated replica set (Docker) |
 | `make test-auth-app` | Start isolated Mongo plus a separate real Auth process and run the service-JWS UC-APP-005 double-service E2E |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
@@ -62,6 +62,7 @@ fields used to fence publication eligibility without changing business revisions
 | `APP_CENTER_HTTP_ADDR` | no | `:8080` | HTTP listen address |
 | `APP_CENTER_GRPC_ADDR` | no | `:9090` | gRPC listen address |
 | `APP_CENTER_INITIAL_APPLICATION_QUOTA` | no | `10` | Initial per-admin creation quota; only used to lazily create a missing quota record |
+| `APP_CENTER_TESTER_JOIN_URL_PREFIX` | no | `https://app.example/tester/join` | Mock or deployed HTTP(S) join entrance, with optional path and no userinfo, query or fragment |
 | `APP_CENTER_SCOPE_CATALOG_CACHE_TTL` | no | `5m` | Scope Catalog cache TTL |
 | `APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET` | `serve` | — | Auth Center native gRPC target shared by Scope Catalog, Developer Status and System Principal clients |
 | `APP_CENTER_SERVICE_IDENTITY_ID` | `serve` | — | pre-registered caller service ID |
@@ -86,7 +87,7 @@ injected by the deployment secret mechanism.
 - MongoDB integration tests (schema, indexes, transactions, concurrency) run
   only when `MONGODB_INTEGRATION_URI` is set; use
   `./scripts/test-mongo-integration.sh` or `make test-mongo`.
-- The UC-APP-001–007 end-to-end tests in `cmd/app-center` run only when
+- The UC-APP-001–008 end-to-end tests in `cmd/app-center` run only when
   `MONGODB_INTEGRATION_URI` is set. It explicitly migrates an isolated database,
   starts the real `wireApp` composition root with real Kratos HTTP and native
   gRPC listeners, presents real RS256 compact JWS identities and asserts
@@ -94,7 +95,9 @@ injected by the deployment secret mechanism.
   suites use a real test Auth gRPC listener implementing the shared generated
   Scope Catalog, Developer Status and System Principal interfaces. UC-APP-007
   covers test-slot creation, replacement and no-op through HTTP/gRPC and checks
-  that publication leaves approved versions unchanged.
+  that publication leaves approved versions unchanged. UC-APP-008 covers real
+  random secret generation, fragment URL round trips for default/custom prefixes,
+  HTTP/gRPC no-store responses, atomic rotation and hash-only BSON persistence.
   No automatic migration happens during serve.
 
 The Auth client signs every unary call with a fresh short-lived service JWS.
@@ -106,3 +109,12 @@ UC-APP-007 consumer delivery is implemented. Auth's authoritative MongoDB Scope
 Catalog and complete two-service production dependency verification remain
 tracked in the external implementation coverage table; the test Auth server
 does not close those obligations.
+
+Tester join URLs use `{prefix}#joinLinkId={id}&secret={base64urlSecret}`. The
+prefix is configurable without network or DNS access; the default is a mock
+entrance with no hosted page. Leading/trailing whitespace, an explicit empty
+value, userinfo, query or fragment fails startup. Paths and trailing slashes are
+preserved. Only the entrance is mock: secrets use 32 bytes from the OS random
+source and MongoDB stores SHA-256 of the raw bytes. A complete URL is returned
+once after a successful create/rotation; never log or trace it. Frontend scanning
+and actual membership creation (UC-APP-009) are separate capabilities.

@@ -71,6 +71,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationReviewRestorationMigrationID, apply: migrator.applyApplicationReviewRestorationMigration},
 		{id: versionReviewPolicyMigrationID, apply: migrator.applyVersionReviewPolicyMigration},
 		{id: applicationPublicationMigrationID, apply: migrator.applyApplicationPublicationMigration},
+		{id: applicationTesterJoinLinkMigrationID, apply: migrator.applyApplicationTesterJoinLinkMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {

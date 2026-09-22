@@ -10,6 +10,7 @@ import (
 	"iwut-app-center/internal/application/domain"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	reviewdomain "iwut-app-center/internal/review/domain"
+	testerdomain "iwut-app-center/internal/tester/domain"
 	versiondomain "iwut-app-center/internal/version/domain"
 )
 
@@ -18,6 +19,11 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidTesterJoinLinkId                = "ERROR_REASON_INVALID_TESTER_JOIN_LINK_ID"
+	ReasonApplicationTesterJoinLinkAlreadyExists = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_ALREADY_EXISTS"
+	ReasonApplicationTesterJoinLinkNotFound      = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_NOT_FOUND"
+	ReasonApplicationTesterJoinLinkChanged       = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_CHANGED"
+
 	ReasonInvalidRpcApiMajor                     = "ERROR_REASON_INVALID_RPC_API_MAJOR"
 	ReasonInvalidApplicationVersionId            = "ERROR_REASON_INVALID_APPLICATION_VERSION_ID"
 	ReasonInvalidApplicationPublicationRevision  = "ERROR_REASON_INVALID_APPLICATION_PUBLICATION_REVISION"
@@ -200,6 +206,19 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 	publicationdomain.ErrorCodeInternal:                               internalSpec,
 }
 
+var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
+	testerdomain.ErrorCodeInvalidTesterJoinLinkId:                {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinLinkId, message: "tester join link ID is invalid"},
+	testerdomain.ErrorCodeApplicationTesterJoinLinkAlreadyExists: {code: codes.AlreadyExists, reason: ReasonApplicationTesterJoinLinkAlreadyExists, message: "active tester join link already exists"},
+	testerdomain.ErrorCodeApplicationTesterJoinLinkNotFound:      {code: codes.NotFound, reason: ReasonApplicationTesterJoinLinkNotFound, message: "active tester join link not found"},
+	testerdomain.ErrorCodeApplicationTesterJoinLinkChanged:       {code: codes.Aborted, reason: ReasonApplicationTesterJoinLinkChanged, message: "active tester join link has changed"},
+	testerdomain.ErrorCodeDeveloperIdentityRequired:              {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	testerdomain.ErrorCodeDeveloperApprovalRequired:              {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	testerdomain.ErrorCodeInvalidApplicationId:                   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	testerdomain.ErrorCodeApplicationNotFound:                    {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	testerdomain.ErrorCodeApplicationAdminRequired:               {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	testerdomain.ErrorCodeInternal:                               internalSpec,
+}
+
 func reviewErrorCode(err error) reviewdomain.ErrorCode {
 	var domainError *reviewdomain.Error
 	if errors.As(err, &domainError) {
@@ -221,6 +240,14 @@ func toTransportError(err error) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidDeveloperIdentity, "developer identity is invalid")
 	}
 
+	var testerDomainError *testerdomain.Error
+	if errors.As(err, &testerDomainError) {
+		spec, ok := testerDomainErrorSpecs[testerDomainError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
+	}
 	var publicationDomainError *publicationdomain.Error
 	if errors.As(err, &publicationDomainError) {
 		spec, ok := publicationDomainErrorSpecs[publicationDomainError.Code()]

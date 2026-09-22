@@ -133,3 +133,7 @@ var _ transport.RestoreRejectedApplicationVersionHandler = (*reviewusecase.Resto
 var _ authadapter.ScopeCatalogSnapshotSource = (*authadapter.GRPCScopeCatalogSnapshotSource)(nil)
 var _ versionport.ScopeCatalog = (*authadapter.ScopeCatalogCache)(nil)
 var _ reviewport.ScopeCatalog = (*authadapter.ReviewScopeCatalog)(nil)
+
+func provideTesterJoinURLPrefix(configuration config.Config) string {
+	return configuration.TesterJoinURLPrefix
+}

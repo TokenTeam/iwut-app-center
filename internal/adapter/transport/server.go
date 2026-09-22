@@ -12,9 +12,13 @@ import (
 	publicationv1 "iwut-app-center/api/gen/go/app_center/v1/application_publication"
 	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
+	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
 )
 
 const (
+	CreateOrRotateTesterJoinLinkInternalPath   = "/v1/applications/{application_id}/tester-join-links"
+	CreateOrRotateTesterJoinLinkExternalPath   = ServicePrefix + CreateOrRotateTesterJoinLinkInternalPath
+	CreateOrRotateTesterJoinLinkGRPCMethod     = testerjoinlinkv1.OperationTesterJoinLinkCreateOrRotateTesterJoinLink
 	PlaceApprovedVersionInTestSlotInternalPath = "/v1/applications/{application_id}/publications/{rpc_api_major}/test-slot"
 	PlaceApprovedVersionInTestSlotExternalPath = ServicePrefix + PlaceApprovedVersionInTestSlotInternalPath
 	PlaceApprovedVersionInTestSlotGRPCMethod   = publicationv1.OperationApplicationPublicationPlaceApprovedVersionInTestSlot
@@ -66,6 +70,7 @@ func NewServers(
 	versionService *ApplicationVersionService,
 	reviewService *ApplicationReviewService,
 	publicationService *ApplicationPublicationService,
+	testerJoinLinkService *TesterJoinLinkService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -83,11 +88,15 @@ func NewServers(
 	if publicationService == nil {
 		return nil, errors.New("transport servers: application publication service is required")
 	}
+	if testerJoinLinkService == nil {
+		return nil, errors.New("transport servers: tester join link service is required")
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Middleware(identityMiddleware(verifier)),
 		khttp.ResponseEncoder(createdResponseEncoder),
 	)
+	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
@@ -97,6 +106,7 @@ func NewServers(
 		kgrpc.Address(config.GRPCAddr),
 		kgrpc.Middleware(identityMiddleware(verifier)),
 	)
+	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationServer(grpcServer, publicationService)
 	applicationv1.RegisterApplicationServer(grpcServer, service)
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
@@ -111,6 +121,9 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *testerjoinlinkv1.CreateOrRotateTesterJoinLinkResponse:
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusCreated)
 	case *publicationv1.PlaceApprovedVersionInTestSlotResponse:
 		if response.GetChanged() && response.GetPublication().GetRevision() == 1 {
 			w.WriteHeader(http.StatusCreated)

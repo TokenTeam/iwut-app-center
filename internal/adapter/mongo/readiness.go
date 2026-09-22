@@ -11,9 +11,9 @@ import (
 
 // RequiredMigrationID is the newest migration the running service requires
 // before it will serve traffic. It mirrors the last entry of Migrator.Migrate:
-// the composed service ships the UC-APP-007 publication schema, so an older
+// the composed service ships the UC-APP-008 tester join link schema, so an older
 // revision is not sufficient.
-const RequiredMigrationID = applicationPublicationMigrationID
+const RequiredMigrationID = applicationTesterJoinLinkMigrationID
 
 // MigrationLedgerCollectionName is the read-only ledger written by Migrator.
 // Startup only reads it; it never creates the collection or an index.
