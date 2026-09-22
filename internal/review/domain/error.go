@@ -44,6 +44,7 @@ const (
 	ErrorCodeInvalidApplicationReviewChecks        ErrorCode = "InvalidApplicationReviewChecks"
 	ErrorCodeInvalidApplicationReviewReason        ErrorCode = "InvalidApplicationReviewReason"
 	ErrorCodeDeveloperStatusUnavailable            ErrorCode = "DeveloperStatusUnavailable"
+	ErrorCodeSystemPrincipalUnavailable            ErrorCode = "SystemPrincipalUnavailable"
 	ErrorCodeInternal                              ErrorCode = "Internal"
 )
 
@@ -72,6 +73,10 @@ func NewScopeCatalogUnavailableError(cause error) *Error {
 
 func NewDeveloperStatusUnavailableError(cause error) *Error {
 	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeDeveloperStatusUnavailable, "developer status is unavailable", cause)
+}
+
+func NewSystemPrincipalUnavailableError(cause error) *Error {
+	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeSystemPrincipalUnavailable, "system principal is unavailable", cause)
 }
 
 func (e *Error) Error() string           { return e.message }
@@ -111,5 +116,6 @@ var (
 	ErrInvalidApplicationReviewChecks        = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewChecks, "application review confirmation is invalid", nil)
 	ErrInvalidApplicationReviewReason        = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewReason, "application review reason is invalid", nil)
 	ErrDeveloperStatusUnavailable            = newError(ErrorCategoryDependencyUnavailable, ErrorCodeDeveloperStatusUnavailable, "developer status is unavailable", nil)
+	ErrSystemPrincipalUnavailable            = newError(ErrorCategoryDependencyUnavailable, ErrorCodeSystemPrincipalUnavailable, "system principal is unavailable", nil)
 	ErrInternal                              = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

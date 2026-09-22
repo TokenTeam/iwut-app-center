@@ -40,6 +40,7 @@ read-only and does not create collections or indexes.
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
 | `make test-mongo` | Run MongoDB integration and the UC-APP-001/002 end-to-end suites against an isolated replica set (Docker) |
+| `make test-auth-app` | Start isolated Mongo plus a separate real Auth process and run the service-JWS UC-APP-005 double-service E2E |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
 | `make api-check` | Fail if the generated API code drifted from its Proto |
@@ -59,8 +60,12 @@ read-only and does not create collections or indexes.
 | `APP_CENTER_GRPC_ADDR` | no | `:9090` | gRPC listen address |
 | `APP_CENTER_INITIAL_APPLICATION_QUOTA` | no | `10` | Initial per-admin creation quota; only used to lazily create a missing quota record |
 | `APP_CENTER_SCOPE_CATALOG_CACHE_TTL` | no | `5m` | Scope Catalog cache TTL |
-| `APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET` | `serve` | — | Auth Center native gRPC target currently shared by Scope Catalog and Developer Status clients |
-| `APP_CENTER_SYSTEM_AUTH_ID` | `serve` | — | Opaque Auth ID of the provisioned non-login SYSTEM principal used for suspension-triggered rejection |
+| `APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET` | `serve` | — | Auth Center native gRPC target shared by Scope Catalog, Developer Status and System Principal clients |
+| `APP_CENTER_SERVICE_IDENTITY_ID` | `serve` | — | pre-registered caller service ID |
+| `APP_CENTER_SERVICE_IDENTITY_KID` | `serve` | — | active private-key ID registered in Auth |
+| `APP_CENTER_SERVICE_IDENTITY_AUDIENCE` | no | `iwut-auth-center` | audience for service-call JWS |
+| `APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64` | `serve` | — | strict standard Base64 of a PKCS#1/PKCS#8 RSA private-key PEM |
+| `APP_CENTER_SERVICE_IDENTITY_TTL` | no | `1m` | lifetime of each service-call JWS |
 | `APP_CENTER_IDENTITY_ISSUER` | `serve` | — | Expected JWS `iss` |
 | `APP_CENTER_IDENTITY_AUDIENCE` | no | `iwut-app-center` | Audience the JWS `aud` must contain |
 | `APP_CENTER_IDENTITY_MAX_TTL` | no | `5m` | Maximum `exp - iat` accepted |
@@ -68,8 +73,9 @@ read-only and does not create collections or indexes.
 | `APP_CENTER_IDENTITY_PUBLIC_KEYS` | `serve` | — | Comma-separated `kid=PEM-file` pairs, each RSA key at least 2048 bits |
 
 `serve` refuses to start on a missing or invalid value. Do not commit keys,
-tokens or credentials; `APP_CENTER_IDENTITY_PUBLIC_KEYS` points at files outside
-version control.
+tokens or credentials. User-identity public keys remain file references;
+service private-key PEM is Base64-wrapped for ENV transport and should be
+injected by the deployment secret mechanism.
 
 ## Tests
 
@@ -86,7 +92,7 @@ version control.
   Developer Status interfaces.
   No automatic migration happens during serve.
 
-The Auth client currently uses an unauthenticated internal gRPC channel because
-the platform service-identity credential is still an explicit open decision.
-Do not treat this bootstrap connection as production-ready or expose the Auth
-method through Gateway/Traefik.
+The Auth client signs every unary call with a fresh short-lived service JWS.
+Auth-owned SYSTEM principal IDs are resolved lazily by purpose and successful
+responses are cached for the process lifetime; App Center has no static System
+Auth ID startup dependency.

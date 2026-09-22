@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -12,27 +13,33 @@ import (
 )
 
 const (
-	InitialApplicationQuotaEnv = "APP_CENTER_INITIAL_APPLICATION_QUOTA"
-	ScopeCatalogCacheTTLEnv    = "APP_CENTER_SCOPE_CATALOG_CACHE_TTL"
-	HTTPAddrEnv                = "APP_CENTER_HTTP_ADDR"
-	GRPCAddrEnv                = "APP_CENTER_GRPC_ADDR"
-	MongoURIEnv                = "APP_CENTER_MONGO_URI"
-	MongoDatabaseEnv           = "APP_CENTER_MONGO_DATABASE"
-	IdentityIssuerEnv          = "APP_CENTER_IDENTITY_ISSUER"
-	IdentityAudienceEnv        = "APP_CENTER_IDENTITY_AUDIENCE"
-	IdentityMaxTTLEnv          = "APP_CENTER_IDENTITY_MAX_TTL"
-	IdentityClockSkewEnv       = "APP_CENTER_IDENTITY_CLOCK_SKEW"
-	IdentityPublicKeysEnv      = "APP_CENTER_IDENTITY_PUBLIC_KEYS"
-	AuthScopeCatalogTargetEnv  = "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET"
-	SystemAuthIDEnv            = "APP_CENTER_SYSTEM_AUTH_ID"
+	InitialApplicationQuotaEnv   = "APP_CENTER_INITIAL_APPLICATION_QUOTA"
+	ScopeCatalogCacheTTLEnv      = "APP_CENTER_SCOPE_CATALOG_CACHE_TTL"
+	HTTPAddrEnv                  = "APP_CENTER_HTTP_ADDR"
+	GRPCAddrEnv                  = "APP_CENTER_GRPC_ADDR"
+	MongoURIEnv                  = "APP_CENTER_MONGO_URI"
+	MongoDatabaseEnv             = "APP_CENTER_MONGO_DATABASE"
+	IdentityIssuerEnv            = "APP_CENTER_IDENTITY_ISSUER"
+	IdentityAudienceEnv          = "APP_CENTER_IDENTITY_AUDIENCE"
+	IdentityMaxTTLEnv            = "APP_CENTER_IDENTITY_MAX_TTL"
+	IdentityClockSkewEnv         = "APP_CENTER_IDENTITY_CLOCK_SKEW"
+	IdentityPublicKeysEnv        = "APP_CENTER_IDENTITY_PUBLIC_KEYS"
+	AuthScopeCatalogTargetEnv    = "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET"
+	ServiceIdentityIDEnv         = "APP_CENTER_SERVICE_IDENTITY_ID"
+	ServiceIdentityKIDEnv        = "APP_CENTER_SERVICE_IDENTITY_KID"
+	ServiceIdentityAudienceEnv   = "APP_CENTER_SERVICE_IDENTITY_AUDIENCE"
+	ServiceIdentityPrivateKeyEnv = "APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64"
+	ServiceIdentityTTLEnv        = "APP_CENTER_SERVICE_IDENTITY_TTL"
 
-	DefaultScopeCatalogCacheTTL = 5 * time.Minute
-	DefaultHTTPAddr             = ":8080"
-	DefaultGRPCAddr             = ":9090"
-	DefaultMongoDatabase        = "iwut_app_center"
-	DefaultIdentityAudience     = "iwut-app-center"
-	DefaultIdentityMaxTTL       = 5 * time.Minute
-	DefaultIdentityClockSkew    = 30 * time.Second
+	DefaultScopeCatalogCacheTTL    = 5 * time.Minute
+	DefaultHTTPAddr                = ":8080"
+	DefaultGRPCAddr                = ":9090"
+	DefaultMongoDatabase           = "iwut_app_center"
+	DefaultIdentityAudience        = "iwut-app-center"
+	DefaultIdentityMaxTTL          = 5 * time.Minute
+	DefaultIdentityClockSkew       = 30 * time.Second
+	DefaultServiceIdentityAudience = "iwut-auth-center"
+	DefaultServiceIdentityTTL      = time.Minute
 )
 
 var ErrInvalidConfiguration = errors.New("invalid application configuration")
@@ -58,8 +65,12 @@ type Config struct {
 	IdentityClockSkew      time.Duration
 	IdentityPublicKeyFiles map[string]string
 
-	AuthScopeCatalogTarget string
-	SystemAuthID           string
+	AuthScopeCatalogTarget       string
+	ServiceIdentityID            string
+	ServiceIdentityKID           string
+	ServiceIdentityAudience      string
+	ServiceIdentityPrivateKeyPEM []byte
+	ServiceIdentityTTL           time.Duration
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -108,6 +119,8 @@ func Load(lookup LookupEnv) (Config, error) {
 		IdentityAudience:        DefaultIdentityAudience,
 		IdentityMaxTTL:          DefaultIdentityMaxTTL,
 		IdentityClockSkew:       DefaultIdentityClockSkew,
+		ServiceIdentityAudience: DefaultServiceIdentityAudience,
+		ServiceIdentityTTL:      DefaultServiceIdentityTTL,
 	}
 
 	if raw, found := lookup(InitialApplicationQuotaEnv); found {
@@ -148,8 +161,28 @@ func Load(lookup LookupEnv) (Config, error) {
 	if configuration.AuthScopeCatalogTarget, err = requiredValue(lookup, AuthScopeCatalogTargetEnv); err != nil {
 		return Config{}, err
 	}
-	if configuration.SystemAuthID, err = requiredValue(lookup, SystemAuthIDEnv); err != nil {
+	if configuration.ServiceIdentityID, err = requiredValue(lookup, ServiceIdentityIDEnv); err != nil {
 		return Config{}, err
+	}
+	if configuration.ServiceIdentityKID, err = requiredValue(lookup, ServiceIdentityKIDEnv); err != nil {
+		return Config{}, err
+	}
+	if configuration.ServiceIdentityAudience, err = optionalNonEmpty(lookup, ServiceIdentityAudienceEnv, DefaultServiceIdentityAudience); err != nil {
+		return Config{}, err
+	}
+	rawPrivateKey, err := requiredValue(lookup, ServiceIdentityPrivateKeyEnv)
+	if err != nil {
+		return Config{}, err
+	}
+	configuration.ServiceIdentityPrivateKeyPEM, err = base64.StdEncoding.Strict().DecodeString(rawPrivateKey)
+	if err != nil || len(configuration.ServiceIdentityPrivateKeyPEM) == 0 {
+		return Config{}, fmt.Errorf("%w: %s must be strict standard Base64 containing PEM", ErrInvalidConfiguration, ServiceIdentityPrivateKeyEnv)
+	}
+	if raw, found := lookup(ServiceIdentityTTLEnv); found {
+		configuration.ServiceIdentityTTL, err = time.ParseDuration(strings.TrimSpace(raw))
+		if err != nil || configuration.ServiceIdentityTTL <= 0 {
+			return Config{}, fmt.Errorf("%w: %s must be a positive Go duration", ErrInvalidConfiguration, ServiceIdentityTTLEnv)
+		}
 	}
 
 	if raw, found := lookup(IdentityMaxTTLEnv); found {

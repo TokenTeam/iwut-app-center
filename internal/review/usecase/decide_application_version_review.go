@@ -42,7 +42,7 @@ type DecideApplicationVersionReviewHandler struct {
 	launchPolicy               port.LaunchURLSubmissionPolicy
 	clock                      port.Clock
 	repository                 port.ApplicationReviewDecisionRepository
-	systemAuthID               shared.AuthID
+	systemPrincipalResolver    port.SystemPrincipalResolver
 }
 
 func NewDecideApplicationVersionReviewHandler(
@@ -52,7 +52,7 @@ func NewDecideApplicationVersionReviewHandler(
 	launchPolicy port.LaunchURLSubmissionPolicy,
 	clock port.Clock,
 	repository port.ApplicationReviewDecisionRepository,
-	systemAuthID shared.AuthID,
+	systemPrincipalResolver port.SystemPrincipalResolver,
 ) *DecideApplicationVersionReviewHandler {
 	return &DecideApplicationVersionReviewHandler{
 		reviewPolicyProvider:       reviewPolicyProvider,
@@ -61,7 +61,7 @@ func NewDecideApplicationVersionReviewHandler(
 		launchPolicy:               launchPolicy,
 		clock:                      clock,
 		repository:                 repository,
-		systemAuthID:               systemAuthID,
+		systemPrincipalResolver:    systemPrincipalResolver,
 	}
 }
 
@@ -109,7 +109,7 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 	}
 	if handler == nil || handler.reviewPolicyProvider == nil || handler.developerSuspensionChecker == nil ||
 		handler.scopeCatalog == nil || handler.launchPolicy == nil || handler.clock == nil ||
-		handler.repository == nil || !handler.systemAuthID.IsValid() {
+		handler.repository == nil || handler.systemPrincipalResolver == nil {
 		return nil, domain.NewInternalError(nil)
 	}
 
@@ -170,8 +170,12 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 		if decidedAt.IsZero() {
 			return nil, domain.NewInternalError(nil)
 		}
+		systemAuthID, err := handler.systemPrincipalResolver.ResolveReviewAutoRejection(ctx)
+		if err != nil || !systemAuthID.IsValid() {
+			return nil, domain.NewSystemPrincipalUnavailableError(err)
+		}
 		decision, err := candidate.Review().Reject(
-			policyVersion, domain.SystemSuspensionRejectionReason, handler.systemAuthID, decidedAt,
+			policyVersion, domain.SystemSuspensionRejectionReason, systemAuthID, decidedAt,
 		)
 		if err != nil {
 			return nil, err

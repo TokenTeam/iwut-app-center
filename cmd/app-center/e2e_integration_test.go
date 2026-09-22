@@ -42,6 +42,7 @@ import (
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
 	developerstatusv1 "iwut-app-center/api/gen/go/auth_center/v1/developer_status"
 	scopecatalogv1 "iwut-app-center/api/gen/go/auth_center/v1/scope_catalog"
+	systemprincipalv1 "iwut-app-center/api/gen/go/auth_center/v1/system_principal"
 	mongoadapter "iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/config"
@@ -53,6 +54,11 @@ import (
 const mongoIntegrationURIEnv = "MONGODB_INTEGRATION_URI"
 
 const (
+	authCenterIntegrationTargetEnv   = "AUTH_CENTER_INTEGRATION_TARGET"
+	authCenterIntegrationDatabaseEnv = "AUTH_CENTER_INTEGRATION_DATABASE"
+)
+
+const (
 	e2eIssuer           = "https://auth.e2e.test"
 	e2eAudience         = "iwut-app-center"
 	e2eKeyID            = "e2e-primary"
@@ -62,6 +68,28 @@ const (
 	e2eGRPCAdminID      = "auth-e2e-grpc"
 	e2eUnusedAuthTarget = "127.0.0.1:1"
 )
+
+var (
+	e2eServiceKeyOnce sync.Once
+	e2eServiceKeyB64  string
+	e2eServiceKeyErr  error
+)
+
+func e2eServicePrivateKeyB64() string {
+	e2eServiceKeyOnce.Do(func() {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			e2eServiceKeyErr = err
+			return
+		}
+		encoded := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+		e2eServiceKeyB64 = base64.StdEncoding.EncodeToString(encoded)
+	})
+	if e2eServiceKeyErr != nil {
+		panic(e2eServiceKeyErr)
+	}
+	return e2eServiceKeyB64
+}
 
 // e2eApplicationDocument mirrors only the persisted business/ownership fields
 // the assertions need. The test reads them directly from the isolated database
@@ -160,10 +188,22 @@ type e2eScopeCatalogServer struct {
 
 type e2eDeveloperStatusServer struct {
 	developerstatusv1.UnimplementedDeveloperStatusDirectoryServer
-	mu          sync.RWMutex
-	statuses    map[string]developerstatusv1.DeveloperStatus
-	calls       atomic.Int32
-	unavailable atomic.Bool
+	systemprincipalv1.UnimplementedSystemPrincipalDirectoryServer
+	mu           sync.RWMutex
+	statuses     map[string]developerstatusv1.DeveloperStatus
+	systemAuthID string
+	calls        atomic.Int32
+	unavailable  atomic.Bool
+}
+
+func (server *e2eDeveloperStatusServer) ResolveSystemPrincipal(
+	_ context.Context,
+	request *systemprincipalv1.ResolveSystemPrincipalRequest,
+) (*systemprincipalv1.ResolveSystemPrincipalResponse, error) {
+	if request.GetPurpose() != systemprincipalv1.SystemPrincipalPurpose_SYSTEM_PRINCIPAL_PURPOSE_APP_CENTER_REVIEW_AUTO_REJECTION || server.systemAuthID == "" {
+		return nil, status.Error(codes.NotFound, "system principal not found")
+	}
+	return &systemprincipalv1.ResolveSystemPrincipalResponse{AuthId: server.systemAuthID, Purpose: request.GetPurpose()}, nil
 }
 
 func (server *e2eDeveloperStatusServer) SetStatus(authID string, current developerstatusv1.DeveloperStatus) {
@@ -890,6 +930,7 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	addresses := e2eReserveAddresses(t, 3)
 	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
 	_, developerStatusServer := e2eStartAuthServer(t, authAddress)
+	developerStatusServer.systemAuthID = systemID
 	developerStatusServer.SetStatus(adminID, developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED)
 	resolver := &e2eDNSResolver{addresses: map[string][]netip.Addr{
 		"example.edu": {netip.MustParseAddr("8.8.8.8")},
@@ -904,7 +945,6 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + publicKeyPath,
 		config.AuthScopeCatalogTargetEnv: authAddress,
 		config.ScopeCatalogCacheTTLEnv:   "1ns",
-		config.SystemAuthIDEnv:           systemID,
 	}))
 	if err != nil {
 		t.Fatalf("load configuration: %v", err)
@@ -1027,6 +1067,133 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	}
 	if developerStatusServer.calls.Load() < 2 {
 		t.Fatalf("Auth Developer Status calls = %d, want approval and auto-rejection checks", developerStatusServer.calls.Load())
+	}
+}
+
+// TestE2E_UCAPP005_RealAuthProcessServiceIdentity is run by
+// scripts/test-auth-app-integration.sh. It composes the real App server in this
+// process, but all three Auth dependencies cross a TCP connection to a separate
+// real Auth Center process protected by its production service-JWS interceptor.
+func TestE2E_UCAPP005_RealAuthProcessServiceIdentity(t *testing.T) {
+	authTarget := os.Getenv(authCenterIntegrationTargetEnv)
+	authDatabaseName := os.Getenv(authCenterIntegrationDatabaseEnv)
+	serviceID := os.Getenv(config.ServiceIdentityIDEnv)
+	serviceKID := os.Getenv(config.ServiceIdentityKIDEnv)
+	servicePrivateKey := os.Getenv(config.ServiceIdentityPrivateKeyEnv)
+	if authTarget == "" || authDatabaseName == "" || serviceID == "" || serviceKID == "" || servicePrivateKey == "" {
+		t.Skipf("run scripts/test-auth-app-integration.sh for the real Auth+App E2E")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	client, database := e2eIsolatedDatabase(t, ctx, true)
+	privateKey, publicKeyPath := e2eIdentity(t)
+	const (
+		adminID    = "auth-dual-service-admin"
+		reviewerID = "auth-dual-service-reviewer"
+	)
+	adminToken := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
+	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review")
+
+	addresses := e2eReserveAddresses(t, 2)
+	httpAddress, grpcAddress := addresses[0], addresses[1]
+	resolver := &e2eDNSResolver{addresses: map[string][]netip.Addr{
+		"example.edu": {netip.MustParseAddr("8.8.8.8")},
+	}}
+	configuration, err := config.Load(e2eEnvironment(map[string]string{
+		config.MongoURIEnv:                  os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:             database.Name(),
+		config.HTTPAddrEnv:                  httpAddress,
+		config.GRPCAddrEnv:                  grpcAddress,
+		config.IdentityIssuerEnv:            e2eIssuer,
+		config.IdentityAudienceEnv:          e2eAudience,
+		config.IdentityPublicKeysEnv:        e2eKeyID + "=" + publicKeyPath,
+		config.AuthScopeCatalogTargetEnv:    authTarget,
+		config.ScopeCatalogCacheTTLEnv:      "1ns",
+		config.ServiceIdentityIDEnv:         serviceID,
+		config.ServiceIdentityKIDEnv:        serviceKID,
+		config.ServiceIdentityPrivateKeyEnv: servicePrivateKey,
+	}))
+	if err != nil {
+		t.Fatalf("load configuration: %v", err)
+	}
+	app, appCleanup, err := wireAppWithResolver(configuration, resolver)
+	if err != nil {
+		t.Fatalf("wireAppWithResolver() error = %v", err)
+	}
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = app.Run()
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		if stopErr := app.Stop(); stopErr != nil {
+			t.Errorf("app.Stop() error = %v", stopErr)
+		}
+		select {
+		case <-runDone:
+		case <-time.After(15 * time.Second):
+			t.Error("app.Run() did not stop within 15s")
+		}
+		appCleanup()
+	})
+	e2eWaitForHTTPListener(t, ctx, httpAddress, runDone, &runErr)
+	connection := e2eDialGRPC(t, ctx, grpcAddress, runDone, &runErr)
+	t.Cleanup(func() { _ = connection.Close() })
+
+	createStatus, applicationBody := e2eHTTPCreate(t, httpAddress, adminToken, "Dual_Service_Review_App")
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create application status = %d; body = %s", createStatus, applicationBody)
+	}
+	var application applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(applicationBody, &application); err != nil {
+		t.Fatalf("decode application: %v", err)
+	}
+	versionStatus, _, versionBody := e2eHTTPCreateVersion(
+		t, httpAddress, adminToken, application.GetId(), "v1.0.0",
+		[]string{"user.profile.v1"}, []string{"profile.basic"}, nil,
+	)
+	if versionStatus != http.StatusCreated {
+		t.Fatalf("create version status = %d; body = %s", versionStatus, versionBody)
+	}
+	var version applicationversionv1.CreateApplicationVersionResponse
+	if err := protojson.Unmarshal(versionBody, &version); err != nil {
+		t.Fatalf("decode version: %v", err)
+	}
+	submitStatus, _, submitBody := e2eHTTPSubmitReview(t, httpAddress, adminToken, application.GetId(), version.GetVersionId(), 1)
+	if submitStatus != http.StatusCreated {
+		t.Fatalf("submit review status = %d; body = %s", submitStatus, submitBody)
+	}
+	var submitted applicationreviewv1.SubmitApplicationVersionReviewResponse
+	if err := protojson.Unmarshal(submitBody, &submitted); err != nil {
+		t.Fatalf("decode submitted review: %v", err)
+	}
+
+	grpcClient := applicationreviewv1.NewApplicationReviewClient(connection)
+	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, reviewerToken))
+	result, err := grpcClient.DecideApplicationVersionReview(grpcCtx, &applicationreviewv1.DecideApplicationVersionReviewRequest{
+		ApplicationId: application.GetId(), VersionId: version.GetVersionId(), ReviewId: submitted.GetReview().GetReviewId(),
+		Command: &applicationreviewv1.DecideApplicationVersionReviewCommand{
+			Outcome: applicationreviewv1.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v1",
+			ConfirmedCheckIds: []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("DecideApplicationVersionReview() error = %v", err)
+	}
+	var systemPrincipal struct {
+		AuthID string `bson:"authId"`
+	}
+	if err := client.Database(authDatabaseName).Collection("auth_principals").FindOne(ctx, bson.M{
+		"principalType": "SYSTEM", "systemPurpose": "app-center.review-auto-rejection",
+	}).Decode(&systemPrincipal); err != nil {
+		t.Fatalf("read Auth SYSTEM principal: %v", err)
+	}
+	if result.GetReview().GetStatus() != "REJECTED" || systemPrincipal.AuthID == "" ||
+		result.GetReview().GetDecision().GetDecidedBy() != systemPrincipal.AuthID ||
+		result.GetVersion().GetUpdatedBy() != systemPrincipal.AuthID {
+		t.Fatalf("real Auth auto-rejection = result:%v system:%q", result, systemPrincipal.AuthID)
 	}
 }
 
@@ -1316,8 +1483,15 @@ func e2eSignIdentityClaims(t *testing.T, privateKey *rsa.PrivateKey, claims map[
 func e2eEnvironment(values map[string]string) config.LookupEnv {
 	return func(key string) (string, bool) {
 		value, found := values[key]
-		if !found && key == config.SystemAuthIDEnv {
-			return "auth-e2e-system", true
+		if !found {
+			switch key {
+			case config.ServiceIdentityIDEnv:
+				return "iwut-app-center", true
+			case config.ServiceIdentityKIDEnv:
+				return "app-center-e2e-service", true
+			case config.ServiceIdentityPrivateKeyEnv:
+				return e2eServicePrivateKeyB64(), true
+			}
 		}
 		return value, found
 	}
@@ -1360,9 +1534,11 @@ func e2eStartAuthServer(t *testing.T, address string) (*e2eScopeCatalogServer, *
 	scopeService := &e2eScopeCatalogServer{}
 	scopeService.revision.Store(11)
 	developerService := &e2eDeveloperStatusServer{statuses: make(map[string]developerstatusv1.DeveloperStatus)}
+	developerService.systemAuthID = "auth-e2e-system"
 	server := grpc.NewServer()
 	scopecatalogv1.RegisterScopeCatalogServer(server, scopeService)
 	developerstatusv1.RegisterDeveloperStatusDirectoryServer(server, developerService)
+	systemprincipalv1.RegisterSystemPrincipalDirectoryServer(server, developerService)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {

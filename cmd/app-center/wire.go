@@ -46,7 +46,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		provideMongoDatabase,
 		provideInitialApplicationQuota,
 		provideScopeCatalogCacheTTL,
-		provideSystemAuthID,
+		provideServiceIdentitySigner,
 		provideAuthScopeCatalogConnection,
 		provideIdentityConfig,
 		provideServerConfig,

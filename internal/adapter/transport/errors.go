@@ -56,6 +56,7 @@ const (
 	ReasonInvalidApplicationReviewChecks        = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
 	ReasonInvalidApplicationReviewReason        = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
 	ReasonDeveloperStatusUnavailable            = "ERROR_REASON_DEVELOPER_STATUS_UNAVAILABLE"
+	ReasonSystemPrincipalUnavailable            = "ERROR_REASON_SYSTEM_PRINCIPAL_UNAVAILABLE"
 	ReasonInternal                              = "ERROR_REASON_INTERNAL"
 )
 
@@ -164,6 +165,7 @@ var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
 	reviewdomain.ErrorCodeInvalidApplicationReviewChecks:        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewChecks, message: "application review confirmation is invalid"},
 	reviewdomain.ErrorCodeInvalidApplicationReviewReason:        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewReason, message: "application review reason is invalid"},
 	reviewdomain.ErrorCodeDeveloperStatusUnavailable:            {code: codes.Unavailable, reason: ReasonDeveloperStatusUnavailable, message: "developer status is unavailable"},
+	reviewdomain.ErrorCodeSystemPrincipalUnavailable:            {code: codes.Unavailable, reason: ReasonSystemPrincipalUnavailable, message: "system principal is unavailable"},
 	reviewdomain.ErrorCodeInternal:                              internalSpec,
 }
 

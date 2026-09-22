@@ -27,6 +27,7 @@ var (
 	// ErrDeveloperStatusUnavailable reports that suspension facts could not be
 	// read. It never means "not suspended".
 	ErrDeveloperStatusUnavailable = errors.New("developer status unavailable")
+	ErrSystemPrincipalUnavailable = errors.New("system principal unavailable")
 )
 
 // ReviewPolicyProvider is owned by the consuming Review capability. App Center
@@ -43,6 +44,10 @@ type ReviewPolicyProvider interface {
 // fact. It intentionally does not expose Auth transport, tokens or claims.
 type DeveloperSuspensionChecker interface {
 	AnySuspended(ctx context.Context, authIDs []shared.AuthID) (bool, error)
+}
+
+type SystemPrincipalResolver interface {
+	ResolveReviewAutoRejection(ctx context.Context) (shared.AuthID, error)
 }
 
 // ApplicationReviewDecisionRepository owns loading a decidable candidate and

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"testing"
 	"time"
@@ -10,11 +11,13 @@ import (
 
 func requiredValues() map[string]string {
 	return map[string]string{
-		MongoURIEnv:               "mongodb://localhost:27017",
-		IdentityIssuerEnv:         "https://auth.example.test",
-		IdentityPublicKeysEnv:     "primary=/etc/iwut/identity-primary.pem",
-		AuthScopeCatalogTargetEnv: "127.0.0.1:9000",
-		SystemAuthIDEnv:           "auth-system",
+		MongoURIEnv:                  "mongodb://localhost:27017",
+		IdentityIssuerEnv:            "https://auth.example.test",
+		IdentityPublicKeysEnv:        "primary=/etc/iwut/identity-primary.pem",
+		AuthScopeCatalogTargetEnv:    "127.0.0.1:9000",
+		ServiceIdentityIDEnv:         "iwut-app-center",
+		ServiceIdentityKIDEnv:        "app-center-1",
+		ServiceIdentityPrivateKeyEnv: base64.StdEncoding.EncodeToString([]byte("PEM")),
 	}
 }
 
@@ -62,19 +65,23 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		InitialApplicationQuotaEnv: "27",
-		ScopeCatalogCacheTTLEnv:    "90s",
-		HTTPAddrEnv:                "127.0.0.1:18080",
-		GRPCAddrEnv:                "127.0.0.1:19090",
-		MongoURIEnv:                "mongodb://db.internal:27017",
-		MongoDatabaseEnv:           "app_center_test",
-		IdentityIssuerEnv:          "https://issuer.test",
-		IdentityAudienceEnv:        "iwut-app-center",
-		IdentityMaxTTLEnv:          "2m",
-		IdentityClockSkewEnv:       "15s",
-		IdentityPublicKeysEnv:      "k1=/keys/one.pem,k2=/keys/two.pem",
-		AuthScopeCatalogTargetEnv:  "dns:///auth-center.internal:9000",
-		SystemAuthIDEnv:            "auth-system-prod",
+		InitialApplicationQuotaEnv:   "27",
+		ScopeCatalogCacheTTLEnv:      "90s",
+		HTTPAddrEnv:                  "127.0.0.1:18080",
+		GRPCAddrEnv:                  "127.0.0.1:19090",
+		MongoURIEnv:                  "mongodb://db.internal:27017",
+		MongoDatabaseEnv:             "app_center_test",
+		IdentityIssuerEnv:            "https://issuer.test",
+		IdentityAudienceEnv:          "iwut-app-center",
+		IdentityMaxTTLEnv:            "2m",
+		IdentityClockSkewEnv:         "15s",
+		IdentityPublicKeysEnv:        "k1=/keys/one.pem,k2=/keys/two.pem",
+		AuthScopeCatalogTargetEnv:    "dns:///auth-center.internal:9000",
+		ServiceIdentityIDEnv:         "iwut-app-center-prod",
+		ServiceIdentityKIDEnv:        "app-center-prod-1",
+		ServiceIdentityAudienceEnv:   "auth-prod",
+		ServiceIdentityPrivateKeyEnv: base64.StdEncoding.EncodeToString([]byte("PEM-PROD")),
+		ServiceIdentityTTLEnv:        "45s",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -100,8 +107,10 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	if configuration.AuthScopeCatalogTarget != "dns:///auth-center.internal:9000" {
 		t.Fatalf("AuthScopeCatalogTarget = %q", configuration.AuthScopeCatalogTarget)
 	}
-	if configuration.SystemAuthID != "auth-system-prod" {
-		t.Fatalf("SystemAuthID = %q", configuration.SystemAuthID)
+	if configuration.ServiceIdentityID != "iwut-app-center-prod" || configuration.ServiceIdentityKID != "app-center-prod-1" ||
+		configuration.ServiceIdentityAudience != "auth-prod" || configuration.ServiceIdentityTTL != 45*time.Second ||
+		string(configuration.ServiceIdentityPrivateKeyPEM) != "PEM-PROD" {
+		t.Fatalf("service identity = %#v", configuration)
 	}
 }
 
@@ -147,7 +156,12 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "negative clock skew", key: IdentityClockSkewEnv, value: "-1s"},
 		{name: "empty clock skew", key: IdentityClockSkewEnv, value: ""},
 		{name: "empty Auth Scope Catalog target", key: AuthScopeCatalogTargetEnv, value: ""},
-		{name: "empty System Auth ID", key: SystemAuthIDEnv, value: ""},
+		{name: "empty service identity id", key: ServiceIdentityIDEnv, value: ""},
+		{name: "empty service identity kid", key: ServiceIdentityKIDEnv, value: ""},
+		{name: "empty service identity private key", key: ServiceIdentityPrivateKeyEnv, value: ""},
+		{name: "invalid service identity private key encoding", key: ServiceIdentityPrivateKeyEnv, value: "not-base64"},
+		{name: "invalid service identity TTL", key: ServiceIdentityTTLEnv, value: "forever"},
+		{name: "zero service identity TTL", key: ServiceIdentityTTLEnv, value: "0s"},
 	}
 
 	for _, testCase := range testCases {
@@ -166,7 +180,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 func TestLoad_RequiresMongoURIIssuerKeysAndAuthTarget(t *testing.T) {
 	t.Parallel()
 
-	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv, SystemAuthIDEnv} {
+	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv, ServiceIdentityIDEnv, ServiceIdentityKIDEnv, ServiceIdentityPrivateKeyEnv} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			values := requiredValues()

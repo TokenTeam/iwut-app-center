@@ -11,6 +11,7 @@ help:
 	@echo "  make build         compile all packages"
 	@echo "  make test          run the unit/transport/architecture suite"
 	@echo "  make test-mongo    run the MongoDB integration and UC-APP-001/002 E2E suites"
+	@echo "  make test-auth-app run the production-identity Auth+App double-service E2E"
 	@echo "  make vet           run go vet"
 	@echo "  make wire-check    fail if wire_gen.go is stale"
 	@echo "  make api-check     fail if generated API code drifted from Proto"
@@ -48,6 +49,10 @@ test:
 .PHONY: test-mongo
 test-mongo:
 	./scripts/test-mongo-integration.sh
+
+.PHONY: test-auth-app
+test-auth-app:
+	./scripts/test-auth-app-integration.sh
 
 .PHONY: vet
 vet:

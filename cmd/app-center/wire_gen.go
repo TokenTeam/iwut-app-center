@@ -51,7 +51,12 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	int32_2 := provideInitialApplicationQuota(configuration)
 	createApplicationHandler := usecase.NewCreateApplicationHandler(uuiDv7Generator, systemClock, applicationRepository, int32_2)
 	applicationService := transport.NewApplicationService(createApplicationHandler)
-	clientConn, cleanup2, err := provideAuthScopeCatalogConnection(configuration)
+	serviceIdentitySigner, err := provideServiceIdentitySigner(configuration, systemClock)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	clientConn, cleanup2, err := provideAuthScopeCatalogConnection(configuration, serviceIdentitySigner)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -89,8 +94,13 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		return nil, nil, err
 	}
 	applicationReviewDecisionRepository := mongo.NewApplicationReviewDecisionRepository(database)
-	authID := provideSystemAuthID(configuration)
-	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, systemClock, applicationReviewDecisionRepository, authID)
+	grpcSystemPrincipalResolver, err := auth.NewGRPCSystemPrincipalResolver(clientConn)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, systemClock, applicationReviewDecisionRepository, grpcSystemPrincipalResolver)
 	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler, restoreRejectedApplicationVersionHandler, decideApplicationVersionReviewHandler)
 	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService)
 	if err != nil {

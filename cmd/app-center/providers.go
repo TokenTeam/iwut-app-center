@@ -19,7 +19,6 @@ import (
 	"iwut-app-center/internal/config"
 	reviewport "iwut-app-center/internal/review/port"
 	reviewusecase "iwut-app-center/internal/review/usecase"
-	"iwut-app-center/internal/shared"
 	versionport "iwut-app-center/internal/version/port"
 	versionusecase "iwut-app-center/internal/version/usecase"
 )
@@ -67,17 +66,22 @@ func provideScopeCatalogCacheTTL(configuration config.Config) time.Duration {
 	return configuration.ScopeCatalogCacheTTL
 }
 
-func provideSystemAuthID(configuration config.Config) shared.AuthID {
-	return shared.AuthID(configuration.SystemAuthID)
+func provideServiceIdentitySigner(configuration config.Config, clock port.Clock) (*authadapter.ServiceIdentitySigner, error) {
+	return authadapter.NewServiceIdentitySigner(authadapter.ServiceIdentitySignerConfig{
+		ServiceID:     configuration.ServiceIdentityID,
+		KID:           configuration.ServiceIdentityKID,
+		Audience:      configuration.ServiceIdentityAudience,
+		TTL:           configuration.ServiceIdentityTTL,
+		PrivateKeyPEM: configuration.ServiceIdentityPrivateKeyPEM,
+		Clock:         clock,
+	})
 }
 
-// provideAuthScopeCatalogConnection owns the temporary unauthenticated native
-// gRPC channel. The platform service-identity contract is still open, so this
-// connection must not be treated as production-ready.
-func provideAuthScopeCatalogConnection(configuration config.Config) (*grpc.ClientConn, func(), error) {
+func provideAuthScopeCatalogConnection(configuration config.Config, signer *authadapter.ServiceIdentitySigner) (*grpc.ClientConn, func(), error) {
 	connection, err := grpc.NewClient(
 		configuration.AuthScopeCatalogTarget,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(signer.UnaryClientInterceptor),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create Auth Scope Catalog gRPC client: %w", err)

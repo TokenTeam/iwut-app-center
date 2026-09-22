@@ -41,6 +41,17 @@ type fakeSuspensionChecker struct {
 	authIDs   []shared.AuthID
 }
 
+type fakeSystemPrincipalResolver struct {
+	authID shared.AuthID
+	err    error
+	calls  int
+}
+
+func (fake *fakeSystemPrincipalResolver) ResolveReviewAutoRejection(context.Context) (shared.AuthID, error) {
+	fake.calls++
+	return fake.authID, fake.err
+}
+
 func (fake *fakeSuspensionChecker) AnySuspended(_ context.Context, authIDs []shared.AuthID) (bool, error) {
 	fake.calls++
 	fake.authIDs = append([]shared.AuthID{}, authIDs...)
@@ -320,6 +331,28 @@ func TestDecideApplicationVersionReview_BR_REV_018_SuspensionUnavailableKeepsPen
 	}
 }
 
+func TestDecideApplicationVersionReview_BR_REV_018_SystemPrincipalUnavailableKeepsPending(t *testing.T) {
+	t.Parallel()
+	repository := &fakeDecisionRepository{candidate: decisionCandidate(t)}
+	resolver := &fakeSystemPrincipalResolver{err: errors.New("auth unavailable")}
+	handler := NewDecideApplicationVersionReviewHandler(
+		reviewPolicy(t, "review.v1", domain.ReviewPolicyStatusActive, "content-reviewed"),
+		&fakeSuspensionChecker{suspended: true},
+		&fakeCatalog{revision: 1},
+		&fakePolicy{version: "public-https.v1"},
+		&fakeClock{now: time.Now()},
+		repository,
+		resolver,
+	)
+	result, err := handler.Handle(context.Background(), reviewerIdentity(), applicationID, versionID, reviewID, approveCommand())
+	if result != nil || !errors.Is(err, domain.ErrSystemPrincipalUnavailable) {
+		t.Fatalf("Handle() = (%v, %v), want system principal unavailable", result, err)
+	}
+	if resolver.calls != 1 || repository.decideCalls != 0 {
+		t.Fatalf("resolver/decide calls = (%d, %d), want (1, 0)", resolver.calls, repository.decideCalls)
+	}
+}
+
 func TestDecideApplicationVersionReview_BR_REV_018_RejectSkipsExternalChecks(t *testing.T) {
 	t.Parallel()
 	events := make([]string, 0, 4)
@@ -460,7 +493,7 @@ func newDecisionHandler(
 	launchPolicy port.LaunchURLSubmissionPolicy,
 	clock port.Clock,
 ) *DecideApplicationVersionReviewHandler {
-	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, clock, repository, "auth-system")
+	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, clock, repository, &fakeSystemPrincipalResolver{authID: "auth-system"})
 }
 
 func newDecisionHandlerWithSystemID(
@@ -472,7 +505,7 @@ func newDecisionHandlerWithSystemID(
 	clock port.Clock,
 	systemAuthID shared.AuthID,
 ) *DecideApplicationVersionReviewHandler {
-	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, clock, repository, systemAuthID)
+	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, clock, repository, &fakeSystemPrincipalResolver{authID: systemAuthID})
 }
 
 func decisionCandidate(t *testing.T) *domain.ApplicationReviewDecisionCandidate {

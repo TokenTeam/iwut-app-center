@@ -51,19 +51,17 @@ Code scope:
   Proto revision.
 - `internal/adapter/transport` — extend trusted-identity-v1 with reviewer
   permissions and expose the decision command over HTTP/gRPC.
-- `internal/adapter/auth` — implement the Developer suspension consumer using
-  the generated Auth client and fail closed on contract violations.
+- `internal/adapter/auth` — sign internal calls, consume Developer Status and
+  resolve/cache the Auth-owned SYSTEM principal; fail closed on violations.
 - `internal/adapter/mongo` — bind the existing decision repository and add the
   immutable App Center-local VersionReviewPolicy repository/migration.
-- `internal/config` and `cmd/app-center/` — validate System Auth ID and Auth
-  Developer Status target, then assemble the complete UC with goforj/wire.
+- `internal/config` and `cmd/app-center/` — validate service signer and Auth
+  target configuration, then assemble the complete UC with goforj/wire.
 - Provider E2E crosses signed ReviewerIdentity JWS, real HTTP/gRPC listeners,
   real MongoDB and a test Auth Server implementing the generated interface.
 
 Explicit non-goals:
 
-- No production internal-service credential or Auth allowlist implementation;
-  the platform format is still unresolved and remains a production gap.
 - No reviewer permission grant/revoke management UC in Auth Center.
 - No review queue, publication, revoke, notification or browser isolation.
 - No content change, automatic resubmission, appeal, notification or legacy API
