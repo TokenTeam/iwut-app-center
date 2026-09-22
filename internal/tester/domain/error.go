@@ -5,13 +5,16 @@ import "errors"
 type ErrorCategory string
 
 const (
-	ErrorCategoryValidation            ErrorCategory = "Validation"
-	ErrorCategoryAuthentication        ErrorCategory = "Authentication"
-	ErrorCategoryAuthorization         ErrorCategory = "Authorization"
-	ErrorCategoryNotFound              ErrorCategory = "NotFound"
-	ErrorCategoryConflict              ErrorCategory = "Conflict"
-	ErrorCategoryDependencyUnavailable ErrorCategory = "DependencyUnavailable"
-	ErrorCategoryInternal              ErrorCategory = "Internal"
+	ErrorCodeInvalidTesterMembershipId           ErrorCode     = "InvalidTesterMembershipId"
+	ErrorCodeApplicationTesterMembershipNotFound ErrorCode     = "ApplicationTesterMembershipNotFound"
+	ErrorCodeApplicationTesterStateInconsistent  ErrorCode     = "ApplicationTesterStateInconsistent"
+	ErrorCategoryValidation                      ErrorCategory = "Validation"
+	ErrorCategoryAuthentication                  ErrorCategory = "Authentication"
+	ErrorCategoryAuthorization                   ErrorCategory = "Authorization"
+	ErrorCategoryNotFound                        ErrorCategory = "NotFound"
+	ErrorCategoryConflict                        ErrorCategory = "Conflict"
+	ErrorCategoryDependencyUnavailable           ErrorCategory = "DependencyUnavailable"
+	ErrorCategoryInternal                        ErrorCategory = "Internal"
 )
 
 type ErrorCode string
@@ -58,6 +61,9 @@ func (e *Error) Is(target error) bool {
 }
 
 var (
+	ErrInvalidTesterMembershipId              = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterMembershipId, "tester membership ID is invalid", nil)
+	ErrApplicationTesterMembershipNotFound    = newError(ErrorCategoryNotFound, ErrorCodeApplicationTesterMembershipNotFound, "application tester membership not found", nil)
+	ErrApplicationTesterStateInconsistent     = newError(ErrorCategoryInternal, ErrorCodeApplicationTesterStateInconsistent, "application tester state is inconsistent", nil)
 	ErrAuthenticatedUserRequired              = newError(ErrorCategoryAuthentication, ErrorCodeAuthenticatedUserRequired, "authenticated user is required", nil)
 	ErrInvalidTesterJoinSecret                = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterJoinSecret, "tester join secret is invalid", nil)
 	ErrTesterJoinLinkInvalid                  = newError(ErrorCategoryNotFound, ErrorCodeTesterJoinLinkInvalid, "tester join link is invalid", nil)

@@ -27,7 +27,7 @@ func TestAPIContract_UCAPP009_BR_TST_010_012_019_ResourceAndSensitiveBoundary(t 
 		{&testermembershipv1.JoinApplicationAsTesterRequest{}, "command,join_link_id"},
 		{&testermembershipv1.JoinApplicationAsTesterCommand{}, "secret"},
 		{&testermembershipv1.JoinApplicationAsTesterResponse{}, "capacity,joined,membership"},
-		{&testermembershipv1.TesterMembershipResource{}, "application_id,joined_at,joined_via_join_link_id,membership_id,status,tester_auth_id"},
+		{&testermembershipv1.TesterMembershipResource{}, "application_id,joined_at,joined_via_join_link_id,membership_id,removed_at,removed_by,status,tester_auth_id"},
 		{&testermembershipv1.TesterCapacity{}, "active_tester_count,tester_limit"},
 	} {
 		if strings.Join(messageFieldNames(t, tc.message), ",") != tc.fields {

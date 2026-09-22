@@ -40,36 +40,34 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-009 Join Application As Tester delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-009.md`, generated from
-`docs/tools/brief-specs/UC-APP-009.json`. Regenerate it whenever a selected
-source changes. The brief selects BR-TST-010 through BR-TST-019, the shared
-identity/URL/routing contracts and ADR-006; reuse the engineering baseline.
+**UC-APP-010 Remove Application Tester delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-010.md`, generated from
+`docs/tools/brief-specs/UC-APP-010.json`. Regenerate it whenever a selected
+source changes. The brief selects BR-TST-020 through BR-TST-028, shared
+identity/routing contracts and ADR-006; reuse the engineering baseline.
 
 Code scope:
 
-- `internal/tester/{domain,usecase,port}` — Application-level immutable
-  membership episodes, canonical secret hashing, ordinary authenticated user,
-  ACTIVE idempotency and fixed capacity 100.
-- `internal/adapter/mongo` — explicit migration, ACTIVE partial unique index,
-  immutable history, shared UC008 Application coordinationRevision write fence.
-  Acquire the fence before final link validation, idempotency lookup, ACTIVE
-  count and insert in one snapshot/majority transaction; no stored counter.
-- `internal/shared` and transport — minimal authenticated user identity from
-  trusted context and UC009 authentication/error mapping, without Developer gate.
-- `api/`, transport and `cmd/app-center/` — resource Proto/HTTP/gRPC,
-  201 new / 200 idempotent, no-store response, Wire and real MongoDB E2E.
-- Tests must prove last-slot contention, same-user concurrency, old-link
-  rejection after rotation, rollback, full-list idempotency and safe redaction.
+- `internal/tester/{domain,usecase,port}` — APPROVED current admin removes an
+  exact membership episode, immutable REMOVED audit, idempotency without Clock
+  for an already removed candidate and fixed capacity 100.
+- `internal/adapter/mongo` — reuse UC008/009 Application coordinationRevision
+  write fence before final admin/episode checks, count, link-existence snapshot
+  and ACTIVE-to-REMOVED transition in one snapshot/majority transaction.
+  No stored counter. Reuse schema0010 unless an explicit new migration is needed.
+- `api/`, transport and `cmd/app-center/` — DELETE resource HTTP/gRPC, both
+  first/idempotent removal return 200, removed audit and activeJoinLinkExists,
+  Wire and real MongoDB E2E. State inconsistency is HTTP500/gRPC INTERNAL with
+  stable ERROR_REASON_APPLICATION_TESTER_STATE_INCONSISTENT and safe alerting.
+- Test exact old-episode idempotency after rejoin, concurrent removal, removal
+  versus rejoin, admin transfer, freed capacity, rollback and unchanged links.
 
 Explicit non-goals:
 
-- No removal, standalone revocation, listing or launch-target resolution APIs;
-  preserve REMOVED episode shape only for rejoin/history invariants.
-- No frontend/landing page, QR rendering or URL hosting.
-- No Auth provider/Gateway changes, Scope Catalog dependency, permission
-  management, publication changes or legacy compatibility.
-- Do not modify Application business fields; reuse adapter-only write fences.
+- No link revocation/rotation command, blacklist, self-exit, notifications,
+  tester listing/read model or launch-target resolution API.
+- No frontend, Gateway/Auth changes, Scope Catalog or publication dependency.
+- Do not modify Application business fields or shipped migration history.
 - No push in any repository; keep API, service and documentation changes local.
 
 Verification commands:

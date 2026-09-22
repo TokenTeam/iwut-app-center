@@ -16,6 +16,7 @@ import (
 var ProviderSet = wire.NewSet(
 	NewApplicationTesterMembershipRepository,
 	wire.Bind(new(testerport.ApplicationTesterMembershipRepository), new(*ApplicationTesterMembershipRepository)),
+	wire.Bind(new(testerport.ApplicationTesterRemovalRepository), new(*ApplicationTesterMembershipRepository)),
 	NewApplicationTesterJoinLinkRepository,
 	wire.Bind(new(testerport.ApplicationTesterJoinLinkRepository), new(*ApplicationTesterJoinLinkRepository)),
 	NewApplicationPublicationRepository,

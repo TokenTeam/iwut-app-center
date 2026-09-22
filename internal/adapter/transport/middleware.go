@@ -51,7 +51,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester {
+				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == testermembershipv1.OperationTesterMembershipRemoveApplicationTester {
 					transporter.ReplyHeader().Set("Cache-Control", "no-store")
 				}
 			}

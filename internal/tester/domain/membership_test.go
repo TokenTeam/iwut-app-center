@@ -62,9 +62,10 @@ func TestBRTST012015016MembershipEpisodeInvariants(t *testing.T) {
 			}
 		})
 	}
-	// The entity exposes no mutation or restoration method on an existing episode.
+	// UC010 adds the terminal Remove transition; no transition can restore an
+	// existing episode to ACTIVE.
 	typ := reflect.TypeOf(&ApplicationTesterMembership{})
-	for _, method := range []string{"Activate", "Restore", "SetStatus", "Remove"} {
+	for _, method := range []string{"Activate", "Restore", "SetStatus"} {
 		if _, ok := typ.MethodByName(method); ok {
 			t.Fatalf("unexpected transition %s", method)
 		}

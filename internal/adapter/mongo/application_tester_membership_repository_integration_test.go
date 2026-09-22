@@ -50,8 +50,8 @@ func TestApplicationTesterMembershipRepositoryIntegration(t *testing.T) {
 				t.Fatalf("unexpected %s side effect", name)
 			}
 		}
-		// A stored REMOVED episode is fixture data for future UC010; this repository
-		// exposes no removal or restore command.
+		// Seed historical REMOVED state to isolate the UC009 join contract. The
+		// removal command has its own transaction and concurrency integration suite.
 		actor := "admin"
 		removedAt := time.Now().UTC().Truncate(time.Millisecond)
 		_, err = db.Collection(applicationTesterMembershipsCollectionName).UpdateOne(t.Context(), bson.D{{Key: "membershipId", Value: joined.Membership().MembershipID().String()}}, bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: "REMOVED"}, {Key: "removedBy", Value: actor}, {Key: "removedAt", Value: removedAt}}}})

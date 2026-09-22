@@ -125,7 +125,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	tokenHasher := testercredential.NewTokenHasher()
 	applicationTesterMembershipRepository := mongo.NewApplicationTesterMembershipRepository(database)
 	joinApplicationAsTesterHandler := usecase5.NewJoinApplicationAsTesterHandler(tokenHasher, publicationUUIDv7Generator, systemClock, applicationTesterMembershipRepository)
-	testerMembershipService := transport.NewTesterMembershipService(joinApplicationAsTesterHandler)
+	removeApplicationTesterHandler := usecase5.NewRemoveApplicationTesterHandler(systemClock, applicationTesterMembershipRepository)
+	testerMembershipService := transport.NewTesterMembershipService(joinApplicationAsTesterHandler, removeApplicationTesterHandler)
 	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService)
 	if err != nil {
 		cleanup2()

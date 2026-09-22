@@ -33,6 +33,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		provideTesterJoinURLPrefix,
 		testerusecase.NewCreateOrRotateTesterJoinLinkHandler,
 		testerusecase.NewJoinApplicationAsTesterHandler,
+		testerusecase.NewRemoveApplicationTesterHandler,
+		wire.Bind(new(transport.RemoveApplicationTesterHandler), new(*testerusecase.RemoveApplicationTesterHandler)),
 		wire.Bind(new(transport.JoinApplicationAsTesterHandler), new(*testerusecase.JoinApplicationAsTesterHandler)),
 		wire.Bind(new(transport.CreateOrRotateTesterJoinLinkHandler), new(*testerusecase.CreateOrRotateTesterJoinLinkHandler)),
 		auth.ProviderSet,

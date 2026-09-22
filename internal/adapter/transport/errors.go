@@ -19,6 +19,10 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidRemoveTesterRequest             = "ERROR_REASON_INVALID_REMOVE_TESTER_REQUEST"
+	ReasonInvalidTesterMembershipId              = "ERROR_REASON_INVALID_TESTER_MEMBERSHIP_ID"
+	ReasonApplicationTesterMembershipNotFound    = "ERROR_REASON_APPLICATION_TESTER_MEMBERSHIP_NOT_FOUND"
+	ReasonApplicationTesterStateInconsistent     = "ERROR_REASON_APPLICATION_TESTER_STATE_INCONSISTENT"
 	ReasonAuthenticatedUserRequired              = "ERROR_REASON_AUTHENTICATED_USER_REQUIRED"
 	ReasonInvalidAuthenticatedUser               = "ERROR_REASON_INVALID_AUTHENTICATED_USER"
 	ReasonInvalidTesterJoinSecret                = "ERROR_REASON_INVALID_TESTER_JOIN_SECRET"
@@ -212,6 +216,9 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 }
 
 var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
+	testerdomain.ErrorCodeInvalidTesterMembershipId:              {code: codes.InvalidArgument, reason: ReasonInvalidTesterMembershipId, message: "tester membership ID is invalid"},
+	testerdomain.ErrorCodeApplicationTesterMembershipNotFound:    {code: codes.NotFound, reason: ReasonApplicationTesterMembershipNotFound, message: "application tester membership not found"},
+	testerdomain.ErrorCodeApplicationTesterStateInconsistent:     {code: codes.Internal, reason: ReasonApplicationTesterStateInconsistent, message: "application tester state is inconsistent"},
 	testerdomain.ErrorCodeAuthenticatedUserRequired:              {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
 	testerdomain.ErrorCodeInvalidTesterJoinSecret:                {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinSecret, message: "tester join credential is invalid"},
 	testerdomain.ErrorCodeTesterJoinLinkInvalid:                  {code: codes.NotFound, reason: ReasonTesterJoinLinkInvalid, message: "tester join link is invalid"},

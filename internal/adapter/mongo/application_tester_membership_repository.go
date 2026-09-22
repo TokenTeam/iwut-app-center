@@ -152,7 +152,10 @@ func (r *ApplicationTesterMembershipRepository) validJoinLink(ctx context.Contex
 // confidential hashes or other users' identities. Business sentinels remain
 // stable while all unexpected persistence details are deliberately discarded.
 func safeTesterMembershipError(err error) error {
-	for _, business := range []error{testerport.ErrTesterJoinLinkInvalid, testerport.ErrApplicationTesterLimitReached} {
+	if errors.Is(err, testerdomain.ErrApplicationTesterStateInconsistent) {
+		return testerport.ErrApplicationTesterStateInconsistent
+	}
+	for _, business := range []error{testerport.ErrTesterJoinLinkInvalid, testerport.ErrApplicationTesterLimitReached, testerport.ErrApplicationTesterMembershipNotFound, testerport.ErrApplicationAdminRequired, testerport.ErrApplicationTesterStateInconsistent} {
 		if errors.Is(err, business) {
 			return business
 		}

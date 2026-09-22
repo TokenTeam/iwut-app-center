@@ -14,7 +14,7 @@ func (id ApplicationTesterMembershipID) String() string { return string(id) }
 func (id ApplicationTesterMembershipID) IsValid() bool  { return shared.IsUUIDv7(string(id)) }
 func ParseTesterMembershipID(value string) (ApplicationTesterMembershipID, error) {
 	if !shared.IsUUIDv7(value) {
-		return "", NewInternalError(nil)
+		return "", ErrInvalidTesterMembershipId
 	}
 	return ApplicationTesterMembershipID(strings.ToLower(value)), nil
 }

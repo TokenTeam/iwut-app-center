@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	kerrors "github.com/go-kratos/kratos/v2/errors"
+	"io"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	"net/http"
 	"strings"
@@ -20,6 +21,9 @@ import (
 )
 
 const (
+	RemoveApplicationTesterInternalPath        = "/v1/applications/{application_id}/tester-memberships/{membership_id}"
+	RemoveApplicationTesterExternalPath        = ServicePrefix + RemoveApplicationTesterInternalPath
+	RemoveApplicationTesterGRPCMethod          = testermembershipv1.OperationTesterMembershipRemoveApplicationTester
 	JoinApplicationAsTesterInternalPath        = "/v1/tester-join-links/{join_link_id}/memberships"
 	JoinApplicationAsTesterExternalPath        = ServicePrefix + JoinApplicationAsTesterInternalPath
 	JoinApplicationAsTesterGRPCMethod          = testermembershipv1.OperationTesterMembershipJoinApplicationAsTester
@@ -136,6 +140,8 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *testermembershipv1.RemoveApplicationTesterResponse:
+		w.Header().Set("Cache-Control", "no-store")
 	case *testermembershipv1.JoinApplicationAsTesterResponse:
 		w.Header().Set("Cache-Control", "no-store")
 		if response.GetJoined() {
@@ -170,6 +176,16 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isTesterRemovalRequest(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := testermembershipv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = invalidRemoveTesterRequest()
+			} else {
+				err = toTransportError(testerdomain.NewInternalError(nil))
+			}
+		}
+	}
 	if isTesterMembershipRequest(r) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := testermembershipv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -187,13 +203,31 @@ func isTesterMembershipRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/tester-join-links/") && strings.HasSuffix(r.URL.Path, "/memberships") && strings.Count(r.URL.Path, "/") == 4
 }
 
+func isTesterRemovalRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodDelete && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "tester-memberships"
+}
+
+func validTesterRemovalHTTPInput(r *http.Request) bool {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		return false
+	}
+	if r.Body == nil {
+		return true
+	}
+	// The operation has no body. A small bound avoids consuming unbounded
+	// whitespace; read failures and any data beyond the bound fail closed.
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1025))
+	return err == nil && len(body) <= 1024 && strings.TrimSpace(string(body)) == ""
+}
+
 // Generated bindings decode sensitive JSON before invoking Kratos middleware.
 // This narrow filter establishes authentication first; the shared middleware
 // still verifies and supplies the trusted use-case identity for both protocols.
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTesterMembershipRequest(r) {
+			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				var identityErr error
 				for _, key := range legacyIdentityHeaders {
@@ -217,7 +251,15 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					}
 				}
 				if identityErr != nil {
-					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, JoinApplicationAsTesterGRPCMethod))
+					operation := JoinApplicationAsTesterGRPCMethod
+					if isTesterRemovalRequest(r) {
+						operation = RemoveApplicationTesterGRPCMethod
+					}
+					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if isTesterRemovalRequest(r) && !validTesterRemovalHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, invalidRemoveTesterRequest())
 					return
 				}
 			}
