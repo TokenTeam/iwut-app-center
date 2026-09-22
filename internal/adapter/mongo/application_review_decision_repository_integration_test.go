@@ -591,15 +591,13 @@ func assertDecisionDidNotPersist(t *testing.T, database *drivermongo.Database, s
 	}
 }
 
+// Schema migration creates these collections; review decisions must never publish.
 func assertNoPublicationCollections(t *testing.T, database *drivermongo.Database) {
 	t.Helper()
-	names, err := database.ListCollectionNames(t.Context(), bson.D{})
-	if err != nil {
-		t.Fatalf("list collections: %v", err)
-	}
-	for _, name := range names {
-		if name == "publications" || name == "application_publications" {
-			t.Fatalf("decision created publication collection %s", name)
+	for _, name := range []string{"publications", applicationPublicationsCollectionName, applicationPublicationHistoryCollectionName} {
+		count, err := database.Collection(name).CountDocuments(t.Context(), bson.D{})
+		if err != nil || count != 0 {
+			t.Fatalf("decision publication side effects in %s: count=%d error=%v", name, count, err)
 		}
 	}
 }

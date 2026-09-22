@@ -15,6 +15,7 @@ import (
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	usecase4 "iwut-app-center/internal/publication/usecase"
 	usecase3 "iwut-app-center/internal/review/usecase"
 	usecase2 "iwut-app-center/internal/version/usecase"
 )
@@ -102,7 +103,13 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	}
 	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, systemClock, applicationReviewDecisionRepository, grpcSystemPrincipalResolver)
 	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler, restoreRejectedApplicationVersionHandler, decideApplicationVersionReviewHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService)
+	publicationScopeCatalog := auth.NewPublicationScopeCatalog(scopeCatalogCache)
+	publicationLaunchURLSubmissionPolicy := preflight.NewPublicationLaunchURLSubmissionPolicy(launchURLSubmissionPolicy)
+	publicationUUIDv7Generator := generator.NewPublicationUUIDv7Generator()
+	applicationPublicationRepository := mongo.NewApplicationPublicationRepository(database)
+	placeApprovedVersionInTestSlotHandler := usecase4.NewPlaceApprovedVersionInTestSlotHandler(publicationScopeCatalog, publicationLaunchURLSubmissionPolicy, publicationUUIDv7Generator, systemClock, applicationPublicationRepository)
+	applicationPublicationService := transport.NewApplicationPublicationService(placeApprovedVersionInTestSlotHandler)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService)
 	if err != nil {
 		cleanup2()
 		cleanup()

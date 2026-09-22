@@ -9,11 +9,15 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	publicationv1 "iwut-app-center/api/gen/go/app_center/v1/application_publication"
 	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
 	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
 )
 
 const (
+	PlaceApprovedVersionInTestSlotInternalPath = "/v1/applications/{application_id}/publications/{rpc_api_major}/test-slot"
+	PlaceApprovedVersionInTestSlotExternalPath = ServicePrefix + PlaceApprovedVersionInTestSlotInternalPath
+	PlaceApprovedVersionInTestSlotGRPCMethod   = publicationv1.OperationApplicationPublicationPlaceApprovedVersionInTestSlot
 	// ServicePrefix is the Gateway-only service prefix. It is not part of the
 	// Proto HTTP annotation.
 	ServicePrefix = "/app-center"
@@ -61,6 +65,7 @@ func NewServers(
 	service *ApplicationService,
 	versionService *ApplicationVersionService,
 	reviewService *ApplicationReviewService,
+	publicationService *ApplicationPublicationService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -75,11 +80,15 @@ func NewServers(
 		return nil, errors.New("transport servers: application review service is required")
 	}
 
+	if publicationService == nil {
+		return nil, errors.New("transport servers: application publication service is required")
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Middleware(identityMiddleware(verifier)),
 		khttp.ResponseEncoder(createdResponseEncoder),
 	)
+	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
@@ -88,6 +97,7 @@ func NewServers(
 		kgrpc.Address(config.GRPCAddr),
 		kgrpc.Middleware(identityMiddleware(verifier)),
 	)
+	publicationv1.RegisterApplicationPublicationServer(grpcServer, publicationService)
 	applicationv1.RegisterApplicationServer(grpcServer, service)
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
@@ -101,6 +111,10 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *publicationv1.PlaceApprovedVersionInTestSlotResponse:
+		if response.GetChanged() && response.GetPublication().GetRevision() == 1 {
+			w.WriteHeader(http.StatusCreated)
+		}
 	case *applicationv1.CreateApplicationResponse:
 		w.WriteHeader(http.StatusCreated)
 	case *applicationversionv1.CreateApplicationVersionResponse:

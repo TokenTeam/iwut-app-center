@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"iwut-app-center/internal/application/domain"
+	publicationdomain "iwut-app-center/internal/publication/domain"
 	reviewdomain "iwut-app-center/internal/review/domain"
 	versiondomain "iwut-app-center/internal/version/domain"
 )
@@ -17,6 +18,15 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidRpcApiMajor                     = "ERROR_REASON_INVALID_RPC_API_MAJOR"
+	ReasonInvalidApplicationVersionId            = "ERROR_REASON_INVALID_APPLICATION_VERSION_ID"
+	ReasonInvalidApplicationPublicationRevision  = "ERROR_REASON_INVALID_APPLICATION_PUBLICATION_REVISION"
+	ReasonApplicationVersionNotApproved          = "ERROR_REASON_APPLICATION_VERSION_NOT_APPROVED"
+	ReasonApplicationVersionRpcApiIncompatible   = "ERROR_REASON_APPLICATION_VERSION_RPC_API_INCOMPATIBLE"
+	ReasonApplicationPublicationAlreadyExists    = "ERROR_REASON_APPLICATION_PUBLICATION_ALREADY_EXISTS"
+	ReasonApplicationPublicationNotFound         = "ERROR_REASON_APPLICATION_PUBLICATION_NOT_FOUND"
+	ReasonApplicationPublicationRevisionConflict = "ERROR_REASON_APPLICATION_PUBLICATION_REVISION_CONFLICT"
+
 	ReasonInvalidApplicationName                = "ERROR_REASON_INVALID_APPLICATION_NAME"
 	ReasonDeveloperIdentityRequired             = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
 	ReasonInvalidDeveloperIdentity              = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
@@ -169,6 +179,27 @@ var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
 	reviewdomain.ErrorCodeInternal:                              internalSpec,
 }
 
+var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
+	publicationdomain.ErrorCodeInvalidRpcApiMajor:                     {code: codes.InvalidArgument, reason: ReasonInvalidRpcApiMajor, message: "RPC API major is invalid"},
+	publicationdomain.ErrorCodeInvalidApplicationVersionId:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionId, message: "application version ID is invalid"},
+	publicationdomain.ErrorCodeInvalidApplicationPublicationRevision:  {code: codes.InvalidArgument, reason: ReasonInvalidApplicationPublicationRevision, message: "publication revision is invalid"},
+	publicationdomain.ErrorCodeApplicationVersionNotApproved:          {code: codes.FailedPrecondition, reason: ReasonApplicationVersionNotApproved, message: "application version is not approved"},
+	publicationdomain.ErrorCodeApplicationVersionRpcApiIncompatible:   {code: codes.InvalidArgument, reason: ReasonApplicationVersionRpcApiIncompatible, message: "application version RPC API range is incompatible"},
+	publicationdomain.ErrorCodeApplicationPublicationAlreadyExists:    {code: codes.AlreadyExists, reason: ReasonApplicationPublicationAlreadyExists, message: "application publication already exists"},
+	publicationdomain.ErrorCodeApplicationPublicationNotFound:         {code: codes.NotFound, reason: ReasonApplicationPublicationNotFound, message: "application publication not found"},
+	publicationdomain.ErrorCodeApplicationPublicationRevisionConflict: {code: codes.Aborted, reason: ReasonApplicationPublicationRevisionConflict, message: "publication revision conflicts"},
+	publicationdomain.ErrorCodeDeveloperIdentityRequired:              {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	publicationdomain.ErrorCodeDeveloperApprovalRequired:              {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	publicationdomain.ErrorCodeApplicationVersionNotFound:             {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
+	publicationdomain.ErrorCodeApplicationAdminRequired:               {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	publicationdomain.ErrorCodeApplicationReviewStateInconsistent:     {code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent, message: "application review state is inconsistent"},
+	publicationdomain.ErrorCodeInvalidApplicationScope:                {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
+	publicationdomain.ErrorCodeScopeCatalogUnavailable:                {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	publicationdomain.ErrorCodeApplicationLaunchURLNotReviewable:      {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
+	publicationdomain.ErrorCodeLaunchURLInspectionUnavailable:         {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
+	publicationdomain.ErrorCodeInternal:                               internalSpec,
+}
+
 func reviewErrorCode(err error) reviewdomain.ErrorCode {
 	var domainError *reviewdomain.Error
 	if errors.As(err, &domainError) {
@@ -190,6 +221,14 @@ func toTransportError(err error) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidDeveloperIdentity, "developer identity is invalid")
 	}
 
+	var publicationDomainError *publicationdomain.Error
+	if errors.As(err, &publicationDomainError) {
+		spec, ok := publicationDomainErrorSpecs[publicationDomainError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
+	}
 	var domainError *domain.Error
 	if errors.As(err, &domainError) {
 		spec, ok := domainErrorSpecs[domainError.Code()]

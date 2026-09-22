@@ -2,12 +2,15 @@ package auth
 
 import (
 	"github.com/goforj/wire"
+	publicationport "iwut-app-center/internal/publication/port"
 
 	reviewport "iwut-app-center/internal/review/port"
 	"iwut-app-center/internal/version/port"
 )
 
 var ProviderSet = wire.NewSet(
+	NewPublicationScopeCatalog,
+	wire.Bind(new(publicationport.ScopeCatalog), new(*PublicationScopeCatalog)),
 	NewGRPCScopeCatalogSnapshotSource,
 	wire.Bind(new(ScopeCatalogSnapshotSource), new(*GRPCScopeCatalogSnapshotSource)),
 	NewScopeCatalogCache,

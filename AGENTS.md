@@ -40,36 +40,33 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-005 Decide Application Version Review delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-005.md`, generated from
-`docs/tools/brief-specs/UC-APP-005.json`. Regenerate it whenever a selected
+**UC-APP-007 Place Approved Version In Test Slot delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-007.md`, generated from
+`docs/tools/brief-specs/UC-APP-007.json`. Regenerate it whenever a selected
 source changes.
 
 Code scope:
 
-- `api/` — add the decision RPC and import the shared Auth Developer Status v1
-  Proto revision.
-- `internal/adapter/transport` — extend trusted-identity-v1 with reviewer
-  permissions and expose the decision command over HTTP/gRPC.
-- `internal/adapter/auth` — sign internal calls, consume Developer Status and
-  resolve/cache the Auth-owned SYSTEM principal; fail closed on violations.
-- `internal/adapter/mongo` — bind the existing decision repository and add the
-  immutable App Center-local VersionReviewPolicy repository/migration.
-- `internal/config` and `cmd/app-center/` — validate service signer and Auth
-  target configuration, then assemble the complete UC with goforj/wire.
-- Provider E2E crosses signed ReviewerIdentity JWS, real HTTP/gRPC listeners,
-  real MongoDB and a test Auth Server implementing the generated interface.
+- `internal/publication/{domain,usecase,port}` — approved snapshot eligibility,
+  per-RPC-major test pointer, expected revision/no-op and immutable history.
+- `internal/adapter/mongo` — explicit Publication/History migration, atomic
+  persistence, rollback, unique constraints and real concurrency fences.
+- `internal/adapter/auth` and `internal/adapter/preflight` — adapt existing
+  Scope Catalog cache and DNS-only URL policy to publication-owned ports.
+- `api/` and `internal/adapter/transport` — generated publication RPC and
+  resource HTTP API, trusted developer identity, status/error mapping.
+- `cmd/app-center/` and config only as necessary — Wire assembly and real
+  MongoDB/HTTP/gRPC/JWS consumer E2E.
 
 Explicit non-goals:
 
-- No reviewer permission grant/revoke management UC in Auth Center.
-- No review queue, publication, revoke, notification or browser isolation.
-- No content change, automatic resubmission, appeal, notification or legacy API
-  compatibility layer.
-- No Gateway behavior change and no Auth Center provider behavior change.
-- No gRPC-Web wrapper in this service (terminated at Traefik).
-- No push in any repository; keep API, service and documentation commits local
-  until the user chooses the publication batch.
+- No tester links/memberships, launch resolution, public profile, grey/stable
+  slots, automatic publication, slot clearing or review revoke endpoint.
+- No Auth provider/Gateway changes, permission management, frontend or legacy
+  compatibility. Auth authoritative Scope Catalog remains a tracked dependency.
+- Do not change Application/Version business content, status or revision when
+  placing a test pointer; adapter-only transaction fences are permitted.
+- No push in any repository; keep API, service and documentation changes local.
 
 Verification commands:
 
@@ -102,6 +99,9 @@ internal/version/port/
 internal/review/domain/
 internal/review/usecase/
 internal/review/port/
+internal/publication/domain/
+internal/publication/usecase/
+internal/publication/port/
 internal/adapter/
 ```
 

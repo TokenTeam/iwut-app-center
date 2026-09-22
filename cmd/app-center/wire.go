@@ -14,6 +14,7 @@ import (
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	publicationusecase "iwut-app-center/internal/publication/usecase"
 	reviewusecase "iwut-app-center/internal/review/usecase"
 	versionusecase "iwut-app-center/internal/version/usecase"
 )
@@ -34,6 +35,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		versionusecase.NewCreateApplicationVersionHandler,
 		versionusecase.NewUpdateDraftApplicationVersionHandler,
 		reviewusecase.NewSubmitApplicationVersionReviewHandler,
+		publicationusecase.NewPlaceApprovedVersionInTestSlotHandler,
+		wire.Bind(new(transport.PlaceApprovedVersionInTestSlotHandler), new(*publicationusecase.PlaceApprovedVersionInTestSlotHandler)),
 		reviewusecase.NewDecideApplicationVersionReviewHandler,
 		reviewusecase.NewRestoreRejectedApplicationVersionHandler,
 		wire.Bind(new(transport.CreateApplicationHandler), new(*usecase.CreateApplicationHandler)),
