@@ -52,7 +52,7 @@ func newTestServersWithUpdate(
 		NewApplicationVersionService(versionHandler, updateHandler),
 		NewApplicationReviewService(nil, nil, nil),
 		NewApplicationPublicationService(nil),
-		NewTesterJoinLinkService(nil),
+		NewTesterJoinLinkService(nil, nil),
 		NewTesterMembershipService(nil, nil),
 	)
 	if err != nil {

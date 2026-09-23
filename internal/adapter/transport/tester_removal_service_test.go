@@ -55,7 +55,7 @@ func removalResult(t *testing.T, removed, activeLink bool) *testerdomain.RemoveA
 }
 func removalServers(t *testing.T, h *fakeTesterRemovalHandler) *Servers {
 	t.Helper()
-	s, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil), NewTesterMembershipService(nil, h))
+	s, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, h))
 	if err != nil {
 		t.Fatal(err)
 	}

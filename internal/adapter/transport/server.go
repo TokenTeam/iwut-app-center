@@ -21,6 +21,9 @@ import (
 )
 
 const (
+	RevokeTesterJoinLinkInternalPath           = "/v1/applications/{application_id}/tester-join-links/{join_link_id}"
+	RevokeTesterJoinLinkExternalPath           = ServicePrefix + RevokeTesterJoinLinkInternalPath
+	RevokeTesterJoinLinkGRPCMethod             = testerjoinlinkv1.OperationTesterJoinLinkRevokeTesterJoinLink
 	RemoveApplicationTesterInternalPath        = "/v1/applications/{application_id}/tester-memberships/{membership_id}"
 	RemoveApplicationTesterExternalPath        = ServicePrefix + RemoveApplicationTesterInternalPath
 	RemoveApplicationTesterGRPCMethod          = testermembershipv1.OperationTesterMembershipRemoveApplicationTester
@@ -140,6 +143,8 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
+		w.Header().Set("Cache-Control", "no-store")
 	case *testermembershipv1.RemoveApplicationTesterResponse:
 		w.Header().Set("Cache-Control", "no-store")
 	case *testermembershipv1.JoinApplicationAsTesterResponse:
@@ -176,6 +181,16 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isTesterJoinLinkRevocationRequest(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		if _, ok := testerjoinlinkv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = invalidRevokeTesterJoinLinkRequest()
+			} else {
+				err = toTransportError(testerdomain.NewInternalError(nil))
+			}
+		}
+	}
 	if isTesterRemovalRequest(r) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := testermembershipv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -208,6 +223,11 @@ func isTesterRemovalRequest(r *http.Request) bool {
 	return r.Method == http.MethodDelete && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "tester-memberships"
 }
 
+func isTesterJoinLinkRevocationRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodDelete && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "tester-join-links"
+}
+
 func validTesterRemovalHTTPInput(r *http.Request) bool {
 	if r.URL.RawQuery != "" || r.URL.ForceQuery {
 		return false
@@ -227,7 +247,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) {
+			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				var identityErr error
 				for _, key := range legacyIdentityHeaders {
@@ -255,7 +275,14 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					if isTesterRemovalRequest(r) {
 						operation = RemoveApplicationTesterGRPCMethod
 					}
+					if isTesterJoinLinkRevocationRequest(r) {
+						operation = RevokeTesterJoinLinkGRPCMethod
+					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if isTesterJoinLinkRevocationRequest(r) && !validTesterRemovalHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, invalidRevokeTesterJoinLinkRequest())
 					return
 				}
 				if isTesterRemovalRequest(r) && !validTesterRemovalHTTPInput(r) {

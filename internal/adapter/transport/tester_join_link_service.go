@@ -2,6 +2,9 @@ package transport
 
 import (
 	"context"
+	"errors"
+	"google.golang.org/grpc/codes"
+	"log/slog"
 	"strings"
 
 	kratostransport "github.com/go-kratos/kratos/v2/transport"
@@ -18,16 +21,21 @@ type CreateOrRotateTesterJoinLinkHandler interface {
 	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, testerusecase.CreateOrRotateTesterJoinLinkCommand) (*testerusecase.CreateOrRotateTesterJoinLinkResult, error)
 }
 
+type RevokeTesterJoinLinkHandler interface {
+	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, testerdomain.ApplicationTesterJoinLinkID) (*testerdomain.RevokeTesterJoinLinkResult, error)
+}
+
 type TesterJoinLinkService struct {
 	testerjoinlinkv1.UnimplementedTesterJoinLinkServer
-	handler CreateOrRotateTesterJoinLinkHandler
+	handler       CreateOrRotateTesterJoinLinkHandler
+	revokeHandler RevokeTesterJoinLinkHandler
 }
 
 var _ testerjoinlinkv1.TesterJoinLinkHTTPServer = (*TesterJoinLinkService)(nil)
 var _ testerjoinlinkv1.TesterJoinLinkServer = (*TesterJoinLinkService)(nil)
 
-func NewTesterJoinLinkService(handler CreateOrRotateTesterJoinLinkHandler) *TesterJoinLinkService {
-	return &TesterJoinLinkService{handler: handler}
+func NewTesterJoinLinkService(handler CreateOrRotateTesterJoinLinkHandler, revokeHandler RevokeTesterJoinLinkHandler) *TesterJoinLinkService {
+	return &TesterJoinLinkService{handler: handler, revokeHandler: revokeHandler}
 }
 
 func (service *TesterJoinLinkService) CreateOrRotateTesterJoinLink(ctx context.Context, request *testerjoinlinkv1.CreateOrRotateTesterJoinLinkRequest) (*testerjoinlinkv1.CreateOrRotateTesterJoinLinkResponse, error) {
@@ -78,4 +86,51 @@ func (service *TesterJoinLinkService) CreateOrRotateTesterJoinLink(ctx context.C
 		response.ReplacedJoinLinkId = &id
 	}
 	return response, nil
+}
+
+func (service *TesterJoinLinkService) RevokeTesterJoinLink(ctx context.Context, request *testerjoinlinkv1.RevokeTesterJoinLinkRequest) (*testerjoinlinkv1.RevokeTesterJoinLinkResponse, error) {
+	if service == nil || service.revokeHandler == nil || request == nil {
+		return nil, toTransportError(testerdomain.NewInternalError(nil))
+	}
+	identity, ok := developerIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(testerdomain.ErrDeveloperIdentityRequired)
+	}
+	if len(request.ProtoReflect().GetUnknown()) != 0 {
+		return nil, invalidRevokeTesterJoinLinkRequest()
+	}
+	result, err := service.revokeHandler.Handle(ctx, identity, shared.ApplicationID(request.GetApplicationId()), testerdomain.ApplicationTesterJoinLinkID(request.GetJoinLinkId()))
+	if err != nil {
+		if errors.Is(err, testerdomain.ErrApplicationTesterJoinLinkStateInconsistent) {
+			slog.ErrorContext(ctx, "application tester join link state invariant failed", "reason", ReasonApplicationTesterJoinLinkStateInconsistent)
+		}
+		return nil, toTransportError(err)
+	}
+	if result == nil || result.JoinLink() == nil {
+		return nil, toTransportError(testerdomain.NewInternalError(nil))
+	}
+	if transporter, ok := kratostransport.FromServerContext(ctx); ok {
+		transporter.ReplyHeader().Set("Cache-Control", "no-store")
+	}
+	link := result.JoinLink()
+	resource := &testerjoinlinkv1.TesterJoinLinkRevocationResource{JoinLinkId: link.JoinLinkID().String(), ApplicationId: link.ApplicationID().String(), Status: string(link.Status()), CreatedBy: link.CreatedBy().String(), CreatedAt: timestamppb.New(link.CreatedAt())}
+	if v := link.RevokedBy(); v != nil {
+		s := v.String()
+		resource.RevokedBy = &s
+	}
+	if v := link.RevokedAt(); v != nil {
+		resource.RevokedAt = timestamppb.New(*v)
+	}
+	if v := link.RevocationReason(); v != nil {
+		s := string(*v)
+		resource.RevocationReason = &s
+	}
+	if v := link.ReplacedByJoinLinkID(); v != nil {
+		s := v.String()
+		resource.ReplacedByJoinLinkId = &s
+	}
+	return &testerjoinlinkv1.RevokeTesterJoinLinkResponse{Revoked: result.Revoked(), JoinLink: resource}, nil
+}
+func invalidRevokeTesterJoinLinkRequest() error {
+	return transportStatus(codes.InvalidArgument, ReasonInvalidRevokeTesterJoinLinkRequest, "tester join link revocation accepts only application and join link path IDs")
 }

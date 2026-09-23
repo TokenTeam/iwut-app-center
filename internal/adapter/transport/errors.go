@@ -19,19 +19,21 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
-	ReasonInvalidRemoveTesterRequest             = "ERROR_REASON_INVALID_REMOVE_TESTER_REQUEST"
-	ReasonInvalidTesterMembershipId              = "ERROR_REASON_INVALID_TESTER_MEMBERSHIP_ID"
-	ReasonApplicationTesterMembershipNotFound    = "ERROR_REASON_APPLICATION_TESTER_MEMBERSHIP_NOT_FOUND"
-	ReasonApplicationTesterStateInconsistent     = "ERROR_REASON_APPLICATION_TESTER_STATE_INCONSISTENT"
-	ReasonAuthenticatedUserRequired              = "ERROR_REASON_AUTHENTICATED_USER_REQUIRED"
-	ReasonInvalidAuthenticatedUser               = "ERROR_REASON_INVALID_AUTHENTICATED_USER"
-	ReasonInvalidTesterJoinSecret                = "ERROR_REASON_INVALID_TESTER_JOIN_SECRET"
-	ReasonTesterJoinLinkInvalid                  = "ERROR_REASON_TESTER_JOIN_LINK_INVALID"
-	ReasonApplicationTesterLimitReached          = "ERROR_REASON_APPLICATION_TESTER_LIMIT_REACHED"
-	ReasonInvalidTesterJoinLinkId                = "ERROR_REASON_INVALID_TESTER_JOIN_LINK_ID"
-	ReasonApplicationTesterJoinLinkAlreadyExists = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_ALREADY_EXISTS"
-	ReasonApplicationTesterJoinLinkNotFound      = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_NOT_FOUND"
-	ReasonApplicationTesterJoinLinkChanged       = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_CHANGED"
+	ReasonApplicationTesterJoinLinkStateInconsistent = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT"
+	ReasonInvalidRevokeTesterJoinLinkRequest         = "ERROR_REASON_INVALID_REVOKE_TESTER_JOIN_LINK_REQUEST"
+	ReasonInvalidRemoveTesterRequest                 = "ERROR_REASON_INVALID_REMOVE_TESTER_REQUEST"
+	ReasonInvalidTesterMembershipId                  = "ERROR_REASON_INVALID_TESTER_MEMBERSHIP_ID"
+	ReasonApplicationTesterMembershipNotFound        = "ERROR_REASON_APPLICATION_TESTER_MEMBERSHIP_NOT_FOUND"
+	ReasonApplicationTesterStateInconsistent         = "ERROR_REASON_APPLICATION_TESTER_STATE_INCONSISTENT"
+	ReasonAuthenticatedUserRequired                  = "ERROR_REASON_AUTHENTICATED_USER_REQUIRED"
+	ReasonInvalidAuthenticatedUser                   = "ERROR_REASON_INVALID_AUTHENTICATED_USER"
+	ReasonInvalidTesterJoinSecret                    = "ERROR_REASON_INVALID_TESTER_JOIN_SECRET"
+	ReasonTesterJoinLinkInvalid                      = "ERROR_REASON_TESTER_JOIN_LINK_INVALID"
+	ReasonApplicationTesterLimitReached              = "ERROR_REASON_APPLICATION_TESTER_LIMIT_REACHED"
+	ReasonInvalidTesterJoinLinkId                    = "ERROR_REASON_INVALID_TESTER_JOIN_LINK_ID"
+	ReasonApplicationTesterJoinLinkAlreadyExists     = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_ALREADY_EXISTS"
+	ReasonApplicationTesterJoinLinkNotFound          = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_NOT_FOUND"
+	ReasonApplicationTesterJoinLinkChanged           = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_CHANGED"
 
 	ReasonInvalidRpcApiMajor                     = "ERROR_REASON_INVALID_RPC_API_MAJOR"
 	ReasonInvalidApplicationVersionId            = "ERROR_REASON_INVALID_APPLICATION_VERSION_ID"
@@ -216,23 +218,24 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 }
 
 var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
-	testerdomain.ErrorCodeInvalidTesterMembershipId:              {code: codes.InvalidArgument, reason: ReasonInvalidTesterMembershipId, message: "tester membership ID is invalid"},
-	testerdomain.ErrorCodeApplicationTesterMembershipNotFound:    {code: codes.NotFound, reason: ReasonApplicationTesterMembershipNotFound, message: "application tester membership not found"},
-	testerdomain.ErrorCodeApplicationTesterStateInconsistent:     {code: codes.Internal, reason: ReasonApplicationTesterStateInconsistent, message: "application tester state is inconsistent"},
-	testerdomain.ErrorCodeAuthenticatedUserRequired:              {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
-	testerdomain.ErrorCodeInvalidTesterJoinSecret:                {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinSecret, message: "tester join credential is invalid"},
-	testerdomain.ErrorCodeTesterJoinLinkInvalid:                  {code: codes.NotFound, reason: ReasonTesterJoinLinkInvalid, message: "tester join link is invalid"},
-	testerdomain.ErrorCodeApplicationTesterLimitReached:          {code: codes.Aborted, reason: ReasonApplicationTesterLimitReached, message: "application tester limit reached"},
-	testerdomain.ErrorCodeInvalidTesterJoinLinkId:                {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinLinkId, message: "tester join link ID is invalid"},
-	testerdomain.ErrorCodeApplicationTesterJoinLinkAlreadyExists: {code: codes.AlreadyExists, reason: ReasonApplicationTesterJoinLinkAlreadyExists, message: "active tester join link already exists"},
-	testerdomain.ErrorCodeApplicationTesterJoinLinkNotFound:      {code: codes.NotFound, reason: ReasonApplicationTesterJoinLinkNotFound, message: "active tester join link not found"},
-	testerdomain.ErrorCodeApplicationTesterJoinLinkChanged:       {code: codes.Aborted, reason: ReasonApplicationTesterJoinLinkChanged, message: "active tester join link has changed"},
-	testerdomain.ErrorCodeDeveloperIdentityRequired:              {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
-	testerdomain.ErrorCodeDeveloperApprovalRequired:              {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
-	testerdomain.ErrorCodeInvalidApplicationId:                   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
-	testerdomain.ErrorCodeApplicationNotFound:                    {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
-	testerdomain.ErrorCodeApplicationAdminRequired:               {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
-	testerdomain.ErrorCodeInternal:                               internalSpec,
+	testerdomain.ErrorCodeApplicationTesterJoinLinkStateInconsistent: {code: codes.Internal, reason: ReasonApplicationTesterJoinLinkStateInconsistent, message: "application tester join link state is inconsistent"},
+	testerdomain.ErrorCodeInvalidTesterMembershipId:                  {code: codes.InvalidArgument, reason: ReasonInvalidTesterMembershipId, message: "tester membership ID is invalid"},
+	testerdomain.ErrorCodeApplicationTesterMembershipNotFound:        {code: codes.NotFound, reason: ReasonApplicationTesterMembershipNotFound, message: "application tester membership not found"},
+	testerdomain.ErrorCodeApplicationTesterStateInconsistent:         {code: codes.Internal, reason: ReasonApplicationTesterStateInconsistent, message: "application tester state is inconsistent"},
+	testerdomain.ErrorCodeAuthenticatedUserRequired:                  {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
+	testerdomain.ErrorCodeInvalidTesterJoinSecret:                    {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinSecret, message: "tester join credential is invalid"},
+	testerdomain.ErrorCodeTesterJoinLinkInvalid:                      {code: codes.NotFound, reason: ReasonTesterJoinLinkInvalid, message: "tester join link is invalid"},
+	testerdomain.ErrorCodeApplicationTesterLimitReached:              {code: codes.Aborted, reason: ReasonApplicationTesterLimitReached, message: "application tester limit reached"},
+	testerdomain.ErrorCodeInvalidTesterJoinLinkId:                    {code: codes.InvalidArgument, reason: ReasonInvalidTesterJoinLinkId, message: "tester join link ID is invalid"},
+	testerdomain.ErrorCodeApplicationTesterJoinLinkAlreadyExists:     {code: codes.AlreadyExists, reason: ReasonApplicationTesterJoinLinkAlreadyExists, message: "active tester join link already exists"},
+	testerdomain.ErrorCodeApplicationTesterJoinLinkNotFound:          {code: codes.NotFound, reason: ReasonApplicationTesterJoinLinkNotFound, message: "active tester join link not found"},
+	testerdomain.ErrorCodeApplicationTesterJoinLinkChanged:           {code: codes.Aborted, reason: ReasonApplicationTesterJoinLinkChanged, message: "active tester join link has changed"},
+	testerdomain.ErrorCodeDeveloperIdentityRequired:                  {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	testerdomain.ErrorCodeDeveloperApprovalRequired:                  {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	testerdomain.ErrorCodeInvalidApplicationId:                       {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	testerdomain.ErrorCodeApplicationNotFound:                        {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	testerdomain.ErrorCodeApplicationAdminRequired:                   {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	testerdomain.ErrorCodeInternal:                                   internalSpec,
 }
 
 func reviewErrorCode(err error) reviewdomain.ErrorCode {

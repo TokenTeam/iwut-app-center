@@ -34,6 +34,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		testerusecase.NewCreateOrRotateTesterJoinLinkHandler,
 		testerusecase.NewJoinApplicationAsTesterHandler,
 		testerusecase.NewRemoveApplicationTesterHandler,
+		testerusecase.NewRevokeTesterJoinLinkHandler,
+		wire.Bind(new(transport.RevokeTesterJoinLinkHandler), new(*testerusecase.RevokeTesterJoinLinkHandler)),
 		wire.Bind(new(transport.RemoveApplicationTesterHandler), new(*testerusecase.RemoveApplicationTesterHandler)),
 		wire.Bind(new(transport.JoinApplicationAsTesterHandler), new(*testerusecase.JoinApplicationAsTesterHandler)),
 		wire.Bind(new(transport.CreateOrRotateTesterJoinLinkHandler), new(*testerusecase.CreateOrRotateTesterJoinLinkHandler)),

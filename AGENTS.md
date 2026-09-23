@@ -40,32 +40,32 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-010 Remove Application Tester delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-010.md`, generated from
-`docs/tools/brief-specs/UC-APP-010.json`. Regenerate it whenever a selected
-source changes. The brief selects BR-TST-020 through BR-TST-028, shared
+**UC-APP-011 Revoke Tester Join Link delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-011.md`, generated from
+`docs/tools/brief-specs/UC-APP-011.json`. Regenerate it whenever a selected
+source changes. The brief selects BR-TST-029 through BR-TST-036, shared
 identity/routing contracts and ADR-006; reuse the engineering baseline.
 
 Code scope:
 
-- `internal/tester/{domain,usecase,port}` — APPROVED current admin removes an
-  exact membership episode, immutable REMOVED audit, idempotency without Clock
-  for an already removed candidate and fixed capacity 100.
-- `internal/adapter/mongo` — reuse UC008/009 Application coordinationRevision
-  write fence before final admin/episode checks, count, link-existence snapshot
-  and ACTIVE-to-REMOVED transition in one snapshot/majority transaction.
-  No stored counter. Reuse schema0010 unless an explicit new migration is needed.
-- `api/`, transport and `cmd/app-center/` — DELETE resource HTTP/gRPC, both
-  first/idempotent removal return 200, removed audit and activeJoinLinkExists,
-  Wire and real MongoDB E2E. State inconsistency is HTTP500/gRPC INTERNAL with
-  stable ERROR_REASON_APPLICATION_TESTER_STATE_INCONSISTENT and safe alerting.
-- Test exact old-episode idempotency after rejoin, concurrent removal, removal
-  versus rejoin, admin transfer, freed capacity, rollback and unchanged links.
+- `internal/tester/{domain,usecase,port}` — APPROVED current admin revokes an
+  exact joinLinkId as MANUAL, immutable audit/hash, idempotency without Clock
+  for an already revoked candidate; preserve ROTATED replacement history.
+- `internal/adapter/mongo` — reuse Application coordinationRevision write fence
+  before final admin/link checks and MANUAL transition in a snapshot/majority
+  transaction. Revoked-candidate shortcut also uses the fence. Do not read or
+  change Membership/counts. Reuse schema0009/0010 without editing old migrations.
+- `api/`, transport and `cmd/app-center/` — DELETE resource HTTP/gRPC, 200 for
+  first/idempotent revoke, public audit only, Wire and real MongoDB E2E.
+  Inconsistent link state uses HTTP500/gRPC INTERNAL with stable
+  ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT and safe alerting.
+- Test double revoke, old ROTATED link protection, revoke/join and revoke/rotate
+  both orders, admin transfer, rollback, new link creation and unchanged testers.
 
 Explicit non-goals:
 
-- No link revocation/rotation command, blacklist, self-exit, notifications,
-  tester listing/read model or launch-target resolution API.
+- No replacement link creation in revoke, membership removal or count changes,
+  blacklist, self-exit, notifications, listing or launch-target resolution API.
 - No frontend, Gateway/Auth changes, Scope Catalog or publication dependency.
 - Do not modify Application business fields or shipped migration history.
 - No push in any repository; keep API, service and documentation changes local.

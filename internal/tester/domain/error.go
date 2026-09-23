@@ -5,16 +5,17 @@ import "errors"
 type ErrorCategory string
 
 const (
-	ErrorCodeInvalidTesterMembershipId           ErrorCode     = "InvalidTesterMembershipId"
-	ErrorCodeApplicationTesterMembershipNotFound ErrorCode     = "ApplicationTesterMembershipNotFound"
-	ErrorCodeApplicationTesterStateInconsistent  ErrorCode     = "ApplicationTesterStateInconsistent"
-	ErrorCategoryValidation                      ErrorCategory = "Validation"
-	ErrorCategoryAuthentication                  ErrorCategory = "Authentication"
-	ErrorCategoryAuthorization                   ErrorCategory = "Authorization"
-	ErrorCategoryNotFound                        ErrorCategory = "NotFound"
-	ErrorCategoryConflict                        ErrorCategory = "Conflict"
-	ErrorCategoryDependencyUnavailable           ErrorCategory = "DependencyUnavailable"
-	ErrorCategoryInternal                        ErrorCategory = "Internal"
+	ErrorCodeApplicationTesterJoinLinkStateInconsistent ErrorCode     = "ApplicationTesterJoinLinkStateInconsistent"
+	ErrorCodeInvalidTesterMembershipId                  ErrorCode     = "InvalidTesterMembershipId"
+	ErrorCodeApplicationTesterMembershipNotFound        ErrorCode     = "ApplicationTesterMembershipNotFound"
+	ErrorCodeApplicationTesterStateInconsistent         ErrorCode     = "ApplicationTesterStateInconsistent"
+	ErrorCategoryValidation                             ErrorCategory = "Validation"
+	ErrorCategoryAuthentication                         ErrorCategory = "Authentication"
+	ErrorCategoryAuthorization                          ErrorCategory = "Authorization"
+	ErrorCategoryNotFound                               ErrorCategory = "NotFound"
+	ErrorCategoryConflict                               ErrorCategory = "Conflict"
+	ErrorCategoryDependencyUnavailable                  ErrorCategory = "DependencyUnavailable"
+	ErrorCategoryInternal                               ErrorCategory = "Internal"
 )
 
 type ErrorCode string
@@ -61,21 +62,22 @@ func (e *Error) Is(target error) bool {
 }
 
 var (
-	ErrInvalidTesterMembershipId              = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterMembershipId, "tester membership ID is invalid", nil)
-	ErrApplicationTesterMembershipNotFound    = newError(ErrorCategoryNotFound, ErrorCodeApplicationTesterMembershipNotFound, "application tester membership not found", nil)
-	ErrApplicationTesterStateInconsistent     = newError(ErrorCategoryInternal, ErrorCodeApplicationTesterStateInconsistent, "application tester state is inconsistent", nil)
-	ErrAuthenticatedUserRequired              = newError(ErrorCategoryAuthentication, ErrorCodeAuthenticatedUserRequired, "authenticated user is required", nil)
-	ErrInvalidTesterJoinSecret                = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterJoinSecret, "tester join secret is invalid", nil)
-	ErrTesterJoinLinkInvalid                  = newError(ErrorCategoryNotFound, ErrorCodeTesterJoinLinkInvalid, "tester join link is invalid", nil)
-	ErrApplicationTesterLimitReached          = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterLimitReached, "application tester limit reached", nil)
-	ErrDeveloperIdentityRequired              = newError(ErrorCategoryAuthentication, ErrorCodeDeveloperIdentityRequired, "developer identity is required", nil)
-	ErrDeveloperApprovalRequired              = newError(ErrorCategoryAuthorization, ErrorCodeDeveloperApprovalRequired, "approved developer status is required", nil)
-	ErrInvalidApplicationId                   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationId, "application ID is invalid", nil)
-	ErrInvalidTesterJoinLinkId                = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterJoinLinkId, "tester join link ID is invalid", nil)
-	ErrApplicationNotFound                    = newError(ErrorCategoryNotFound, ErrorCodeApplicationNotFound, "application not found", nil)
-	ErrApplicationAdminRequired               = newError(ErrorCategoryAuthorization, ErrorCodeApplicationAdminRequired, "application administrator is required", nil)
-	ErrApplicationTesterJoinLinkAlreadyExists = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterJoinLinkAlreadyExists, "active tester join link already exists", nil)
-	ErrApplicationTesterJoinLinkNotFound      = newError(ErrorCategoryNotFound, ErrorCodeApplicationTesterJoinLinkNotFound, "active tester join link not found", nil)
-	ErrApplicationTesterJoinLinkChanged       = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterJoinLinkChanged, "active tester join link changed", nil)
-	ErrInternal                               = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
+	ErrApplicationTesterJoinLinkStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationTesterJoinLinkStateInconsistent, "application tester join link state is inconsistent", nil)
+	ErrInvalidTesterMembershipId                  = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterMembershipId, "tester membership ID is invalid", nil)
+	ErrApplicationTesterMembershipNotFound        = newError(ErrorCategoryNotFound, ErrorCodeApplicationTesterMembershipNotFound, "application tester membership not found", nil)
+	ErrApplicationTesterStateInconsistent         = newError(ErrorCategoryInternal, ErrorCodeApplicationTesterStateInconsistent, "application tester state is inconsistent", nil)
+	ErrAuthenticatedUserRequired                  = newError(ErrorCategoryAuthentication, ErrorCodeAuthenticatedUserRequired, "authenticated user is required", nil)
+	ErrInvalidTesterJoinSecret                    = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterJoinSecret, "tester join secret is invalid", nil)
+	ErrTesterJoinLinkInvalid                      = newError(ErrorCategoryNotFound, ErrorCodeTesterJoinLinkInvalid, "tester join link is invalid", nil)
+	ErrApplicationTesterLimitReached              = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterLimitReached, "application tester limit reached", nil)
+	ErrDeveloperIdentityRequired                  = newError(ErrorCategoryAuthentication, ErrorCodeDeveloperIdentityRequired, "developer identity is required", nil)
+	ErrDeveloperApprovalRequired                  = newError(ErrorCategoryAuthorization, ErrorCodeDeveloperApprovalRequired, "approved developer status is required", nil)
+	ErrInvalidApplicationId                       = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationId, "application ID is invalid", nil)
+	ErrInvalidTesterJoinLinkId                    = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterJoinLinkId, "tester join link ID is invalid", nil)
+	ErrApplicationNotFound                        = newError(ErrorCategoryNotFound, ErrorCodeApplicationNotFound, "application not found", nil)
+	ErrApplicationAdminRequired                   = newError(ErrorCategoryAuthorization, ErrorCodeApplicationAdminRequired, "application administrator is required", nil)
+	ErrApplicationTesterJoinLinkAlreadyExists     = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterJoinLinkAlreadyExists, "active tester join link already exists", nil)
+	ErrApplicationTesterJoinLinkNotFound          = newError(ErrorCategoryNotFound, ErrorCodeApplicationTesterJoinLinkNotFound, "active tester join link not found", nil)
+	ErrApplicationTesterJoinLinkChanged           = newError(ErrorCategoryConflict, ErrorCodeApplicationTesterJoinLinkChanged, "active tester join link changed", nil)
+	ErrInternal                                   = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

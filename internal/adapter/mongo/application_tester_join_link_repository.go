@@ -155,7 +155,10 @@ func (e *testerJoinLinkPersistenceError) Error() string {
 	return "tester join link persistence failed: " + e.class
 }
 func safeTesterJoinLinkError(err error) error {
-	for _, business := range []error{testerport.ErrApplicationNotFound, testerport.ErrApplicationAdminRequired, testerport.ErrApplicationTesterJoinLinkAlreadyExists, testerport.ErrApplicationTesterJoinLinkNotFound, testerport.ErrApplicationTesterJoinLinkChanged} {
+	if errors.Is(err, testerdomain.ErrApplicationTesterJoinLinkStateInconsistent) {
+		return testerport.ErrApplicationTesterJoinLinkStateInconsistent
+	}
+	for _, business := range []error{testerport.ErrApplicationNotFound, testerport.ErrApplicationAdminRequired, testerport.ErrApplicationTesterJoinLinkAlreadyExists, testerport.ErrApplicationTesterJoinLinkNotFound, testerport.ErrApplicationTesterJoinLinkChanged, testerport.ErrApplicationTesterJoinLinkStateInconsistent} {
 		if errors.Is(err, business) {
 			return business
 		}

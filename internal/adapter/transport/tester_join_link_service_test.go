@@ -61,7 +61,7 @@ func TestTesterJoinLinkService_BR_TST_004_005_HTTPCreateRotateSensitiveBoundary(
 			body = `{"expectedActiveJoinLinkId":"` + id.String() + `"}`
 		}
 		handler := &fakeTesterJoinLinkHandler{result: testerLinkResponse(t, replaced)}
-		servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(handler), NewTesterMembershipService(nil, nil))
+		servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(handler, nil), NewTesterMembershipService(nil, nil))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func TestTesterJoinLinkService_UCAPP008_HTTPAndGRPCErrors(t *testing.T) {
 	} {
 		t.Run(tc.reason, func(t *testing.T) {
 			handler := &fakeTesterJoinLinkHandler{err: tc.err, result: testerLinkResponse(t, nil)}
-			servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(handler), NewTesterMembershipService(nil, nil))
+			servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(handler, nil), NewTesterMembershipService(nil, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,7 +124,7 @@ func TestTesterJoinLinkService_UCAPP008_HTTPAndGRPCErrors(t *testing.T) {
 
 func TestTesterJoinLinkService_BR_TST_001_IdentityRequiredBeforeCommand(t *testing.T) {
 	handler := &fakeTesterJoinLinkHandler{}
-	_, err := NewTesterJoinLinkService(handler).CreateOrRotateTesterJoinLink(context.Background(), &testerjoinlinkv1.CreateOrRotateTesterJoinLinkRequest{})
+	_, err := NewTesterJoinLinkService(handler, nil).CreateOrRotateTesterJoinLink(context.Background(), &testerjoinlinkv1.CreateOrRotateTesterJoinLinkRequest{})
 	if status.Code(err) != codes.Unauthenticated || handler.calls != 0 {
 		t.Fatal("missing identity reached usecase")
 	}
@@ -137,7 +137,7 @@ func TestTesterJoinLinkService_UCAPP008_RejectsQueryCommandOverride(t *testing.T
 	} {
 		t.Run(query, func(t *testing.T) {
 			handler := &fakeTesterJoinLinkHandler{result: testerLinkResponse(t, nil)}
-			servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(handler), NewTesterMembershipService(nil, nil))
+			servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(handler, nil), NewTesterMembershipService(nil, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
