@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	scopecatalogv1 "iwut-app-center/api/gen/go/auth_center/v1/scope_catalog"
+	scopecatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/scope_catalog"
 	"iwut-app-center/internal/version/domain"
 	"iwut-app-center/internal/version/port"
 )

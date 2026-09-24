@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 )
 
 const (

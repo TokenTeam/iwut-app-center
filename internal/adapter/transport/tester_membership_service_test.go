@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -10,7 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
-	testermembershipv1 "iwut-app-center/api/gen/go/app_center/v1/tester_membership"
 	"iwut-app-center/internal/shared"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	testerusecase "iwut-app-center/internal/tester/usecase"

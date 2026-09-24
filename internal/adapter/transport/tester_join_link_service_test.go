@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
 	"iwut-app-center/internal/shared"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	testerusecase "iwut-app-center/internal/tester/usecase"

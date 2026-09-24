@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
+	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"google.golang.org/grpc"
@@ -20,9 +23,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
-	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
-	testermembershipv1 "iwut-app-center/api/gen/go/app_center/v1/tester_membership"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/config"
 )

@@ -11,7 +11,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
+	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	"iwut-app-center/internal/shared"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	testerusecase "iwut-app-center/internal/tester/usecase"

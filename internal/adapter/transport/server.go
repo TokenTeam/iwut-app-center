@@ -12,12 +12,12 @@ import (
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
-	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
-	publicationv1 "iwut-app-center/api/gen/go/app_center/v1/application_publication"
-	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
-	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
-	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
-	testermembershipv1 "iwut-app-center/api/gen/go/app_center/v1/tester_membership"
+	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
+	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
+	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
+	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
+	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
+	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 )
 
 func TestAPIContract_UCAPP004_ResourceRouteAndGeneratedMethodAgree(t *testing.T) {

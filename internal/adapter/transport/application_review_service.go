@@ -8,7 +8,7 @@ import (
 	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	applicationreviewv1 "iwut-app-center/api/gen/go/app_center/v1/application_review"
+	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	reviewdomain "iwut-app-center/internal/review/domain"
 	reviewusecase "iwut-app-center/internal/review/usecase"
 	"iwut-app-center/internal/shared"

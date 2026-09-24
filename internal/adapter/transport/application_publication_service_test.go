@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	publicationv1 "iwut-app-center/api/gen/go/app_center/v1/application_publication"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	publicationusecase "iwut-app-center/internal/publication/usecase"
 	"iwut-app-center/internal/shared"

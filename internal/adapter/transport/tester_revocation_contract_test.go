@@ -1,10 +1,10 @@
 package transport
 
 import (
+	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
-	testerjoinlinkv1 "iwut-app-center/api/gen/go/app_center/v1/tester_join_link"
 	"strings"
 	"testing"
 )

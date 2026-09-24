@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
+	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	"iwut-app-center/internal/shared"
 	versiondomain "iwut-app-center/internal/version/domain"
 	versionusecase "iwut-app-center/internal/version/usecase"

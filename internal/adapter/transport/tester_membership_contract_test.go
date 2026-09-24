@@ -1,9 +1,9 @@
 package transport
 
 import (
+	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/protobuf/proto"
-	testermembershipv1 "iwut-app-center/api/gen/go/app_center/v1/tester_membership"
 	"strings"
 	"testing"
 )

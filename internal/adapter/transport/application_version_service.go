@@ -11,7 +11,7 @@ import (
 	kratostransport "github.com/go-kratos/kratos/v2/transport"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	applicationversionv1 "iwut-app-center/api/gen/go/app_center/v1/application_version"
+	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	"iwut-app-center/internal/shared"
 	versiondomain "iwut-app-center/internal/version/domain"
 	versionusecase "iwut-app-center/internal/version/usecase"

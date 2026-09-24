@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	systemprincipalv1 "iwut-app-center/api/gen/go/auth_center/v1/system_principal"
+	systemprincipalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/system_principal"
 	reviewport "iwut-app-center/internal/review/port"
 )
 

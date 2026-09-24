@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	publicationv1 "iwut-app-center/api/gen/go/app_center/v1/application_publication"
+	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 )
 
 func TestAPIContract_UCAPP007_BR_PUB_002_ResourceRouteAndBody(t *testing.T) {

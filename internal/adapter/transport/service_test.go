@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 
-	applicationv1 "iwut-app-center/api/gen/go/app_center/v1/application"
+	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	"iwut-app-center/internal/application/domain"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/shared"
