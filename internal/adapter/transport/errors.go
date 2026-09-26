@@ -1,7 +1,9 @@
 package transport
 
 import (
+	"encoding/json"
 	"errors"
+	catalogdomain "iwut-app-center/internal/catalog/domain"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -19,6 +21,14 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidHostRPCAPIMajor                 = "ERROR_REASON_INVALID_HOST_RPC_API_MAJOR"
+	ReasonInvalidHostCapabilities                = "ERROR_REASON_INVALID_HOST_CAPABILITIES"
+	ReasonApplicationTesterRequired              = "ERROR_REASON_APPLICATION_TESTER_REQUIRED"
+	ReasonApplicationTestTargetUnavailable       = "ERROR_REASON_APPLICATION_TEST_TARGET_UNAVAILABLE"
+	ReasonHostCapabilitiesInsufficient           = "ERROR_REASON_HOST_CAPABILITIES_INSUFFICIENT"
+	ReasonApplicationTestPublicationInconsistent = "ERROR_REASON_APPLICATION_TEST_PUBLICATION_INCONSISTENT"
+	ReasonInvalidResolveTestLaunchRequest        = "ERROR_REASON_INVALID_RESOLVE_TEST_LAUNCH_REQUEST"
+
 	ReasonApplicationTesterJoinLinkStateInconsistent = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT"
 	ReasonInvalidRevokeTesterJoinLinkRequest         = "ERROR_REASON_INVALID_REVOKE_TESTER_JOIN_LINK_REQUEST"
 	ReasonInvalidRemoveTesterRequest                 = "ERROR_REASON_INVALID_REMOVE_TESTER_REQUEST"
@@ -238,6 +248,19 @@ var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
 	testerdomain.ErrorCodeInternal:                                   internalSpec,
 }
 
+var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
+	catalogdomain.ErrorCodeAuthenticatedUserRequired:              {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
+	catalogdomain.ErrorCodeInvalidApplicationID:                   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	catalogdomain.ErrorCodeInvalidHostRPCAPIMajor:                 {code: codes.InvalidArgument, reason: ReasonInvalidHostRPCAPIMajor, message: "host RPC API major is invalid"},
+	catalogdomain.ErrorCodeInvalidHostCapabilities:                {code: codes.InvalidArgument, reason: ReasonInvalidHostCapabilities, message: "host capabilities are invalid"},
+	catalogdomain.ErrorCodeApplicationNotFound:                    {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	catalogdomain.ErrorCodeApplicationTesterRequired:              {code: codes.PermissionDenied, reason: ReasonApplicationTesterRequired, message: "active application tester membership is required"},
+	catalogdomain.ErrorCodeApplicationTestTargetUnavailable:       {code: codes.NotFound, reason: ReasonApplicationTestTargetUnavailable, message: "application test target is unavailable"},
+	catalogdomain.ErrorCodeHostCapabilitiesInsufficient:           {code: codes.FailedPrecondition, reason: ReasonHostCapabilitiesInsufficient, message: "host capabilities are insufficient"},
+	catalogdomain.ErrorCodeApplicationTestPublicationInconsistent: {code: codes.Unavailable, reason: ReasonApplicationTestPublicationInconsistent, message: "application test publication is unavailable"},
+	catalogdomain.ErrorCodeInternal:                               internalSpec,
+}
+
 func reviewErrorCode(err error) reviewdomain.ErrorCode {
 	var domainError *reviewdomain.Error
 	if errors.As(err, &domainError) {
@@ -259,6 +282,21 @@ func toTransportError(err error) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidDeveloperIdentity, "developer identity is invalid")
 	}
 
+	var catalogError *catalogdomain.Error
+	if errors.As(err, &catalogError) {
+		spec, ok := catalogDomainErrorSpecs[catalogError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		if catalogError.Code() == catalogdomain.ErrorCodeHostCapabilitiesInsufficient {
+			names, _ := json.Marshal(catalogError.MissingCapabilities())
+			st, detailErr := status.New(spec.code, spec.message).WithDetails(&errdetails.ErrorInfo{Reason: spec.reason, Metadata: map[string]string{"missingCapabilities": string(names)}})
+			if detailErr == nil {
+				return st.Err()
+			}
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
+	}
 	var testerDomainError *testerdomain.Error
 	if errors.As(err, &testerDomainError) {
 		spec, ok := testerDomainErrorSpecs[testerDomainError.Code()]

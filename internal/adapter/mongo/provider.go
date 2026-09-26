@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"github.com/goforj/wire"
+	catalogport "iwut-app-center/internal/catalog/port"
 	publicationport "iwut-app-center/internal/publication/port"
 	testerport "iwut-app-center/internal/tester/port"
 
@@ -14,6 +15,8 @@ import (
 // database and client providers live in the composition root because they need
 // validated configuration.
 var ProviderSet = wire.NewSet(
+	NewTestLaunchResolver,
+	wire.Bind(new(catalogport.TestLaunchResolver), new(*TestLaunchResolver)),
 	NewApplicationTesterMembershipRepository,
 	wire.Bind(new(testerport.ApplicationTesterMembershipRepository), new(*ApplicationTesterMembershipRepository)),
 	wire.Bind(new(testerport.ApplicationTesterRemovalRepository), new(*ApplicationTesterMembershipRepository)),

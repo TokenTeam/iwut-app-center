@@ -43,7 +43,7 @@ link rotation and enforce the fixed limit of 100 ACTIVE testers.
 | `make fmt-check` | Fail if any Go file is not `gofmt`-ed |
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
-| `make test-mongo` | Run MongoDB integration and the UC-APP-001–009 end-to-end suites against an isolated replica set (Docker) |
+| `make test-mongo` | Run MongoDB integration and the UC-APP-001–012 end-to-end suites against an isolated replica set (Docker) |
 | `make test-auth-app` | Start isolated Mongo plus a separate real Auth process and run the service-JWS UC-APP-005 double-service E2E |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
@@ -88,7 +88,7 @@ injected by the deployment secret mechanism.
 - MongoDB integration tests (schema, indexes, transactions, concurrency) run
   only when `MONGODB_INTEGRATION_URI` is set; use
   `./scripts/test-mongo-integration.sh` or `make test-mongo`.
-- The UC-APP-001–009 end-to-end tests in `cmd/app-center` run only when
+- The UC-APP-001–012 end-to-end tests in `cmd/app-center` run only when
   `MONGODB_INTEGRATION_URI` is set. It explicitly migrates an isolated database,
   starts the real `wireApp` composition root with real Kratos HTTP and native
   gRPC listeners, presents real RS256 compact JWS identities and asserts
@@ -117,5 +117,26 @@ entrance with no hosted page. Leading/trailing whitespace, an explicit empty
 value, userinfo, query or fragment fails startup. Paths and trailing slashes are
 preserved. Only the entrance is mock: secrets use 32 bytes from the OS random
 source and MongoDB stores SHA-256 of the raw bytes. A complete URL is returned
-once after a successful create/rotation; never log or trace it. Frontend scanning
-and actual membership creation (UC-APP-009) are separate capabilities.
+once after a successful create/rotation; never log or trace it. Frontend scanning and production Gateway identity issuance are delivered separately.
+UC-APP-009 supplies authenticated membership creation.
+
+
+UC-APP-012 resolves an ACTIVE Tester’s current test launch target through
+`POST /v1/applications/{application_id}/test-launch:resolve` or native gRPC
+`app_center.v1.catalog.Catalog/ResolveTestLaunchTarget`. The HTTP body contains
+only `hostRpcApiMajor` and `hostCapabilities`; the authenticated caller comes
+from the verified identity header. Duplicate host capabilities are normalized
+as a set. Administrator or Developer status does not imply Tester membership.
+
+Resolution reads Application, Membership, the exact-major Publication, matching
+History, Version and approved Review in one read-only MongoDB snapshot. It
+performs no Auth, URL or DNS calls, acquires no write fence and does not fall
+back to another major or slot. No new migration is required beyond the existing
+`0010_application_tester_membership` baseline. Concurrent removal or replacement
+is observed according to the snapshot, not a long-lived launch lease.
+
+HTTP and gRPC responses use `Cache-Control: private, no-store`. Missing required
+capabilities return HTTP 422 / gRPC FAILED_PRECONDITION, with only a sorted
+`missingCapabilities` JSON-array string in error metadata. Inconsistent stored
+publication/approval facts return HTTP 503 / gRPC UNAVAILABLE and produce a safe
+internal alert. Neither failure returns a partial launch descriptor.

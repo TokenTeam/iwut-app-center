@@ -40,34 +40,33 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-011 Revoke Tester Join Link delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-011.md`, generated from
-`docs/tools/brief-specs/UC-APP-011.json`. Regenerate it whenever a selected
-source changes. The brief selects BR-TST-029 through BR-TST-036, shared
-identity/routing contracts and ADR-006; reuse the engineering baseline.
+**UC-APP-012 Resolve Test Launch Target For Tester delivery.** Brief:
+`../../docs/app-center/briefs/UC-APP-012.md`, generated from
+`docs/tools/brief-specs/UC-APP-012.json`. Regenerate it whenever a selected
+source changes. The brief selects BR-RUN-001 through BR-RUN-010 and linked
+capability/review/publication rules, shared identity/routing and ADR-006.
 
 Code scope:
 
-- `internal/tester/{domain,usecase,port}` — APPROVED current admin revokes an
-  exact joinLinkId as MANUAL, immutable audit/hash, idempotency without Clock
-  for an already revoked candidate; preserve ROTATED replacement history.
-- `internal/adapter/mongo` — reuse Application coordinationRevision write fence
-  before final admin/link checks and MANUAL transition in a snapshot/majority
-  transaction. Revoked-candidate shortcut also uses the fence. Do not read or
-  change Membership/counts. Reuse schema0009/0010 without editing old migrations.
-- `api/`, transport and `cmd/app-center/` — DELETE resource HTTP/gRPC, 200 for
-  first/idempotent revoke, public audit only, Wire and real MongoDB E2E.
-  Inconsistent link state uses HTTP500/gRPC INTERNAL with stable
-  ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT and safe alerting.
-- Test double revoke, old ROTATED link protection, revoke/join and revoke/rotate
-  both orders, admin transfer, rollback, new link creation and unchanged testers.
+- `internal/catalog/{domain,usecase,port}` — ACTIVE Tester-authorized exact-major
+  test resolution, normalized host capability set and immutable launch descriptor.
+- `internal/adapter/mongo` — read-only snapshot transaction over Application,
+  Membership, exact Publication, matching History, approved Review and Version;
+  check current approval/revision/content and publication-time approval evidence.
+- `api/`, transport and `cmd/app-center/` — resource POST resolve HTTP/gRPC,
+  ordinary user identity, HTTP422 missing capabilities, HTTP503/gRPC UNAVAILABLE
+  inconsistent publication with safe alert, private/no-store, Wire and real E2E.
+- Test removed/non-tester authorization, no major/slot fallback, normalized and
+  missing capabilities, corrupt/dangling approval facts, consistent read snapshots
+  during removal/publication replacement, privacy and absence of writes/network.
 
 Explicit non-goals:
 
-- No replacement link creation in revoke, membership removal or count changes,
-  blacklist, self-exit, notifications, listing or launch-target resolution API.
-- No frontend, Gateway/Auth changes, Scope Catalog or publication dependency.
-- Do not modify Application business fields or shipped migration history.
+- No write fences/counters, business mutations, leases, new collections or
+  preemptive migrations; no Auth catalog/URL/DNS calls on the query path.
+- No frontend/WebView/RPC bridge, consent/token, Gateway changes, profile or
+  catalog-list implementation; no grey/stable/latest-version fallback.
+- Preserve current unified iwutapis Go import paths and other API work.
 - No push in any repository; keep API, service and documentation changes local.
 
 Verification commands:
@@ -107,6 +106,9 @@ internal/publication/port/
 internal/tester/domain/
 internal/tester/usecase/
 internal/tester/port/
+internal/catalog/domain/
+internal/catalog/usecase/
+internal/catalog/port/
 internal/adapter/
 ```
 

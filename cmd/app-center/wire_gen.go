@@ -15,6 +15,7 @@ import (
 	"iwut-app-center/internal/adapter/testercredential"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
+	usecase6 "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
 	usecase4 "iwut-app-center/internal/publication/usecase"
 	usecase3 "iwut-app-center/internal/review/usecase"
@@ -128,7 +129,10 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	joinApplicationAsTesterHandler := usecase5.NewJoinApplicationAsTesterHandler(tokenHasher, publicationUUIDv7Generator, systemClock, applicationTesterMembershipRepository)
 	removeApplicationTesterHandler := usecase5.NewRemoveApplicationTesterHandler(systemClock, applicationTesterMembershipRepository)
 	testerMembershipService := transport.NewTesterMembershipService(joinApplicationAsTesterHandler, removeApplicationTesterHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService)
+	testLaunchResolver := mongo.NewTestLaunchResolver(database)
+	resolveTestLaunchTarget := usecase6.NewResolveTestLaunchTarget(testLaunchResolver)
+	catalogService := transport.NewCatalogService(resolveTestLaunchTarget)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService)
 	if err != nil {
 		cleanup2()
 		cleanup()
