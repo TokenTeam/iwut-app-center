@@ -40,49 +40,55 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-012 Resolve Test Launch Target For Tester delivery.** Brief:
-`../../docs/app-center/briefs/UC-APP-012.md`, generated from
-`docs/tools/brief-specs/UC-APP-012.json`. Regenerate it whenever a selected
-source changes. The brief selects BR-RUN-001 through BR-RUN-010 and linked
-capability/review/publication rules, shared identity/routing and ADR-006.
+**Local implementation and verification tooling maintenance.** Scope is
+`AGENTS.md`, `README.md`, `Makefile`, `.gitignore`, and `scripts/`. Preserve business
+behavior, API contracts, database schemas and the architecture guard. The latest
+business delivery is UC-APP-012, with design input in
+`../../docs/app-center/briefs/UC-APP-012.md`. No new UC is implied by this maintenance.
+For the next business task, replace this paragraph with its UC, generated brief,
+code scope, non-goals and required validation tier before implementation.
 
-Code scope:
+## Verification entry points
 
-- `internal/catalog/{domain,usecase,port}` — ACTIVE Tester-authorized exact-major
-  test resolution, normalized host capability set and immutable launch descriptor.
-- `internal/adapter/mongo` — read-only snapshot transaction over Application,
-  Membership, exact Publication, matching History, approved Review and Version;
-  check current approval/revision/content and publication-time approval evidence.
-- `api/`, transport and `cmd/app-center/` — resource POST resolve HTTP/gRPC,
-  ordinary user identity, HTTP422 missing capabilities, HTTP503/gRPC UNAVAILABLE
-  inconsistent publication with safe alert, private/no-store, Wire and real E2E.
-- Test removed/non-tester authorization, no major/slot fallback, normalized and
-  missing capabilities, corrupt/dangling approval facts, consistent read snapshots
-  during removal/publication replacement, privacy and absence of writes/network.
-
-Explicit non-goals:
-
-- No write fences/counters, business mutations, leases, new collections or
-  preemptive migrations; no Auth catalog/URL/DNS calls on the query path.
-- No frontend/WebView/RPC bridge, consent/token, Gateway changes, profile or
-  catalog-list implementation; no grey/stable/latest-version fallback.
-- Preserve current unified iwutapis Go import paths and other API work.
-- No push in any repository; keep API, service and documentation changes local.
-
-Verification commands:
+Run commands from the repository root; `scripts/verify.py` also works from any
+working directory. See README for overrides, reports and troubleshooting.
 
 ```bash
-gofmt -l .
-go test ./...
-go vet ./...
-go run github.com/goforj/wire/cmd/wire@v1.2.0 diff ./cmd/app-center
-make -C api proto-check
-./scripts/test-mongo-integration.sh
-cd ../../docs && python3 -B -m unittest discover -s tools/tests
-cd ../../docs && python3 -B tools/gen_brief.py --check --all
-cd ../../docs && python3 -B tools/registry.py --check
-git diff --check
+make doctor          # quick prerequisites only; not acceptance
+make check           # fast checks + scripts + generated code + external docs
+make check-full      # above + race + all real Mongo/HTTP/gRPC E2E tests
+make check-auth-app  # above + real Auth process E2E (cross-service changes)
 ```
+
+- Use `check` during development. Use `check-full` for backend behavior,
+  transactions, schemas, concurrency, wiring, transport or integration tooling.
+  Auth client/identity/shared Auth-contract changes also require `check-auth-app`.
+- `go test ./...` alone skips Mongo tests without its URI; it is not full delivery
+  evidence. Filtered `-run` checks are diagnosis, not full-tier acceptance.
+- Reports live under ignored `.artifacts/verification/`; `status=passed` applies
+  only to the recorded tier and source fingerprint. Missing tools, a timeout or
+  changed inputs fail verification. `doctor-passed` is not an acceptance result.
+- Never dump environment variables or commit generated test keys/logs/reports.
+- Keep all changes local. No push unless the user explicitly authorizes it.
+
+## Subagent coordination and handoff
+
+- The owner assigns concrete file/package ownership and interface contracts
+  before parallel work. Shared-file edits and API generation have one owner.
+- Child agents run targeted checks; one owner integrates changes and runs the
+  final unfiltered tier. Coordinate shared API worktrees rather than resetting,
+  checking out or committing another agent's work.
+- Freeze service, API and selected external sources during final verification.
+  Do not edit a running shell script. Any source change invalidates that report;
+  resolve the cause and rerun the relevant tier on the final inputs.
+- Commit API generator inputs and outputs together, then update the service
+  gitlink. Preserve unrelated edits and shared API history. A clean worktree is
+  not required to test: the report hashes dirty tracked and untracked inputs.
+- Handoff includes UC/BR coverage (or tooling acceptance cases), limitations,
+  service/API commit IDs, dirty status, verification tier and report path. Link
+  the report to the pre-commit content fingerprint; committing alone does not
+  require repeating tests when the committed content is identical. Code changes
+  after verification do require new evidence.
 
 ## Code boundaries
 
@@ -194,10 +200,11 @@ Use an English imperative title without a trailing period. Keep each commit focu
 
 Before declaring work complete:
 
-1. Re-read the work package brief's acceptance section (`## 测试与验收`) and its
-   `BR-*` list, and confirm the brief still matches its sources:
-   `cd ../../docs && python3 tools/gen_brief.py --check --all`.
+1. Re-read the active business brief acceptance section and BR list when doing
+   UC work; for engineering maintenance, check the stated tooling scope. The
+   verification runner checks external brief freshness without changing cwd.
 2. Confirm no future capability entered the current package unintentionally.
-3. Run formatting, static checks available in the repository and all relevant tests; `go test ./...` must include the root architecture guard.
+3. Run the required verification tier and inspect its report; do not describe
+   omitted tiers as passed. The quick tier includes the root architecture guard.
 4. Report which BRs are covered and any remaining test obligation.
 5. Keep design changes in the external authoritative document tree; do not create a repository-local copy.

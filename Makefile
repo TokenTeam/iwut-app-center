@@ -1,5 +1,7 @@
 # App Center local gates. See README.md for the required environment and order.
 GO ?= go
+PYTHON ?= python3
+VERIFY = $(PYTHON) -B scripts/verify.py
 WIRE_PACKAGE := github.com/goforj/wire/cmd/wire@v1.2.0
 
 .PHONY: help
@@ -10,12 +12,15 @@ help:
 	@echo "  make fmt-check     fail if any Go file is not gofmt-ed"
 	@echo "  make build         compile all packages"
 	@echo "  make test          run the unit/transport/architecture suite"
-	@echo "  make test-mongo    run the MongoDB integration and UC-APP-001/002 E2E suites"
+	@echo "  make test-mongo    run the MongoDB integration and all HTTP/gRPC E2E suites"
 	@echo "  make test-auth-app run the production-identity Auth+App double-service E2E"
 	@echo "  make vet           run go vet"
 	@echo "  make wire-check    fail if wire_gen.go is stale"
 	@echo "  make api-check     fail if generated API code drifted from Proto"
-	@echo "  make check         run every local gate"
+	@echo "  make check         quick gates (no Mongo, race or real Auth)"
+	@echo "  make check-full    quick + race + isolated Mongo/HTTP/gRPC E2E"
+	@echo "  make check-auth-app full backend + real Auth/App E2E"
+	@echo "  make doctor        quick prerequisite check only"
 	@echo "  make migrate       apply MongoDB migrations (Mongo settings only)"
 	@echo "  make run           start the HTTP + gRPC server"
 	@echo ""
@@ -31,7 +36,7 @@ api-generate:
 
 .PHONY: fmt-check
 fmt-check:
-	@unformatted=$$(gofmt -l .); \
+	@unformatted=$$(gofmt -l .) || exit $$?; \
 	if [ -n "$$unformatted" ]; then echo "gofmt needed:"; echo "$$unformatted"; exit 1; fi
 
 .PHONY: build
@@ -66,8 +71,24 @@ wire-check:
 api-check:
 	$(MAKE) -C api proto-check
 
-.PHONY: check
-check: fmt-check build test vet wire-check api-check
+.PHONY: test-race test-scripts doctor check check-full check-auth-app
+test-race:
+	$(GO) test -race ./...
+
+test-scripts:
+	$(PYTHON) -B -m unittest discover -s scripts/tests
+
+doctor:
+	$(VERIFY) quick --doctor
+
+check:
+	$(VERIFY) quick
+
+check-full:
+	$(VERIFY) backend
+
+check-auth-app:
+	$(VERIFY) cross-service
 
 .PHONY: migrate
 migrate:

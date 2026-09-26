@@ -48,9 +48,67 @@ link rotation and enforce the fixed limit of 100 ACTIVE testers.
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
 | `make api-check` | Fail if the generated API code drifted from its Proto |
-| `make check` | Run all local gates |
+| `make doctor` | Check quick prerequisites only; no acceptance claim |
+| `make check` | Quick tier: script tests, format/build/unit/transport/architecture, vet, Wire/Proto, docs/brief/registry, staged and working diff checks |
+| `make check-full` | Quick tier + Go race + all MongoDB and HTTP/gRPC E2E tests with race |
+| `make check-auth-app` | Full backend tier + the real Auth/App service-JWS E2E with race |
+| `make test-race` / `make test-scripts` | Individual race or verification-tooling regression checks |
 | `make migrate` | Apply pending MongoDB migrations and exit |
 | `make run` | Start the HTTP and gRPC servers |
+
+## Verification workflow
+
+Use `make check` while implementing and `make check-full` before backend delivery.
+Changes involving Auth consumers or shared Auth identity/contracts also require
+`make check-auth-app`. Quick success does **not** mean Mongo, E2E or race passed.
+The real Auth/App check currently covers the named UC005 service-JWS scenario;
+it is not proof of every Auth UC, production Gateway or frontend flow.
+
+The Python 3 standard-library runner can be called from any directory:
+
+```bash
+/path/to/iwut-app-center-ddd/scripts/verify.py backend --doctor
+/path/to/iwut-app-center-ddd/scripts/verify.py backend
+/path/to/iwut-app-center-ddd/scripts/verify.py cross-service --timeout 1200
+```
+
+Prerequisites are checked before gates: Go, Git, Make, Bash, gofmt, Python 3,
+and the pinned Proto toolchain; integration tiers also need Docker and GNU
+`timeout`, and the cross-service tier needs OpenSSL/base64 and the Auth source.
+`make -C api proto-tools` prints/checks availability; it does not install tools.
+Missing tools or inaccessible Docker fail rather than skip the tier.
+
+- `APP_CENTER_DOCS_DIR`: override the docs repository (default `../../docs`).
+- `AUTH_CENTER_SOURCE_DIR`: override the Auth worktree (default sibling
+  `iwut-auth-center-ddd`). Prefer absolute paths for overrides.
+- `MONGODB_INTEGRATION_PORT`: optional fixed host port. By default Docker assigns
+  a separate port per run; parallel runs use separate containers and databases.
+- `AUTH_CENTER_INTEGRATION_PORT`: optional Auth port; by default chosen from a
+  free local port. A competing external process can still claim that port before
+  bind; startup failure is diagnosed and must be retried, never treated as pass.
+- `INTEGRATION_STARTUP_TIMEOUT_SECONDS`: Mongo/Auth readiness deadline (default
+  60 seconds); timeout fails explicitly. `--timeout` bounds each verification gate.
+
+Every run writes `.artifacts/verification/<run>/report.json` and per-gate logs.
+The report records the tier, planned/executed gates, exit codes, durations, tool
+versions, source HEADs, dirty flags and SHA-256 content fingerprints before/after.
+Tracked and nonignored untracked files are included; ignored local files are not.
+It stores hashes instead of source diffs or environment dumps. Logs are local
+private diagnostics and may contain test fixture data; do not share them blindly.
+
+A failure stops the pipeline; omitted gates are not claimed as successful.
+`doctor-passed` only confirms prerequisites. `source-changed` invalidates an
+otherwise passing run: stop concurrent edits and rerun against stable inputs.
+On timeout/interruption, the runner terminates the process group and allows
+cleanup time; a forced kill or host crash may still require manual Docker cleanup.
+Integration logs are preserved under the report directory (or, when invoked
+alone, `.artifacts/integration/`) while temporary keys and containers are removed.
+
+For diagnosis, `scripts/test-mongo-integration.sh -race -run 'Revocation'` is
+supported from any directory. Final delivery uses the unfiltered tier. Choose
+one owner for final verification; freeze scripts and source inputs while it runs.
+API commits precede the service gitlink commit. Hand off the report path and
+commit IDs; report dirty-input fingerprints identify pre-commit verification.
 
 ## Environment variables
 
