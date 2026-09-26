@@ -57,25 +57,32 @@ func profileRevisionFromDocument(doc applicationProfileRevisionDocument) (*profi
 	return revision, nil
 }
 func profileRevisionFromRaw(raw bson.Raw) (*profiledomain.ApplicationProfileRevision, error) {
+	doc, err := profileRevisionDocumentFromRaw(raw)
+	if err != nil {
+		return nil, err
+	}
+	return profileRevisionFromDocument(doc)
+}
+func profileRevisionDocumentFromRaw(raw bson.Raw) (applicationProfileRevisionDocument, error) {
+	var doc applicationProfileRevisionDocument
 	for _, name := range []string{"profileRevisionId", "applicationId", "displayName", "reviewStatus", "createdBy", "updatedBy"} {
 		if raw.Lookup(name).Type != bson.TypeString {
-			return nil, profileport.ErrApplicationProfileStateInconsistent
+			return doc, profileport.ErrApplicationProfileStateInconsistent
 		}
 	}
 	for _, name := range []string{"description", "icon"} {
 		kind := raw.Lookup(name).Type
 		if kind != bson.TypeString && kind != bson.TypeNull {
-			return nil, profileport.ErrApplicationProfileStateInconsistent
+			return doc, profileport.ErrApplicationProfileStateInconsistent
 		}
 	}
 	if raw.Lookup("sequence").Type != bson.TypeInt32 || raw.Lookup("revision").Type != bson.TypeInt64 || raw.Lookup("createdAt").Type != bson.TypeDateTime || raw.Lookup("updatedAt").Type != bson.TypeDateTime {
-		return nil, profileport.ErrApplicationProfileStateInconsistent
+		return doc, profileport.ErrApplicationProfileStateInconsistent
 	}
-	var doc applicationProfileRevisionDocument
 	if err := bson.Unmarshal(raw, &doc); err != nil {
-		return nil, profileport.ErrApplicationProfileStateInconsistent
+		return doc, profileport.ErrApplicationProfileStateInconsistent
 	}
-	return profileRevisionFromDocument(doc)
+	return doc, nil
 }
 func profileFromRaw(raw bson.Raw) (applicationProfileDocument, error) {
 	var doc applicationProfileDocument

@@ -162,7 +162,7 @@ func (r *ApplicationProfileRevisionRepository) loadProfileWorkingState(ctx conte
 // Driver errors may contain full user-supplied profile text. Preserve stable
 // classifications without retaining a printable driver cause.
 func safeProfilePersistenceError(err error) error {
-	for _, business := range []error{profileport.ErrApplicationProfileRevisionNotFound, profileport.ErrApplicationProfileRevisionNotDraft, profileport.ErrApplicationProfileRevisionConflict, profileport.ErrApplicationNotFound, profileport.ErrApplicationAdminRequired, profileport.ErrApplicationProfileWorkRevisionAlreadyExists, profileport.ErrApplicationProfileStateInconsistent} {
+	for _, business := range []error{profileport.ErrInvalidApplicationProfileContent, profileport.ErrApplicationProfileRevisionNotFound, profileport.ErrApplicationProfileRevisionNotDraft, profileport.ErrApplicationProfileRevisionConflict, profileport.ErrApplicationNotFound, profileport.ErrApplicationAdminRequired, profileport.ErrApplicationProfileWorkRevisionAlreadyExists, profileport.ErrApplicationProfileStateInconsistent} {
 		if errors.Is(err, business) {
 			return business
 		}

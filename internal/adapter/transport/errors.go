@@ -22,6 +22,8 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidApplicationProfileReviewSubmission      = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_SUBMISSION"
+	ReasonInvalidApplicationProfileContent               = "ERROR_REASON_INVALID_APPLICATION_PROFILE_CONTENT"
 	ReasonInvalidApplicationProfileRevisionID            = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVISION_ID"
 	ReasonApplicationProfileExpectedRevisionRequired     = "ERROR_REASON_APPLICATION_PROFILE_EXPECTED_REVISION_REQUIRED"
 	ReasonApplicationProfileRevisionNotFound             = "ERROR_REASON_APPLICATION_PROFILE_REVISION_NOT_FOUND"
@@ -275,6 +277,8 @@ var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
 }
 
 var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
+	profiledomain.ErrorCodeInvalidApplicationProfileReviewSubmission:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewSubmission, message: "application profile review submission is invalid"},
+	profiledomain.ErrorCodeInvalidApplicationProfileContent:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileContent, message: "application profile content is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileRevisionID:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileRevisionID, message: "application profile revision ID is invalid"},
 	profiledomain.ErrorCodeApplicationProfileExpectedRevisionRequired:  {code: codes.InvalidArgument, reason: ReasonApplicationProfileExpectedRevisionRequired, message: "application profile expected revision is required"},
 	profiledomain.ErrorCodeApplicationProfileRevisionNotFound:          {code: codes.NotFound, reason: ReasonApplicationProfileRevisionNotFound, message: "application profile revision not found"},

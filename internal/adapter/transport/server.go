@@ -13,6 +13,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
@@ -23,6 +24,9 @@ import (
 )
 
 const (
+	SubmitApplicationProfileReviewInternalPath   = "/v1/applications/{application_id}/profile-revisions/{profile_revision_id}/reviews"
+	SubmitApplicationProfileReviewExternalPath   = ServicePrefix + SubmitApplicationProfileReviewInternalPath
+	SubmitApplicationProfileReviewGRPCMethod     = profilereviewv1.OperationApplicationProfileReviewSubmitApplicationProfileRevisionReview
 	UpdateApplicationProfileRevisionInternalPath = "/v1/applications/{application_id}/profile-revisions/{profile_revision_id}"
 	UpdateApplicationProfileRevisionExternalPath = ServicePrefix + UpdateApplicationProfileRevisionInternalPath
 	UpdateApplicationProfileRevisionGRPCMethod   = profilev1.OperationApplicationProfileRevisionUpdateApplicationProfileRevision
@@ -101,6 +105,7 @@ func NewServers(
 	testerMembershipService *TesterMembershipService,
 	catalogService *CatalogService,
 	profileService *ApplicationProfileRevisionService,
+	profileReviewService *ApplicationProfileReviewService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -130,6 +135,9 @@ func NewServers(
 	if profileService == nil {
 		return nil, errors.New("transport servers: application profile revision service is required")
 	}
+	if profileReviewService == nil {
+		return nil, errors.New("transport servers: application profile review service is required")
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Filter(testerMembershipCredentialFilter(verifier)),
@@ -137,6 +145,7 @@ func NewServers(
 		khttp.ResponseEncoder(createdResponseEncoder),
 		khttp.ErrorEncoder(credentialSafeErrorEncoder),
 	)
+	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)
 	profilev1.RegisterApplicationProfileRevisionHTTPServer(httpServer, profileService)
 	catalogv1.RegisterCatalogHTTPServer(httpServer, catalogService)
 	testermembershipv1.RegisterTesterMembershipHTTPServer(httpServer, testerMembershipService)
@@ -150,6 +159,7 @@ func NewServers(
 		kgrpc.Address(config.GRPCAddr),
 		kgrpc.Middleware(identityMiddleware(verifier)),
 	)
+	profilereviewv1.RegisterApplicationProfileReviewServer(grpcServer, profileReviewService)
 	profilev1.RegisterApplicationProfileRevisionServer(grpcServer, profileService)
 	catalogv1.RegisterCatalogServer(grpcServer, catalogService)
 	testermembershipv1.RegisterTesterMembershipServer(grpcServer, testerMembershipService)
@@ -168,6 +178,9 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *profilereviewv1.SubmitApplicationProfileRevisionReviewResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetProfileRevision().GetRevision()))
+		w.WriteHeader(http.StatusCreated)
 	case *profilev1.UpdateApplicationProfileRevisionResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 	case *profilev1.CreateApplicationProfileRevisionResponse:
@@ -213,6 +226,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isSubmitApplicationProfileReviewRequest(r) {
+		profileSubmissionErrorEncoder(w, r, err)
+		return
+	}
 	if isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
 		profileSafeErrorEncoder(w, r, err)
 		return
@@ -287,7 +304,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
+			if isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -315,6 +332,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if identityErr != nil {
 					operation := JoinApplicationAsTesterGRPCMethod
+					if isSubmitApplicationProfileReviewRequest(r) {
+						operation = SubmitApplicationProfileReviewGRPCMethod
+					}
 					if isUpdateApplicationProfileRevisionRequest(r) {
 						operation = UpdateApplicationProfileRevisionGRPCMethod
 					}
@@ -331,6 +351,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 						operation = RevokeTesterJoinLinkGRPCMethod
 					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if isSubmitApplicationProfileReviewRequest(r) && !validProfileSubmissionHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, invalidProfileSubmission())
 					return
 				}
 				if isUpdateApplicationProfileRevisionRequest(r) {

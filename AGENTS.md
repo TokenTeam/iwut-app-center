@@ -40,21 +40,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-014 — Replace a draft application profile revision.** Design input:
-`../../docs/app-center/briefs/UC-APP-014.md` (BR-PRF-008–014 and referenced profile
-content rules) plus the engineering baseline. UC013 is complete at service
-`d121d4e` / API `219419b`, with a passed full backend report. Extend the existing
-profile Domain/UseCase/Port, Mongo atomic replacement, API/HTTP/gRPC and Wire.
-Cover normalized no-op, optimistic concurrency, full explicit-null replacement,
-immutable creation facts, administrator transfer and lifecycle races. Reuse the
-UC013 schema; do not edit applied migrations. No UC015 submission, UC016 decisions,
-management queries, frontend or external content checks. Required final tier:
-`make check-full`. Real edit-versus-submit command competition is completed by
-UC015; this work package verifies the DRAFT guard against transactional state
-changes. UC015 stays queued until UC014 passes full acceptance. This package also fixes
-the UC013 generated HTTP client body binding: both commands use an explicit
-profile body message, preserve the flat three-field HTTP JSON shape, reserve
-UC013 removed field tags/names, and include a real generated-client regression.
+**UC-APP-015 — Submit a draft application profile revision for review.** Design
+input: `../../docs/app-center/briefs/UC-APP-015.md` (BR-PRF-015–022 and referenced
+profile content rules) plus the engineering baseline. UC013/014 are complete at
+service `a712456` / API `94347df`; each passed full backend acceptance. Extend
+`internal/profile/{domain,usecase,port}`, atomic Mongo submission, immutable
+PENDING Review snapshots and an explicit review migration/readiness. Add
+resource-oriented HTTP/gRPC, Wire and actual generated-HTTP-client E2E. HTTP
+submission uses expectedRevision in the command body; only editing uses If-Match.
+Use explicit command body binding and matching path-field json_name as established
+by UC014. Cover duplicate submission, rollback, admin transfer, attempt/revision
+bounds, retained publication/working pointers, and real edit-versus-submit races.
+No UC016 decisions, Reviewer grants/policy, queries, frontend, Auth Catalog or
+external URL/content checks. Required final tier: `make check-full`. This is the
+last UC authorized in the current serial batch; do not activate UC016.
 
 ## Verification entry points
 

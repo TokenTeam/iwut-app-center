@@ -15,6 +15,8 @@ import (
 // Application use case consumes.
 var ProviderSet = wire.NewSet(
 	NewApplicationProfileRevisionUUIDv7Generator,
+	NewApplicationProfileReviewUUIDv7Generator,
+	wire.Bind(new(profileport.ApplicationProfileReviewIDGenerator), new(*ApplicationProfileReviewUUIDv7Generator)),
 	wire.Bind(new(profileport.ApplicationProfileRevisionIDGenerator), new(*ApplicationProfileRevisionUUIDv7Generator)),
 	wire.Bind(new(profileport.Clock), new(*SystemClock)),
 	wire.Bind(new(testerport.UUIDv7Generator), new(*PublicationUUIDv7Generator)),

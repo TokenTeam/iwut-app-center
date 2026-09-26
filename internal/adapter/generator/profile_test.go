@@ -13,3 +13,15 @@ func TestProfileRevisionUUIDv7(t *testing.T) {
 		t.Fatalf("independent UUIDv7: %v", err)
 	}
 }
+
+func TestApplicationProfileReviewUUIDv7Generator(t *testing.T) {
+	generator := NewApplicationProfileReviewUUIDv7Generator()
+	first, err := generator.NewUUIDv7()
+	if err != nil || !first.IsValid() {
+		t.Fatal(first, err)
+	}
+	second, err := generator.NewUUIDv7()
+	if err != nil || !second.IsValid() || first == second {
+		t.Fatal(second, err)
+	}
+}

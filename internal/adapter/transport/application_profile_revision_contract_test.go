@@ -1,6 +1,7 @@
 package transport
 
 import (
+	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	"github.com/go-kratos/kratos/v2/transport/http/binding"
 	"google.golang.org/genproto/googleapis/api/annotations"
@@ -39,7 +40,9 @@ func TestAPIContract_UCAPP013_BR_PRF_001_005_007_ResourceAndFields(t *testing.T)
 		}
 	}
 	for _, spec := range profileDomainErrorSpecs {
-		if _, ok := profilev1.ErrorReason_value[spec.reason]; !ok {
+		_, revisionOK := profilev1.ErrorReason_value[spec.reason]
+		_, reviewOK := reviewv1.ErrorReason_value[spec.reason]
+		if !revisionOK && !reviewOK {
 			t.Fatalf("missing reason %s", spec.reason)
 		}
 	}

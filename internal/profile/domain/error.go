@@ -31,6 +31,8 @@ const (
 	ErrorCodeApplicationProfileRevisionNotFound          ErrorCode = "ApplicationProfileRevisionNotFound"
 	ErrorCodeApplicationProfileRevisionNotDraft          ErrorCode = "ApplicationProfileRevisionNotDraft"
 	ErrorCodeApplicationProfileRevisionConflict          ErrorCode = "ApplicationProfileRevisionConflict"
+	ErrorCodeInvalidApplicationProfileReviewSubmission   ErrorCode = "InvalidApplicationProfileReviewSubmission"
+	ErrorCodeInvalidApplicationProfileContent            ErrorCode = "InvalidApplicationProfileContent"
 	ErrorCodeInternal                                    ErrorCode = "Internal"
 )
 
@@ -75,5 +77,7 @@ var (
 	ErrApplicationProfileRevisionNotFound          = newError(ErrorCategoryNotFound, ErrorCodeApplicationProfileRevisionNotFound, "application profile revision not found", nil)
 	ErrApplicationProfileRevisionNotDraft          = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileRevisionNotDraft, "application profile revision is not draft", nil)
 	ErrApplicationProfileRevisionConflict          = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileRevisionConflict, "application profile revision conflict", nil)
+	ErrInvalidApplicationProfileReviewSubmission   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileReviewSubmission, "application profile review submission is invalid", nil)
+	ErrInvalidApplicationProfileContent            = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileContent, "application profile content is invalid", nil)
 	ErrInternal                                    = NewInternalError(nil)
 )
