@@ -23,6 +23,9 @@ import (
 )
 
 const (
+	UpdateApplicationProfileRevisionInternalPath = "/v1/applications/{application_id}/profile-revisions/{profile_revision_id}"
+	UpdateApplicationProfileRevisionExternalPath = ServicePrefix + UpdateApplicationProfileRevisionInternalPath
+	UpdateApplicationProfileRevisionGRPCMethod   = profilev1.OperationApplicationProfileRevisionUpdateApplicationProfileRevision
 	CreateApplicationProfileRevisionInternalPath = "/v1/applications/{application_id}/profile-revisions"
 	CreateApplicationProfileRevisionExternalPath = ServicePrefix + CreateApplicationProfileRevisionInternalPath
 	CreateApplicationProfileRevisionGRPCMethod   = profilev1.OperationApplicationProfileRevisionCreateApplicationProfileRevision
@@ -165,6 +168,8 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *profilev1.UpdateApplicationProfileRevisionResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 	case *profilev1.CreateApplicationProfileRevisionResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 		w.WriteHeader(http.StatusCreated)
@@ -208,7 +213,7 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
-	if isCreateApplicationProfileRevisionRequest(r) {
+	if isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
 		profileSafeErrorEncoder(w, r, err)
 		return
 	}
@@ -282,7 +287,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) {
+			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -310,6 +315,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if identityErr != nil {
 					operation := JoinApplicationAsTesterGRPCMethod
+					if isUpdateApplicationProfileRevisionRequest(r) {
+						operation = UpdateApplicationProfileRevisionGRPCMethod
+					}
 					if isCreateApplicationProfileRevisionRequest(r) {
 						operation = CreateApplicationProfileRevisionGRPCMethod
 					}
@@ -324,6 +332,16 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
 					return
+				}
+				if isUpdateApplicationProfileRevisionRequest(r) {
+					if _, err := parseProfileIfMatch(r.Header.Values("If-Match")); err != nil {
+						credentialSafeErrorEncoder(w, r, err)
+						return
+					}
+					if !validCreateApplicationProfileRevisionHTTPInput(r) {
+						credentialSafeErrorEncoder(w, r, invalidUpdateApplicationProfileRevisionRequest())
+						return
+					}
 				}
 				if isCreateApplicationProfileRevisionRequest(r) && !validCreateApplicationProfileRevisionHTTPInput(r) {
 					credentialSafeErrorEncoder(w, r, invalidCreateApplicationProfileRevisionRequest())

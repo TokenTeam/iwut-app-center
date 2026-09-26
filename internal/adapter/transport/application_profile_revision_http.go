@@ -14,6 +14,11 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+func isUpdateApplicationProfileRevisionRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodPut && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "profile-revisions"
+}
+
 func isCreateApplicationProfileRevisionRequest(r *http.Request) bool {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	return r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "profile-revisions"
@@ -84,6 +89,9 @@ func profileSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) 
 	if _, ok := profilev1.ErrorReason_value[converted.Reason]; !ok {
 		if converted.Code == http.StatusBadRequest {
 			err = invalidCreateApplicationProfileRevisionRequest()
+			if isUpdateApplicationProfileRevisionRequest(r) {
+				err = invalidUpdateApplicationProfileRevisionRequest()
+			}
 		} else {
 			err = transportStatus(codes.Internal, ReasonInternal, "internal failure")
 		}

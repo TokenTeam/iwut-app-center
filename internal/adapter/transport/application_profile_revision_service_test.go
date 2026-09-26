@@ -43,7 +43,7 @@ func profileFixture(t *testing.T) *profiledomain.ApplicationProfileRevision {
 }
 func profileServers(t *testing.T, h *fakeCreateProfileHandler) *Servers {
 	t.Helper()
-	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(h))
+	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(h, nil))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -112,21 +112,21 @@ func TestProfile_BR_PRF_005_GRPCValuePresence(t *testing.T) {
 	for _, value := range invalid {
 		for _, field := range []string{"description", "icon"} {
 			h := &fakeCreateProfileHandler{}
-			r := &profilev1.CreateApplicationProfileRevisionRequest{ApplicationId: testApplicationID, DisplayName: "x", Description: structpb.NewNullValue(), Icon: structpb.NewNullValue()}
+			r := &profilev1.CreateApplicationProfileRevisionRequest{ApplicationId: testApplicationID, Profile: &profilev1.ApplicationProfileContent{DisplayName: "x", Description: structpb.NewNullValue(), Icon: structpb.NewNullValue()}}
 			if field == "description" {
-				r.Description = value
+				r.Profile.Description = value
 			} else {
-				r.Icon = value
+				r.Profile.Icon = value
 			}
-			_, err := NewApplicationProfileRevisionService(h).CreateApplicationProfileRevision(ctx, r)
+			_, err := NewApplicationProfileRevisionService(h, nil).CreateApplicationProfileRevision(ctx, r)
 			if status.Code(err) != codes.InvalidArgument || h.calls != 0 {
 				t.Fatalf("%s kind %v accepted: %v", field, value, err)
 			}
 		}
 	}
 	h := &fakeCreateProfileHandler{result: profileFixture(t)}
-	r := &profilev1.CreateApplicationProfileRevisionRequest{ApplicationId: testApplicationID, DisplayName: "x", Description: structpb.NewStringValue("description"), Icon: structpb.NewStringValue("opaque:anything")}
-	if _, e := NewApplicationProfileRevisionService(h).CreateApplicationProfileRevision(ctx, r); e != nil || h.command.Description == nil || *h.command.Description != "description" || h.command.Icon == nil || *h.command.Icon != "opaque:anything" {
+	r := &profilev1.CreateApplicationProfileRevisionRequest{ApplicationId: testApplicationID, Profile: &profilev1.ApplicationProfileContent{DisplayName: "x", Description: structpb.NewStringValue("description"), Icon: structpb.NewStringValue("opaque:anything")}}
+	if _, e := NewApplicationProfileRevisionService(h, nil).CreateApplicationProfileRevision(ctx, r); e != nil || h.command.Description == nil || *h.command.Description != "description" || h.command.Icon == nil || *h.command.Icon != "opaque:anything" {
 		t.Fatalf("string mapping failed: %v", e)
 	}
 }

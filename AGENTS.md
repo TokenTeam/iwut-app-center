@@ -40,17 +40,21 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-013 — Create application profile revision drafts.** Design input:
-`../../docs/app-center/briefs/UC-APP-013.md` (BR-PRF-001–007) and the refreshed
-engineering baseline. Implement `internal/profile/{domain,usecase,port}`,
-MongoDB profile documents/migration/atomic creation, profile Proto and generated
-API, HTTP/gRPC transport, Wire and real integration tests. Add only ADR-003's
-exact NFC import exception and positive/negative architecture guard tests.
-Preserve existing Application sequence initialization and all prior capabilities.
-No UC014 editing, UC015 submission, UC016 decisions, management queries,
-frontend, Auth Catalog, URL fetching or asset semantics. Required final tier:
-`make check-full`. UC014 and UC015 remain queued until the preceding UC is fully
-verified and this work-package declaration is explicitly switched.
+**UC-APP-014 — Replace a draft application profile revision.** Design input:
+`../../docs/app-center/briefs/UC-APP-014.md` (BR-PRF-008–014 and referenced profile
+content rules) plus the engineering baseline. UC013 is complete at service
+`d121d4e` / API `219419b`, with a passed full backend report. Extend the existing
+profile Domain/UseCase/Port, Mongo atomic replacement, API/HTTP/gRPC and Wire.
+Cover normalized no-op, optimistic concurrency, full explicit-null replacement,
+immutable creation facts, administrator transfer and lifecycle races. Reuse the
+UC013 schema; do not edit applied migrations. No UC015 submission, UC016 decisions,
+management queries, frontend or external content checks. Required final tier:
+`make check-full`. Real edit-versus-submit command competition is completed by
+UC015; this work package verifies the DRAFT guard against transactional state
+changes. UC015 stays queued until UC014 passes full acceptance. This package also fixes
+the UC013 generated HTTP client body binding: both commands use an explicit
+profile body message, preserve the flat three-field HTTP JSON shape, reserve
+UC013 removed field tags/names, and include a real generated-client regression.
 
 ## Verification entry points
 

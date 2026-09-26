@@ -26,6 +26,11 @@ const (
 	ErrorCodeApplicationAdminRequired                    ErrorCode = "ApplicationAdminRequired"
 	ErrorCodeApplicationProfileWorkRevisionAlreadyExists ErrorCode = "ApplicationProfileWorkRevisionAlreadyExists"
 	ErrorCodeApplicationProfileStateInconsistent         ErrorCode = "ApplicationProfileStateInconsistent"
+	ErrorCodeInvalidApplicationProfileRevisionID         ErrorCode = "InvalidApplicationProfileRevisionId"
+	ErrorCodeApplicationProfileExpectedRevisionRequired  ErrorCode = "ApplicationProfileExpectedRevisionRequired"
+	ErrorCodeApplicationProfileRevisionNotFound          ErrorCode = "ApplicationProfileRevisionNotFound"
+	ErrorCodeApplicationProfileRevisionNotDraft          ErrorCode = "ApplicationProfileRevisionNotDraft"
+	ErrorCodeApplicationProfileRevisionConflict          ErrorCode = "ApplicationProfileRevisionConflict"
 	ErrorCodeInternal                                    ErrorCode = "Internal"
 )
 
@@ -65,5 +70,10 @@ var (
 	ErrApplicationAdminRequired                    = newError(ErrorCategoryAuthorization, ErrorCodeApplicationAdminRequired, "application administrator is required", nil)
 	ErrApplicationProfileWorkRevisionAlreadyExists = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileWorkRevisionAlreadyExists, "application profile work revision already exists", nil)
 	ErrApplicationProfileStateInconsistent         = NewApplicationProfileStateInconsistentError(nil)
+	ErrInvalidApplicationProfileRevisionID         = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileRevisionID, "application profile revision ID is invalid", nil)
+	ErrApplicationProfileExpectedRevisionRequired  = newError(ErrorCategoryValidation, ErrorCodeApplicationProfileExpectedRevisionRequired, "application profile expected revision is required", nil)
+	ErrApplicationProfileRevisionNotFound          = newError(ErrorCategoryNotFound, ErrorCodeApplicationProfileRevisionNotFound, "application profile revision not found", nil)
+	ErrApplicationProfileRevisionNotDraft          = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileRevisionNotDraft, "application profile revision is not draft", nil)
+	ErrApplicationProfileRevisionConflict          = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileRevisionConflict, "application profile revision conflict", nil)
 	ErrInternal                                    = NewInternalError(nil)
 )

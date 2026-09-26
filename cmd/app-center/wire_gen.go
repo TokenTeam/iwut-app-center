@@ -136,7 +136,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationProfileRevisionUUIDv7Generator := generator.NewApplicationProfileRevisionUUIDv7Generator()
 	applicationProfileRevisionRepository := mongo.NewApplicationProfileRevisionRepository(database)
 	createApplicationProfileRevisionHandler := usecase7.NewCreateApplicationProfileRevisionHandler(applicationProfileRevisionUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
-	applicationProfileRevisionService := transport.NewApplicationProfileRevisionService(createApplicationProfileRevisionHandler)
+	updateDraftApplicationProfileRevisionHandler := usecase7.NewUpdateDraftApplicationProfileRevisionHandler(systemClock, applicationProfileRevisionRepository)
+	applicationProfileRevisionService := transport.NewApplicationProfileRevisionService(createApplicationProfileRevisionHandler, updateDraftApplicationProfileRevisionHandler)
 	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService)
 	if err != nil {
 		cleanup2()

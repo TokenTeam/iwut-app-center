@@ -22,6 +22,12 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidApplicationProfileRevisionID            = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVISION_ID"
+	ReasonApplicationProfileExpectedRevisionRequired     = "ERROR_REASON_APPLICATION_PROFILE_EXPECTED_REVISION_REQUIRED"
+	ReasonApplicationProfileRevisionNotFound             = "ERROR_REASON_APPLICATION_PROFILE_REVISION_NOT_FOUND"
+	ReasonApplicationProfileRevisionNotDraft             = "ERROR_REASON_APPLICATION_PROFILE_REVISION_NOT_DRAFT"
+	ReasonApplicationProfileRevisionConflict             = "ERROR_REASON_APPLICATION_PROFILE_REVISION_CONFLICT"
+	ReasonInvalidUpdateApplicationProfileRevisionRequest = "ERROR_REASON_INVALID_UPDATE_APPLICATION_PROFILE_REVISION_REQUEST"
 	ReasonInvalidCreateApplicationProfileRevisionRequest = "ERROR_REASON_INVALID_CREATE_APPLICATION_PROFILE_REVISION_REQUEST"
 	ReasonApplicationProfileStateInconsistent            = "ERROR_REASON_APPLICATION_PROFILE_STATE_INCONSISTENT"
 	ReasonApplicationProfileWorkRevisionAlreadyExists    = "ERROR_REASON_APPLICATION_PROFILE_WORK_REVISION_ALREADY_EXISTS"
@@ -269,6 +275,11 @@ var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
 }
 
 var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
+	profiledomain.ErrorCodeInvalidApplicationProfileRevisionID:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileRevisionID, message: "application profile revision ID is invalid"},
+	profiledomain.ErrorCodeApplicationProfileExpectedRevisionRequired:  {code: codes.InvalidArgument, reason: ReasonApplicationProfileExpectedRevisionRequired, message: "application profile expected revision is required"},
+	profiledomain.ErrorCodeApplicationProfileRevisionNotFound:          {code: codes.NotFound, reason: ReasonApplicationProfileRevisionNotFound, message: "application profile revision not found"},
+	profiledomain.ErrorCodeApplicationProfileRevisionNotDraft:          {code: codes.Aborted, reason: ReasonApplicationProfileRevisionNotDraft, message: "application profile revision is not a draft"},
+	profiledomain.ErrorCodeApplicationProfileRevisionConflict:          {code: codes.Aborted, reason: ReasonApplicationProfileRevisionConflict, message: "application profile revision conflicts"},
 	profiledomain.ErrorCodeInvalidApplicationID:                        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
 	profiledomain.ErrorCodeDeveloperIdentityRequired:                   {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
 	profiledomain.ErrorCodeDeveloperApprovalRequired:                   {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},

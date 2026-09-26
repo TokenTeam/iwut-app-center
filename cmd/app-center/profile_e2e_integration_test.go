@@ -131,7 +131,7 @@ func TestE2E_UCAPP013_BR_PRF_001_007_ProfileDraft(t *testing.T) {
 		}
 	}
 	request := func(id string) *profilev1.CreateApplicationProfileRevisionRequest {
-		return &profilev1.CreateApplicationProfileRevisionRequest{ApplicationId: id, DisplayName: "Cafe\u0301", Description: structpb.NewStringValue("Re\u0301sume\u0301"), Icon: structpb.NewStringValue("opaque:icon-e\u0301")}
+		return &profilev1.CreateApplicationProfileRevisionRequest{ApplicationId: id, Profile: &profilev1.ApplicationProfileContent{DisplayName: "Cafe\u0301", Description: structpb.NewStringValue("Re\u0301sume\u0301"), Icon: structpb.NewStringValue("opaque:icon-e\u0301")}}
 	}
 	for _, tc := range []struct {
 		token   string
@@ -149,9 +149,9 @@ func TestE2E_UCAPP013_BR_PRF_001_007_ProfileDraft(t *testing.T) {
 		for _, value := range []*structpb.Value{nil, {}, structpb.NewBoolValue(true), structpb.NewNumberValue(1), structpb.NewStructValue(&structpb.Struct{}), structpb.NewListValue(&structpb.ListValue{}), structpb.NewStringValue("")} {
 			r := request(grpcAppID)
 			if field == "description" {
-				r.Description = value
+				r.Profile.Description = value
 			} else {
-				r.Icon = value
+				r.Profile.Icon = value
 			}
 			if _, e := client.CreateApplicationProfileRevision(adminCtx, r); status.Code(e) != codes.InvalidArgument {
 				t.Fatalf("invalid gRPC %s Value %v got %v", field, value, e)
@@ -195,9 +195,9 @@ func TestE2E_UCAPP013_BR_PRF_001_007_ProfileDraft(t *testing.T) {
 		t.Fatalf("HTTP null create=%d %s", code, body)
 	}
 	nullRequest := request(grpcNullAppID)
-	nullRequest.DisplayName = longName
-	nullRequest.Description = structpb.NewNullValue()
-	nullRequest.Icon = structpb.NewNullValue()
+	nullRequest.Profile.DisplayName = longName
+	nullRequest.Profile.Description = structpb.NewNullValue()
+	nullRequest.Profile.Icon = structpb.NewNullValue()
 	grpcNull, err := client.CreateApplicationProfileRevision(adminCtx, nullRequest)
 	if err != nil {
 		t.Fatal(err)

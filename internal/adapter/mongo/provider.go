@@ -17,6 +17,7 @@ import (
 // validated configuration.
 var ProviderSet = wire.NewSet(
 	NewApplicationProfileRevisionRepository,
+	wire.Bind(new(profileport.DraftApplicationProfileRevisionRepository), new(*ApplicationProfileRevisionRepository)),
 	wire.Bind(new(profileport.ApplicationProfileRevisionRepository), new(*ApplicationProfileRevisionRepository)),
 	NewTestLaunchResolver,
 	wire.Bind(new(catalogport.TestLaunchResolver), new(*TestLaunchResolver)),
