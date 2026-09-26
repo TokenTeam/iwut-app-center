@@ -17,6 +17,7 @@ import (
 	"iwut-app-center/internal/application/usecase"
 	usecase6 "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
+	usecase7 "iwut-app-center/internal/profile/usecase"
 	usecase4 "iwut-app-center/internal/publication/usecase"
 	usecase3 "iwut-app-center/internal/review/usecase"
 	usecase5 "iwut-app-center/internal/tester/usecase"
@@ -132,7 +133,11 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	testLaunchResolver := mongo.NewTestLaunchResolver(database)
 	resolveTestLaunchTarget := usecase6.NewResolveTestLaunchTarget(testLaunchResolver)
 	catalogService := transport.NewCatalogService(resolveTestLaunchTarget)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService)
+	applicationProfileRevisionUUIDv7Generator := generator.NewApplicationProfileRevisionUUIDv7Generator()
+	applicationProfileRevisionRepository := mongo.NewApplicationProfileRevisionRepository(database)
+	createApplicationProfileRevisionHandler := usecase7.NewCreateApplicationProfileRevisionHandler(applicationProfileRevisionUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
+	applicationProfileRevisionService := transport.NewApplicationProfileRevisionService(createApplicationProfileRevisionHandler)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService)
 	if err != nil {
 		cleanup2()
 		cleanup()

@@ -35,8 +35,9 @@ var domainInfrastructureImports = []string{
 }
 
 type packageLocation struct {
-	capability string
-	layer      string
+	capability  string
+	layer       string
+	packagePath string
 }
 
 func TestArchitectureBoundaries(t *testing.T) {
@@ -111,6 +112,12 @@ func TestImportRules(t *testing.T) {
 		{name: "domain may not use another capability", location: packageLocation{capability: "version", layer: "domain"}, importPath: modulePath + "/internal/application/domain", allowed: false},
 		{name: "domain may not use MongoDB", location: packageLocation{capability: "version", layer: "domain"}, importPath: "go.mongodb.org/mongo-driver/v2/bson", allowed: false},
 		{name: "domain external dependency needs an architecture decision", location: packageLocation{capability: "version", layer: "domain"}, importPath: "golang.org/x/text/unicode/norm", allowed: false},
+		{name: "profile domain NFC approved narrow exception", location: packageLocation{capability: "profile", layer: "domain", packagePath: "internal/profile/domain"}, importPath: "golang.org/x/text/unicode/norm", allowed: true},
+		{name: "profile domain child package NFC denied", location: packageLocation{capability: "profile", layer: "domain", packagePath: "internal/profile/domain/nested"}, importPath: "golang.org/x/text/unicode/norm", allowed: false},
+		{name: "profile domain other xtext package denied", location: packageLocation{capability: "profile", layer: "domain"}, importPath: "golang.org/x/text/cases", allowed: false},
+		{name: "profile usecase NFC denied", location: packageLocation{capability: "profile", layer: "usecase"}, importPath: "golang.org/x/text/unicode/norm", allowed: false},
+		{name: "profile port NFC denied", location: packageLocation{capability: "profile", layer: "port"}, importPath: "golang.org/x/text/unicode/norm", allowed: false},
+		{name: "shared NFC denied", location: packageLocation{capability: "shared", layer: "shared"}, importPath: "golang.org/x/text/unicode/norm", allowed: false},
 		{name: "port may use own domain", location: packageLocation{capability: "version", layer: "port"}, importPath: modulePath + "/internal/version/domain", allowed: true},
 		{name: "port may not use another capability", location: packageLocation{capability: "version", layer: "port"}, importPath: modulePath + "/internal/application/domain", allowed: false},
 		{name: "usecase may use own port", location: packageLocation{capability: "version", layer: "usecase"}, importPath: modulePath + "/internal/version/port", allowed: true},
@@ -213,7 +220,7 @@ func locatePackage(relativePath string) packageLocation {
 	if parts[1] == "shared" {
 		return packageLocation{capability: "shared", layer: "shared"}
 	}
-	return packageLocation{capability: parts[1], layer: parts[2]}
+	return packageLocation{capability: parts[1], layer: parts[2], packagePath: filepath.ToSlash(filepath.Dir(relativePath))}
 }
 
 func sourcePathViolation(relativePath string) string {
@@ -248,7 +255,8 @@ func importViolation(location packageLocation, importPath string) string {
 	if location.layer == "domain" && hasAnyPrefix(importPath, domainInfrastructureImports) {
 		return "Domain cannot depend on infrastructure, transport, configuration, or concrete logging"
 	}
-	if isCoreLayer(location.layer) && isExternalImport(importPath) {
+	if isCoreLayer(location.layer) && isExternalImport(importPath) &&
+		!(location.capability == "profile" && location.layer == "domain" && location.packagePath == "internal/profile/domain" && importPath == "golang.org/x/text/unicode/norm") {
 		return "Domain, UseCase, Port, and shared code require an accepted architecture change before adding an external dependency"
 	}
 

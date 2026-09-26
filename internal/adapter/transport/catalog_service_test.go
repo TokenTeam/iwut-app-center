@@ -45,7 +45,7 @@ func catalogDescriptor(t *testing.T) *catalogdomain.TestLaunchDescriptor {
 }
 func catalogServers(t *testing.T, h *fakeResolveTestLaunchHandler) *Servers {
 	t.Helper()
-	servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(h))
+	servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(h), NewApplicationProfileRevisionService(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

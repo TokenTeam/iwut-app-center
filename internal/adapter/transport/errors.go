@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	catalogdomain "iwut-app-center/internal/catalog/domain"
+	profiledomain "iwut-app-center/internal/profile/domain"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -21,13 +22,19 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
-	ReasonInvalidHostRPCAPIMajor                 = "ERROR_REASON_INVALID_HOST_RPC_API_MAJOR"
-	ReasonInvalidHostCapabilities                = "ERROR_REASON_INVALID_HOST_CAPABILITIES"
-	ReasonApplicationTesterRequired              = "ERROR_REASON_APPLICATION_TESTER_REQUIRED"
-	ReasonApplicationTestTargetUnavailable       = "ERROR_REASON_APPLICATION_TEST_TARGET_UNAVAILABLE"
-	ReasonHostCapabilitiesInsufficient           = "ERROR_REASON_HOST_CAPABILITIES_INSUFFICIENT"
-	ReasonApplicationTestPublicationInconsistent = "ERROR_REASON_APPLICATION_TEST_PUBLICATION_INCONSISTENT"
-	ReasonInvalidResolveTestLaunchRequest        = "ERROR_REASON_INVALID_RESOLVE_TEST_LAUNCH_REQUEST"
+	ReasonInvalidCreateApplicationProfileRevisionRequest = "ERROR_REASON_INVALID_CREATE_APPLICATION_PROFILE_REVISION_REQUEST"
+	ReasonApplicationProfileStateInconsistent            = "ERROR_REASON_APPLICATION_PROFILE_STATE_INCONSISTENT"
+	ReasonApplicationProfileWorkRevisionAlreadyExists    = "ERROR_REASON_APPLICATION_PROFILE_WORK_REVISION_ALREADY_EXISTS"
+	ReasonInvalidApplicationIcon                         = "ERROR_REASON_INVALID_APPLICATION_ICON"
+	ReasonInvalidApplicationDescription                  = "ERROR_REASON_INVALID_APPLICATION_DESCRIPTION"
+	ReasonInvalidApplicationDisplayName                  = "ERROR_REASON_INVALID_APPLICATION_DISPLAY_NAME"
+	ReasonInvalidHostRPCAPIMajor                         = "ERROR_REASON_INVALID_HOST_RPC_API_MAJOR"
+	ReasonInvalidHostCapabilities                        = "ERROR_REASON_INVALID_HOST_CAPABILITIES"
+	ReasonApplicationTesterRequired                      = "ERROR_REASON_APPLICATION_TESTER_REQUIRED"
+	ReasonApplicationTestTargetUnavailable               = "ERROR_REASON_APPLICATION_TEST_TARGET_UNAVAILABLE"
+	ReasonHostCapabilitiesInsufficient                   = "ERROR_REASON_HOST_CAPABILITIES_INSUFFICIENT"
+	ReasonApplicationTestPublicationInconsistent         = "ERROR_REASON_APPLICATION_TEST_PUBLICATION_INCONSISTENT"
+	ReasonInvalidResolveTestLaunchRequest                = "ERROR_REASON_INVALID_RESOLVE_TEST_LAUNCH_REQUEST"
 
 	ReasonApplicationTesterJoinLinkStateInconsistent = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT"
 	ReasonInvalidRevokeTesterJoinLinkRequest         = "ERROR_REASON_INVALID_REVOKE_TESTER_JOIN_LINK_REQUEST"
@@ -261,6 +268,20 @@ var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
 	catalogdomain.ErrorCodeInternal:                               internalSpec,
 }
 
+var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
+	profiledomain.ErrorCodeInvalidApplicationID:                        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	profiledomain.ErrorCodeDeveloperIdentityRequired:                   {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	profiledomain.ErrorCodeDeveloperApprovalRequired:                   {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	profiledomain.ErrorCodeInvalidApplicationDisplayName:               {code: codes.InvalidArgument, reason: ReasonInvalidApplicationDisplayName, message: "application display name is invalid"},
+	profiledomain.ErrorCodeInvalidApplicationDescription:               {code: codes.InvalidArgument, reason: ReasonInvalidApplicationDescription, message: "application description is invalid"},
+	profiledomain.ErrorCodeInvalidApplicationIcon:                      {code: codes.InvalidArgument, reason: ReasonInvalidApplicationIcon, message: "application icon is invalid"},
+	profiledomain.ErrorCodeApplicationNotFound:                         {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	profiledomain.ErrorCodeApplicationAdminRequired:                    {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	profiledomain.ErrorCodeApplicationProfileWorkRevisionAlreadyExists: {code: codes.Aborted, reason: ReasonApplicationProfileWorkRevisionAlreadyExists, message: "application profile work revision already exists"},
+	profiledomain.ErrorCodeApplicationProfileStateInconsistent:         {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
+	profiledomain.ErrorCodeInternal:                                    internalSpec,
+}
+
 func reviewErrorCode(err error) reviewdomain.ErrorCode {
 	var domainError *reviewdomain.Error
 	if errors.As(err, &domainError) {
@@ -282,6 +303,14 @@ func toTransportError(err error) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidDeveloperIdentity, "developer identity is invalid")
 	}
 
+	var profileError *profiledomain.Error
+	if errors.As(err, &profileError) {
+		spec, ok := profileDomainErrorSpecs[profileError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
+	}
 	var catalogError *catalogdomain.Error
 	if errors.As(err, &catalogError) {
 		spec, ok := catalogDomainErrorSpecs[catalogError.Code()]

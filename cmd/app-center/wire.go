@@ -16,6 +16,7 @@ import (
 	"iwut-app-center/internal/application/usecase"
 	catalogusecase "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
+	profileusecase "iwut-app-center/internal/profile/usecase"
 	publicationusecase "iwut-app-center/internal/publication/usecase"
 	reviewusecase "iwut-app-center/internal/review/usecase"
 	testerusecase "iwut-app-center/internal/tester/usecase"
@@ -30,6 +31,8 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		profileusecase.NewCreateApplicationProfileRevisionHandler,
+		wire.Bind(new(transport.CreateApplicationProfileRevisionHandler), new(*profileusecase.CreateApplicationProfileRevisionHandler)),
 		catalogusecase.NewResolveTestLaunchTarget,
 		wire.Bind(new(transport.ResolveTestLaunchTargetHandler), new(*catalogusecase.ResolveTestLaunchTarget)),
 		testercredential.ProviderSet,

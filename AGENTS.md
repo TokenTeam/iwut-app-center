@@ -40,13 +40,17 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**Local implementation and verification tooling maintenance.** Scope is
-`AGENTS.md`, `README.md`, `Makefile`, `.gitignore`, and `scripts/`. Preserve business
-behavior, API contracts, database schemas and the architecture guard. The latest
-business delivery is UC-APP-012, with design input in
-`../../docs/app-center/briefs/UC-APP-012.md`. No new UC is implied by this maintenance.
-For the next business task, replace this paragraph with its UC, generated brief,
-code scope, non-goals and required validation tier before implementation.
+**UC-APP-013 — Create application profile revision drafts.** Design input:
+`../../docs/app-center/briefs/UC-APP-013.md` (BR-PRF-001–007) and the refreshed
+engineering baseline. Implement `internal/profile/{domain,usecase,port}`,
+MongoDB profile documents/migration/atomic creation, profile Proto and generated
+API, HTTP/gRPC transport, Wire and real integration tests. Add only ADR-003's
+exact NFC import exception and positive/negative architecture guard tests.
+Preserve existing Application sequence initialization and all prior capabilities.
+No UC014 editing, UC015 submission, UC016 decisions, management queries,
+frontend, Auth Catalog, URL fetching or asset semantics. Required final tier:
+`make check-full`. UC014 and UC015 remain queued until the preceding UC is fully
+verified and this work-package declaration is explicitly switched.
 
 ## Verification entry points
 
@@ -106,6 +110,9 @@ internal/version/port/
 internal/review/domain/
 internal/review/usecase/
 internal/review/port/
+internal/profile/domain/
+internal/profile/usecase/
+internal/profile/port/
 internal/publication/domain/
 internal/publication/usecase/
 internal/publication/port/

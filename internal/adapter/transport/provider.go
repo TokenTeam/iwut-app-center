@@ -13,5 +13,6 @@ var ProviderSet = wire.NewSet(
 	NewTesterJoinLinkService,
 	NewTesterMembershipService,
 	NewCatalogService,
+	NewApplicationProfileRevisionService,
 	NewServers,
 )

@@ -2,6 +2,7 @@ package generator
 
 import (
 	"github.com/goforj/wire"
+	profileport "iwut-app-center/internal/profile/port"
 	publicationport "iwut-app-center/internal/publication/port"
 	testerport "iwut-app-center/internal/tester/port"
 
@@ -13,6 +14,9 @@ import (
 // ProviderSet binds the concrete generators to the narrow ports the
 // Application use case consumes.
 var ProviderSet = wire.NewSet(
+	NewApplicationProfileRevisionUUIDv7Generator,
+	wire.Bind(new(profileport.ApplicationProfileRevisionIDGenerator), new(*ApplicationProfileRevisionUUIDv7Generator)),
+	wire.Bind(new(profileport.Clock), new(*SystemClock)),
 	wire.Bind(new(testerport.UUIDv7Generator), new(*PublicationUUIDv7Generator)),
 	wire.Bind(new(testerport.Clock), new(*SystemClock)),
 	NewPublicationUUIDv7Generator,

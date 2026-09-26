@@ -13,6 +13,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
@@ -22,6 +23,10 @@ import (
 )
 
 const (
+	CreateApplicationProfileRevisionInternalPath = "/v1/applications/{application_id}/profile-revisions"
+	CreateApplicationProfileRevisionExternalPath = ServicePrefix + CreateApplicationProfileRevisionInternalPath
+	CreateApplicationProfileRevisionGRPCMethod   = profilev1.OperationApplicationProfileRevisionCreateApplicationProfileRevision
+
 	ResolveTestLaunchTargetInternalPath = "/v1/applications/{application_id}/test-launch:resolve"
 	ResolveTestLaunchTargetExternalPath = ServicePrefix + ResolveTestLaunchTargetInternalPath
 	ResolveTestLaunchTargetGRPCMethod   = catalogv1.OperationCatalogResolveTestLaunchTarget
@@ -92,6 +97,7 @@ func NewServers(
 	testerJoinLinkService *TesterJoinLinkService,
 	testerMembershipService *TesterMembershipService,
 	catalogService *CatalogService,
+	profileService *ApplicationProfileRevisionService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -118,6 +124,9 @@ func NewServers(
 	if catalogService == nil {
 		return nil, errors.New("transport servers: catalog service is required")
 	}
+	if profileService == nil {
+		return nil, errors.New("transport servers: application profile revision service is required")
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Filter(testerMembershipCredentialFilter(verifier)),
@@ -125,6 +134,7 @@ func NewServers(
 		khttp.ResponseEncoder(createdResponseEncoder),
 		khttp.ErrorEncoder(credentialSafeErrorEncoder),
 	)
+	profilev1.RegisterApplicationProfileRevisionHTTPServer(httpServer, profileService)
 	catalogv1.RegisterCatalogHTTPServer(httpServer, catalogService)
 	testermembershipv1.RegisterTesterMembershipHTTPServer(httpServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
@@ -137,6 +147,7 @@ func NewServers(
 		kgrpc.Address(config.GRPCAddr),
 		kgrpc.Middleware(identityMiddleware(verifier)),
 	)
+	profilev1.RegisterApplicationProfileRevisionServer(grpcServer, profileService)
 	catalogv1.RegisterCatalogServer(grpcServer, catalogService)
 	testermembershipv1.RegisterTesterMembershipServer(grpcServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
@@ -154,6 +165,9 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *profilev1.CreateApplicationProfileRevisionResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
+		w.WriteHeader(http.StatusCreated)
 	case *catalogv1.TestLaunchDescriptor:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
@@ -194,6 +208,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isCreateApplicationProfileRevisionRequest(r) {
+		profileSafeErrorEncoder(w, r, err)
+		return
+	}
 	if isTestLaunchResolutionRequest(r) {
 		catalogSafeErrorEncoder(w, r, err)
 		return
@@ -264,7 +282,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) {
+			if isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -292,6 +310,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if identityErr != nil {
 					operation := JoinApplicationAsTesterGRPCMethod
+					if isCreateApplicationProfileRevisionRequest(r) {
+						operation = CreateApplicationProfileRevisionGRPCMethod
+					}
 					if isTestLaunchResolutionRequest(r) {
 						operation = ResolveTestLaunchTargetGRPCMethod
 					}
@@ -302,6 +323,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 						operation = RevokeTesterJoinLinkGRPCMethod
 					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if isCreateApplicationProfileRevisionRequest(r) && !validCreateApplicationProfileRevisionHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, invalidCreateApplicationProfileRevisionRequest())
 					return
 				}
 				if isTestLaunchResolutionRequest(r) && !validTestLaunchHTTPInput(r) {
