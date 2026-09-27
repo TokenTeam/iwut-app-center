@@ -9,6 +9,7 @@ import (
 	"github.com/go-kratos/kratos/v2/transport"
 	"google.golang.org/grpc/codes"
 
+	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 )
@@ -81,7 +82,7 @@ func toIdentityTransportError(err error, operation string) error {
 		}
 		return transportStatus(codes.Unauthenticated, ReasonInvalidAuthenticatedUser, "authenticated user identity is invalid")
 	}
-	if operation == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview {
+	if operation == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview || operation == profilereviewv1.OperationApplicationProfileReviewDecideApplicationProfileRevisionReview {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonReviewerIdentityRequired, "reviewer identity is required")
 		}

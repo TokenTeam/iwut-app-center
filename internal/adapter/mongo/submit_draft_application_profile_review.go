@@ -174,5 +174,6 @@ func profileReviewToDocument(review *pd.ApplicationProfileReview) applicationPro
 		value := i.String()
 		doc.Snapshot.Icon = &value
 	}
+	doc.Decision = profileDecisionToDocument(review.Decision())
 	return doc
 }

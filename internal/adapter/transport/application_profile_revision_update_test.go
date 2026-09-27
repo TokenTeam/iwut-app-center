@@ -36,7 +36,7 @@ func (h *fakeUpdateProfileHandler) Handle(_ context.Context, identity shared.Dev
 }
 func updateProfileServers(t *testing.T, h *fakeUpdateProfileHandler) *Servers {
 	t.Helper()
-	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(nil, h), NewApplicationProfileReviewService(nil))
+	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(nil, h), NewApplicationProfileReviewService(nil, nil))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -215,7 +215,7 @@ func TestProfile_BR_PRF_007_009_011_GeneratedHTTPClientsUseOnlyProfileBody(t *te
 	token := signToken(t, tokenOptions{claims: validClaims(fixedNow())})
 	create := &fakeCreateProfileHandler{result: profileFixture(t)}
 	update := &fakeUpdateProfileHandler{result: profileFixture(t)}
-	servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(create, update), NewApplicationProfileReviewService(nil))
+	servers, err := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(create, update), NewApplicationProfileReviewService(nil, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,11 @@ func (id ApplicationProfileReviewID) IsValid() bool  { return shared.IsUUIDv7(st
 
 type ProfileReviewStatus string
 
-const ProfileReviewStatusPending ProfileReviewStatus = "PENDING"
+const (
+	ProfileReviewStatusPending  ProfileReviewStatus = "PENDING"
+	ProfileReviewStatusApproved ProfileReviewStatus = "APPROVED"
+	ProfileReviewStatusRejected ProfileReviewStatus = "REJECTED"
+)
 
 type ApplicationProfileReviewSnapshot struct {
 	displayName ApplicationDisplayName
@@ -43,6 +47,8 @@ type ApplicationProfileReview struct {
 	snapshot          ApplicationProfileReviewSnapshot
 	submittedBy       shared.AuthID
 	submittedAt       time.Time
+	status            ProfileReviewStatus
+	decision          *ApplicationProfileReviewDecision
 }
 
 func (r *ApplicationProfileReview) ProfileReviewID() ApplicationProfileReviewID { return r.id }
@@ -52,7 +58,7 @@ func (r *ApplicationProfileReview) ProfileRevisionID() ApplicationProfileRevisio
 }
 func (r *ApplicationProfileReview) Attempt() int32              { return r.attempt }
 func (r *ApplicationProfileReview) SourceRevision() int64       { return r.sourceRevision }
-func (r *ApplicationProfileReview) Status() ProfileReviewStatus { return ProfileReviewStatusPending }
+func (r *ApplicationProfileReview) Status() ProfileReviewStatus { return r.status }
 func (r *ApplicationProfileReview) Snapshot() ApplicationProfileReviewSnapshot {
 	return ApplicationProfileReviewSnapshot{r.snapshot.displayName, cloneDescription(r.snapshot.description), cloneIcon(r.snapshot.icon)}
 }
@@ -109,6 +115,6 @@ func (r *ApplicationProfileRevision) SubmitDraft(expected int64, id ApplicationP
 	updated.revision++
 	updated.updatedBy = by
 	updated.updatedAt = at.UTC()
-	review := &ApplicationProfileReview{id, r.ApplicationID(), r.ProfileRevisionID(), attempt, expected, ApplicationProfileReviewSnapshot{r.draft.displayName, cloneDescription(r.draft.description), cloneIcon(r.draft.icon)}, by, at.UTC()}
+	review := &ApplicationProfileReview{id, r.ApplicationID(), r.ProfileRevisionID(), attempt, expected, ApplicationProfileReviewSnapshot{r.draft.displayName, cloneDescription(r.draft.description), cloneIcon(r.draft.icon)}, by, at.UTC(), ProfileReviewStatusPending, nil}
 	return &ApplicationProfileSubmission{&updated, review}, nil
 }

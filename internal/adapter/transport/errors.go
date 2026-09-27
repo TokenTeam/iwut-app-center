@@ -22,6 +22,17 @@ import (
 // ErrorReason enums in the formal v1 capability packages and are asserted
 // mechanically by API contract tests.
 const (
+	ReasonInvalidProfileReviewReason                     = "ERROR_REASON_INVALID_PROFILE_REVIEW_REASON"
+	ReasonProfileReviewChecksIncomplete                  = "ERROR_REASON_PROFILE_REVIEW_CHECKS_INCOMPLETE"
+	ReasonProfileReviewPolicyUnavailable                 = "ERROR_REASON_PROFILE_REVIEW_POLICY_UNAVAILABLE"
+	ReasonApplicationProfileReviewStateInconsistent      = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_STATE_INCONSISTENT"
+	ReasonApplicationProfilePublicationConflict          = "ERROR_REASON_APPLICATION_PROFILE_PUBLICATION_CONFLICT"
+	ReasonApplicationProfileReviewStateConflict          = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_STATE_CONFLICT"
+	ReasonApplicationProfileReviewAlreadyDecided         = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_ALREADY_DECIDED"
+	ReasonApplicationProfileReviewNotFound               = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_NOT_FOUND"
+	ReasonInvalidApplicationProfileReviewDecision        = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_DECISION"
+	ReasonApplicationProfileReviewConflictOfInterest     = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_CONFLICT_OF_INTEREST"
+	ReasonApplicationProfileReviewPermissionRequired     = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_PERMISSION_REQUIRED"
 	ReasonInvalidApplicationProfileReviewSubmission      = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_SUBMISSION"
 	ReasonInvalidApplicationProfileContent               = "ERROR_REASON_INVALID_APPLICATION_PROFILE_CONTENT"
 	ReasonInvalidApplicationProfileRevisionID            = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVISION_ID"
@@ -277,6 +288,18 @@ var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
 }
 
 var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
+	profiledomain.ErrorCodeReviewerIdentityRequired:                    {code: codes.Unauthenticated, reason: ReasonReviewerIdentityRequired, message: "reviewer identity is required"},
+	profiledomain.ErrorCodeApplicationProfileReviewPermissionRequired:  {code: codes.PermissionDenied, reason: ReasonApplicationProfileReviewPermissionRequired, message: "profile review permission is required"},
+	profiledomain.ErrorCodeApplicationProfileReviewConflictOfInterest:  {code: codes.PermissionDenied, reason: ReasonApplicationProfileReviewConflictOfInterest, message: "profile review has a conflict of interest"},
+	profiledomain.ErrorCodeInvalidApplicationProfileReviewDecision:     {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewDecision, message: "profile review decision is invalid"},
+	profiledomain.ErrorCodeApplicationProfileReviewNotFound:            {code: codes.NotFound, reason: ReasonApplicationProfileReviewNotFound, message: "profile review not found"},
+	profiledomain.ErrorCodeApplicationProfileReviewAlreadyDecided:      {code: codes.Aborted, reason: ReasonApplicationProfileReviewAlreadyDecided, message: "profile review is already decided"},
+	profiledomain.ErrorCodeApplicationProfileReviewStateConflict:       {code: codes.Aborted, reason: ReasonApplicationProfileReviewStateConflict, message: "profile review state conflicts"},
+	profiledomain.ErrorCodeApplicationProfilePublicationConflict:       {code: codes.Aborted, reason: ReasonApplicationProfilePublicationConflict, message: "profile publication conflicts"},
+	profiledomain.ErrorCodeApplicationProfileReviewStateInconsistent:   {code: codes.Internal, reason: ReasonApplicationProfileReviewStateInconsistent, message: "profile review state is inconsistent"},
+	profiledomain.ErrorCodeProfileReviewPolicyUnavailable:              {code: codes.Aborted, reason: ReasonProfileReviewPolicyUnavailable, message: "profile review policy is unavailable"},
+	profiledomain.ErrorCodeProfileReviewChecksIncomplete:               {code: codes.InvalidArgument, reason: ReasonProfileReviewChecksIncomplete, message: "profile review checks are incomplete"},
+	profiledomain.ErrorCodeInvalidProfileReviewReason:                  {code: codes.InvalidArgument, reason: ReasonInvalidProfileReviewReason, message: "profile review reason is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileReviewSubmission:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewSubmission, message: "application profile review submission is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileContent:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileContent, message: "application profile content is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileRevisionID:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileRevisionID, message: "application profile revision ID is invalid"},

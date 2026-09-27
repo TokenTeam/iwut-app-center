@@ -36,7 +36,7 @@ func (h *fakeSubmitProfileHandler) Handle(_ context.Context, i shared.DeveloperI
 }
 func submitProfileServers(t *testing.T, h *fakeSubmitProfileHandler) *Servers {
 	t.Helper()
-	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(nil, nil), NewApplicationProfileReviewService(h))
+	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(nil, nil), NewApplicationProfileReviewService(h, nil))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -147,23 +147,23 @@ func TestProfileReview_GRPCRejectsAbsentOrUnknownCommand(t *testing.T) {
 			request.Command.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
 		}
 		h := &fakeSubmitProfileHandler{}
-		_, err := NewApplicationProfileReviewService(h).SubmitApplicationProfileRevisionReview(ctx, request)
+		_, err := NewApplicationProfileReviewService(h, nil).SubmitApplicationProfileRevisionReview(ctx, request)
 		if status.Code(err) != codes.InvalidArgument || h.calls != 0 {
 			t.Fatal(err)
 		}
 	}
 	request := &reviewv1.SubmitApplicationProfileRevisionReviewRequest{ApplicationId: testApplicationID, ProfileRevisionId: testProfileRevisionID, Command: &reviewv1.SubmitApplicationProfileRevisionReviewCommand{ExpectedRevision: 1}}
 	request.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
-	_, err := NewApplicationProfileReviewService(&fakeSubmitProfileHandler{}).SubmitApplicationProfileRevisionReview(ctx, request)
+	_, err := NewApplicationProfileReviewService(&fakeSubmitProfileHandler{}, nil).SubmitApplicationProfileRevisionReview(ctx, request)
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatal(err)
 	}
 	request.ProtoReflect().SetUnknown(nil)
-	_, err = NewApplicationProfileReviewService(nil).SubmitApplicationProfileRevisionReview(ctx, request)
+	_, err = NewApplicationProfileReviewService(nil, nil).SubmitApplicationProfileRevisionReview(ctx, request)
 	if status.Code(err) != codes.Internal {
 		t.Fatal(err)
 	}
-	_, err = NewApplicationProfileReviewService(&fakeSubmitProfileHandler{}).SubmitApplicationProfileRevisionReview(ctx, request)
+	_, err = NewApplicationProfileReviewService(&fakeSubmitProfileHandler{}, nil).SubmitApplicationProfileRevisionReview(ctx, request)
 	if status.Code(err) != codes.Internal {
 		t.Fatal(err)
 	}

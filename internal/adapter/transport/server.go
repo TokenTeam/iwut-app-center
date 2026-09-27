@@ -24,6 +24,9 @@ import (
 )
 
 const (
+	DecideApplicationProfileReviewInternalPath   = "/v1/applications/{application_id}/profile-revisions/{profile_revision_id}/reviews/{profile_review_id}/decision"
+	DecideApplicationProfileReviewExternalPath   = ServicePrefix + DecideApplicationProfileReviewInternalPath
+	DecideApplicationProfileReviewGRPCMethod     = profilereviewv1.OperationApplicationProfileReviewDecideApplicationProfileRevisionReview
 	SubmitApplicationProfileReviewInternalPath   = "/v1/applications/{application_id}/profile-revisions/{profile_revision_id}/reviews"
 	SubmitApplicationProfileReviewExternalPath   = ServicePrefix + SubmitApplicationProfileReviewInternalPath
 	SubmitApplicationProfileReviewGRPCMethod     = profilereviewv1.OperationApplicationProfileReviewSubmitApplicationProfileRevisionReview
@@ -178,6 +181,8 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *profilereviewv1.DecideApplicationProfileRevisionReviewResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetProfileRevision().GetRevision()))
 	case *profilereviewv1.SubmitApplicationProfileRevisionReviewResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetProfileRevision().GetRevision()))
 		w.WriteHeader(http.StatusCreated)
@@ -226,6 +231,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isDecideApplicationProfileReviewRequest(r) {
+		profileDecisionErrorEncoder(w, r, err)
+		return
+	}
 	if isSubmitApplicationProfileReviewRequest(r) {
 		profileSubmissionErrorEncoder(w, r, err)
 		return
@@ -304,7 +313,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -332,6 +341,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if identityErr != nil {
 					operation := JoinApplicationAsTesterGRPCMethod
+					if isDecideApplicationProfileReviewRequest(r) {
+						operation = DecideApplicationProfileReviewGRPCMethod
+					}
 					if isSubmitApplicationProfileReviewRequest(r) {
 						operation = SubmitApplicationProfileReviewGRPCMethod
 					}
@@ -351,6 +363,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 						operation = RevokeTesterJoinLinkGRPCMethod
 					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if isDecideApplicationProfileReviewRequest(r) && !validProfileDecisionHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, invalidProfileDecision())
 					return
 				}
 				if isSubmitApplicationProfileReviewRequest(r) && !validProfileSubmissionHTTPInput(r) {

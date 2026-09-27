@@ -111,7 +111,16 @@ type ApplicationProfileRevision struct {
 }
 
 func RestoreApplicationProfileRevision(s ApplicationProfileRevisionState) (*ApplicationProfileRevision, error) {
-	if !s.ProfileRevisionID.IsValid() || !s.ApplicationID.IsValid() || s.Sequence < 1 || !canonicalText(s.DisplayName, 80) || (s.Description != nil && !canonicalText(*s.Description, 1000)) || (s.Icon != nil && !canonicalText(*s.Icon, 512)) || !s.ReviewStatus.valid() || !s.CreatedBy.IsValid() || s.CreatedAt.IsZero() || s.Revision < 1 || !s.UpdatedBy.IsValid() || s.UpdatedAt.IsZero() {
+	return restoreProfileRevision(s, s.ReviewStatus == ReviewStatusRejected)
+}
+
+// RestoreProfileRevisionDecisionCandidate preserves original content so rejection
+// is possible even when approval content validation fails.
+func RestoreProfileRevisionDecisionCandidate(s ApplicationProfileRevisionState) (*ApplicationProfileRevision, error) {
+	return restoreProfileRevision(s, true)
+}
+func restoreProfileRevision(s ApplicationProfileRevisionState, rawContent bool) (*ApplicationProfileRevision, error) {
+	if !s.ProfileRevisionID.IsValid() || !s.ApplicationID.IsValid() || s.Sequence < 1 || (!rawContent && (!canonicalText(s.DisplayName, 80) || (s.Description != nil && !canonicalText(*s.Description, 1000)) || (s.Icon != nil && !canonicalText(*s.Icon, 512)))) || !s.ReviewStatus.valid() || !s.CreatedBy.IsValid() || s.CreatedAt.IsZero() || s.Revision < 1 || !s.UpdatedBy.IsValid() || s.UpdatedAt.IsZero() {
 		return nil, ErrApplicationProfileStateInconsistent
 	}
 	if s.Revision == 1 && (s.ReviewStatus != ReviewStatusDraft || s.CreatedBy != s.UpdatedBy || !s.CreatedAt.Equal(s.UpdatedAt)) {

@@ -81,3 +81,33 @@ var (
 	ErrInvalidApplicationProfileContent            = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileContent, "application profile content is invalid", nil)
 	ErrInternal                                    = NewInternalError(nil)
 )
+
+const (
+	ErrorCodeReviewerIdentityRequired                   ErrorCode = "ReviewerIdentityRequired"
+	ErrorCodeApplicationProfileReviewPermissionRequired ErrorCode = "ApplicationProfileReviewPermissionRequired"
+	ErrorCodeApplicationProfileReviewConflictOfInterest ErrorCode = "ApplicationProfileReviewConflictOfInterest"
+	ErrorCodeInvalidApplicationProfileReviewDecision    ErrorCode = "InvalidApplicationProfileReviewDecision"
+	ErrorCodeApplicationProfileReviewNotFound           ErrorCode = "ApplicationProfileReviewNotFound"
+	ErrorCodeApplicationProfileReviewAlreadyDecided     ErrorCode = "ApplicationProfileReviewAlreadyDecided"
+	ErrorCodeApplicationProfileReviewStateConflict      ErrorCode = "ApplicationProfileReviewStateConflict"
+	ErrorCodeApplicationProfilePublicationConflict      ErrorCode = "ApplicationProfilePublicationConflict"
+	ErrorCodeApplicationProfileReviewStateInconsistent  ErrorCode = "ApplicationProfileReviewStateInconsistent"
+	ErrorCodeProfileReviewPolicyUnavailable             ErrorCode = "ProfileReviewPolicyUnavailable"
+	ErrorCodeProfileReviewChecksIncomplete              ErrorCode = "ProfileReviewChecksIncomplete"
+	ErrorCodeInvalidProfileReviewReason                 ErrorCode = "InvalidProfileReviewReason"
+)
+
+var (
+	ErrReviewerIdentityRequired                   = newError(ErrorCategoryAuthentication, ErrorCodeReviewerIdentityRequired, "ReviewerIdentityRequired", nil)
+	ErrApplicationProfileReviewPermissionRequired = newError(ErrorCategoryAuthorization, ErrorCodeApplicationProfileReviewPermissionRequired, "ApplicationProfileReviewPermissionRequired", nil)
+	ErrApplicationProfileReviewConflictOfInterest = newError(ErrorCategoryAuthorization, ErrorCodeApplicationProfileReviewConflictOfInterest, "ApplicationProfileReviewConflictOfInterest", nil)
+	ErrInvalidApplicationProfileReviewDecision    = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileReviewDecision, "InvalidApplicationProfileReviewDecision", nil)
+	ErrApplicationProfileReviewNotFound           = newError(ErrorCategoryNotFound, ErrorCodeApplicationProfileReviewNotFound, "ApplicationProfileReviewNotFound", nil)
+	ErrApplicationProfileReviewAlreadyDecided     = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileReviewAlreadyDecided, "ApplicationProfileReviewAlreadyDecided", nil)
+	ErrApplicationProfileReviewStateConflict      = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileReviewStateConflict, "ApplicationProfileReviewStateConflict", nil)
+	ErrApplicationProfilePublicationConflict      = newError(ErrorCategoryConflict, ErrorCodeApplicationProfilePublicationConflict, "ApplicationProfilePublicationConflict", nil)
+	ErrApplicationProfileReviewStateInconsistent  = newError(ErrorCategoryInternal, ErrorCodeApplicationProfileReviewStateInconsistent, "ApplicationProfileReviewStateInconsistent", nil)
+	ErrProfileReviewPolicyUnavailable             = newError(ErrorCategoryConflict, ErrorCodeProfileReviewPolicyUnavailable, "ProfileReviewPolicyUnavailable", nil)
+	ErrProfileReviewChecksIncomplete              = newError(ErrorCategoryValidation, ErrorCodeProfileReviewChecksIncomplete, "ProfileReviewChecksIncomplete", nil)
+	ErrInvalidProfileReviewReason                 = newError(ErrorCategoryValidation, ErrorCodeInvalidProfileReviewReason, "InvalidProfileReviewReason", nil)
+)

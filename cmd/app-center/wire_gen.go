@@ -140,7 +140,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationProfileRevisionService := transport.NewApplicationProfileRevisionService(createApplicationProfileRevisionHandler, updateDraftApplicationProfileRevisionHandler)
 	applicationProfileReviewUUIDv7Generator := generator.NewApplicationProfileReviewUUIDv7Generator()
 	submitApplicationProfileRevisionReviewHandler := usecase7.NewSubmitApplicationProfileRevisionReviewHandler(applicationProfileReviewUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
-	applicationProfileReviewService := transport.NewApplicationProfileReviewService(submitApplicationProfileRevisionReviewHandler)
+	decideApplicationProfileRevisionReviewHandler := usecase7.NewDecideApplicationProfileRevisionReviewHandler(systemClock, applicationProfileRevisionRepository)
+	applicationProfileReviewService := transport.NewApplicationProfileReviewService(submitApplicationProfileRevisionReviewHandler, decideApplicationProfileRevisionReviewHandler)
 	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService, applicationProfileReviewService)
 	if err != nil {
 		cleanup2()

@@ -32,6 +32,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	panic(wire.Build(
 		generator.ProviderSet,
 		profileusecase.NewCreateApplicationProfileRevisionHandler,
+		profileusecase.NewDecideApplicationProfileRevisionReviewHandler,
+		wire.Bind(new(transport.DecideApplicationProfileRevisionReviewHandler), new(*profileusecase.DecideApplicationProfileRevisionReviewHandler)),
 		profileusecase.NewSubmitApplicationProfileRevisionReviewHandler,
 		wire.Bind(new(transport.SubmitApplicationProfileRevisionReviewHandler), new(*profileusecase.SubmitApplicationProfileRevisionReviewHandler)),
 		profileusecase.NewUpdateDraftApplicationProfileRevisionHandler,

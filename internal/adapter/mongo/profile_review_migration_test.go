@@ -104,7 +104,7 @@ func TestProfileReviewMigrationIntegration(t *testing.T) {
 		if count, err := db.Collection(migrationLedgerCollectionName).CountDocuments(t.Context(), bson.M{"_id": applicationProfileReviewMigrationID}); err != nil || count != 1 {
 			t.Fatal(count, err)
 		}
-		if _, err := db.Collection(migrationLedgerCollectionName).DeleteOne(t.Context(), bson.M{"_id": applicationProfileReviewMigrationID}); err != nil {
+		if _, err := db.Collection(migrationLedgerCollectionName).DeleteOne(t.Context(), bson.M{"_id": RequiredMigrationID}); err != nil {
 			t.Fatal(err)
 		}
 		if err := VerifyDeploymentReadiness(t.Context(), db); err == nil {

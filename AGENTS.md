@@ -40,20 +40,21 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-015 — Submit a draft application profile revision for review.** Design
-input: `../../docs/app-center/briefs/UC-APP-015.md` (BR-PRF-015–022 and referenced
-profile content rules) plus the engineering baseline. UC013/014 are complete at
-service `a712456` / API `94347df`; each passed full backend acceptance. Extend
-`internal/profile/{domain,usecase,port}`, atomic Mongo submission, immutable
-PENDING Review snapshots and an explicit review migration/readiness. Add
-resource-oriented HTTP/gRPC, Wire and actual generated-HTTP-client E2E. HTTP
-submission uses expectedRevision in the command body; only editing uses If-Match.
-Use explicit command body binding and matching path-field json_name as established
-by UC014. Cover duplicate submission, rollback, admin transfer, attempt/revision
-bounds, retained publication/working pointers, and real edit-versus-submit races.
-No UC016 decisions, Reviewer grants/policy, queries, frontend, Auth Catalog or
-external URL/content checks. Required final tier: `make check-full`. This is the
-last UC authorized in the current serial batch; do not activate UC016.
+**UC-APP-016 — Decide an application profile revision review.** Design input:
+`../../docs/app-center/briefs/UC-APP-016.md` (BR-PRF-023–032 and referenced
+content rules), the engineering baseline and implements README. UC013–015 are
+complete at service `3a87a0f` / API `a0c158c`. Extend internal/profile domain,
+usecase and ports; add atomic Mongo decision with Application and policy write
+fences, migration/readiness, independent app.profile.review permission, immutable
+app-profile-review-v1 policy, approve/publication CAS and reject/working-slot
+release. Preserve raw rejected content while validating structure and snapshot
+consistency. Preserve committed API fields; add command-bound HTTP/gRPC and
+actual generated HTTP client E2E. Cover decisions, admin transfer and policy
+retirement races, rollback, stale pointers/revisions and post-decision creation.
+Do not implement Auth grants/issuance, query endpoints, frontend, notifications,
+System decisions, runtime publication or future UCs. Required final tier:
+`make check-auth-app`; its existing Auth regression does not prove production
+profile-review permission issuance. All commits remain local.
 
 ## Verification entry points
 
