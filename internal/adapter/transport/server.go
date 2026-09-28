@@ -19,6 +19,7 @@ import (
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	catalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/catalog"
+	oauthclientv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/oauth_client"
 	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 )
@@ -83,6 +84,22 @@ const (
 	DecideApplicationVersionReviewInternalPath = "/v1/applications/{application_id}/versions/{version_id}/reviews/{review_id}/decision"
 	DecideApplicationVersionReviewExternalPath = ServicePrefix + DecideApplicationVersionReviewInternalPath
 	DecideApplicationVersionReviewGRPCMethod   = applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview
+
+	RegisterOAuthClientInternalPath              = "/v1/applications/{application_id}/oauth-registrations/{channel}/clients"
+	RegisterOAuthClientExternalPath              = ServicePrefix + RegisterOAuthClientInternalPath
+	RegisterOAuthClientGRPCMethod                = oauthclientv1.OperationOAuthClientServiceRegisterOAuthClient
+	GetApplicationOAuthRegistrationInternalPath  = "/v1/applications/{application_id}/oauth-registrations/{channel}"
+	GetApplicationOAuthRegistrationExternalPath  = ServicePrefix + GetApplicationOAuthRegistrationInternalPath
+	GetApplicationOAuthRegistrationGRPCMethod    = oauthclientv1.OperationOAuthClientServiceGetApplicationOAuthRegistration
+	SetOAuthClientStatusInternalPath             = "/v1/oauth-clients/{client_id}/status"
+	SetOAuthClientStatusExternalPath             = ServicePrefix + SetOAuthClientStatusInternalPath
+	SetOAuthClientStatusGRPCMethod               = oauthclientv1.OperationOAuthClientServiceSetOAuthClientStatus
+	GetOAuthClientCredentialMetadataInternalPath = "/v1/oauth-clients/{client_id}/credential"
+	GetOAuthClientCredentialMetadataExternalPath = ServicePrefix + GetOAuthClientCredentialMetadataInternalPath
+	GetOAuthClientCredentialMetadataGRPCMethod   = oauthclientv1.OperationOAuthClientServiceGetOAuthClientCredentialMetadata
+	RotateOAuthClientSecretInternalPath          = "/v1/oauth-clients/{client_id}/credential-rotations"
+	RotateOAuthClientSecretExternalPath          = ServicePrefix + RotateOAuthClientSecretInternalPath
+	RotateOAuthClientSecretGRPCMethod            = oauthclientv1.OperationOAuthClientServiceRotateOAuthClientSecret
 )
 
 // ServerConfig carries the two listen addresses validated at startup.
@@ -109,6 +126,7 @@ func NewServers(
 	catalogService *CatalogService,
 	profileService *ApplicationProfileRevisionService,
 	profileReviewService *ApplicationProfileReviewService,
+	oauthClientService *OAuthClientService,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -141,6 +159,9 @@ func NewServers(
 	if profileReviewService == nil {
 		return nil, errors.New("transport servers: application profile review service is required")
 	}
+	if oauthClientService == nil {
+		return nil, errors.New("transport servers: OAuth client service is required")
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Filter(testerMembershipCredentialFilter(verifier)),
@@ -157,6 +178,7 @@ func NewServers(
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
+	oauthclientv1.RegisterOAuthClientServiceHTTPServer(httpServer, oauthClientService)
 
 	grpcServer := kgrpc.NewServer(
 		kgrpc.Address(config.GRPCAddr),
@@ -171,6 +193,7 @@ func NewServers(
 	applicationv1.RegisterApplicationServer(grpcServer, service)
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
+	oauthclientv1.RegisterOAuthClientServiceServer(grpcServer, oauthClientService)
 
 	return &Servers{HTTP: httpServer, GRPC: grpcServer}, nil
 }
@@ -224,6 +247,14 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 			))
 		}
 		w.WriteHeader(http.StatusCreated)
+	case *oauthclientv1.RegisterOAuthClientResponse:
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusCreated)
+	case *oauthclientv1.GetApplicationOAuthRegistrationResponse,
+		*oauthclientv1.SetOAuthClientStatusResponse,
+		*oauthclientv1.GetOAuthClientCredentialMetadataResponse,
+		*oauthclientv1.RotateOAuthClientSecretResponse:
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	return khttp.DefaultResponseEncoder(w, r, v)
 }
@@ -231,6 +262,9 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isOAuthClientManagementRequest(r) {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	if isDecideApplicationProfileReviewRequest(r) {
 		profileDecisionErrorEncoder(w, r, err)
 		return
@@ -284,6 +318,14 @@ func isTesterMembershipRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/tester-join-links/") && strings.HasSuffix(r.URL.Path, "/memberships") && strings.Count(r.URL.Path, "/") == 4
 }
 
+func isOAuthClientManagementRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if len(parts) >= 2 && parts[0] == "v1" && parts[1] == "oauth-clients" {
+		return true
+	}
+	return len(parts) >= 4 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "oauth-registrations"
+}
+
 func isTesterRemovalRequest(r *http.Request) bool {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	return r.Method == http.MethodDelete && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "tester-memberships"
@@ -313,7 +355,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -341,6 +383,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if identityErr != nil {
 					operation := JoinApplicationAsTesterGRPCMethod
+					if isOAuthClientManagementRequest(r) {
+						operation = RegisterOAuthClientGRPCMethod
+					}
 					if isDecideApplicationProfileReviewRequest(r) {
 						operation = DecideApplicationProfileReviewGRPCMethod
 					}

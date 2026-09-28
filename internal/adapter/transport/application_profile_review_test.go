@@ -36,7 +36,7 @@ func (h *fakeSubmitProfileHandler) Handle(_ context.Context, i shared.DeveloperI
 }
 func submitProfileServers(t *testing.T, h *fakeSubmitProfileHandler) *Servers {
 	t.Helper()
-	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(nil, nil), NewApplicationProfileReviewService(h, nil))
+	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(nil, nil), NewApplicationProfileReviewService(h, nil), NewOAuthClientService(nil))
 	if e != nil {
 		t.Fatal(e)
 	}

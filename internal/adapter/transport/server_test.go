@@ -56,6 +56,7 @@ func newTestServersWithUpdate(
 		NewTesterMembershipService(nil, nil),
 		NewCatalogService(nil),
 		NewApplicationProfileRevisionService(nil, nil), NewApplicationProfileReviewService(nil, nil),
+		NewOAuthClientService(nil),
 	)
 	if err != nil {
 		t.Fatalf("NewServers() error = %v", err)

@@ -10,12 +10,14 @@ import (
 	"iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
+	"iwut-app-center/internal/adapter/oauthcredential"
 	"iwut-app-center/internal/adapter/preflight"
 	"iwut-app-center/internal/adapter/testercredential"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	catalogusecase "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
+	oauthclientusecase "iwut-app-center/internal/oauthclient/usecase"
 	profileusecase "iwut-app-center/internal/profile/usecase"
 	publicationusecase "iwut-app-center/internal/publication/usecase"
 	reviewusecase "iwut-app-center/internal/review/usecase"
@@ -31,6 +33,9 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		oauthcredential.ProviderSet,
+		oauthclientusecase.NewHandlers,
+		wire.Bind(new(transport.OAuthClientHandlers), new(*oauthclientusecase.Handlers)),
 		profileusecase.NewCreateApplicationProfileRevisionHandler,
 		profileusecase.NewDecideApplicationProfileRevisionReviewHandler,
 		wire.Bind(new(transport.DecideApplicationProfileRevisionReviewHandler), new(*profileusecase.DecideApplicationProfileRevisionReviewHandler)),

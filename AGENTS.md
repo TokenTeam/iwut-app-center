@@ -40,21 +40,22 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-016 — Decide an application profile revision review.** Design input:
-`../../docs/app-center/briefs/UC-APP-016.md` (BR-PRF-023–032 and referenced
-content rules), the engineering baseline and implements README. UC013–015 are
-complete at service `3a87a0f` / API `a0c158c`. Extend internal/profile domain,
-usecase and ports; add atomic Mongo decision with Application and policy write
-fences, migration/readiness, independent app.profile.review permission, immutable
-app-profile-review-v1 policy, approve/publication CAS and reject/working-slot
-release. Preserve raw rejected content while validating structure and snapshot
-consistency. Preserve committed API fields; add command-bound HTTP/gRPC and
-actual generated HTTP client E2E. Cover decisions, admin transfer and policy
-retirement races, rollback, stale pointers/revisions and post-decision creation.
-Do not implement Auth grants/issuance, query endpoints, frontend, notifications,
-System decisions, runtime publication or future UCs. Required final tier:
-`make check-auth-app`; its existing Auth regression does not prove production
-profile-review permission issuance. All commits remain local.
+**UC-APP-018 — Manage application OAuth clients.** Design input:
+`../../docs/app-center/briefs/UC-APP-018.md` (BR-OAC-001–005), the engineering
+baseline, readiness note and implements README. Implement the TEST-only
+administrator management slice in a dedicated `internal/oauthclient` capability:
+stable PUBLIC/CONFIDENTIAL UUIDv4 client identities, registrationRevision,
+authorizationEpoch, independent confidential credentialRevision and one-time
+32-byte secret disclosure. Add Mongo migration/readiness, validators, unique
+indexes and Application coordination write fences; add the committed public
+HTTP/gRPC management API and actual generated-client E2E. Cover administrator
+transfer, dual-type registration, status OCC, credential OCC, transaction
+rollback and secret redaction. Do not implement UC019 provider methods, secret
+verification for Auth, Version OAuth redirect configuration, OAuth grants,
+tokens, sector/sub, frontend or future channels. Required final tier:
+`make check-auth-app`; existing Auth regression does not prove OAuth provider or
+login delivery. Commit the API first, update the service gitlink, and keep all
+commits local.
 
 ## Verification entry points
 

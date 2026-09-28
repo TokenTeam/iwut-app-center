@@ -17,6 +17,7 @@ import (
 	"iwut-app-center/internal/application/port"
 	"iwut-app-center/internal/application/usecase"
 	"iwut-app-center/internal/config"
+	oauthclientusecase "iwut-app-center/internal/oauthclient/usecase"
 	reviewport "iwut-app-center/internal/review/port"
 	reviewusecase "iwut-app-center/internal/review/usecase"
 	versionport "iwut-app-center/internal/version/port"
@@ -133,6 +134,7 @@ var _ transport.RestoreRejectedApplicationVersionHandler = (*reviewusecase.Resto
 var _ authadapter.ScopeCatalogSnapshotSource = (*authadapter.GRPCScopeCatalogSnapshotSource)(nil)
 var _ versionport.ScopeCatalog = (*authadapter.ScopeCatalogCache)(nil)
 var _ reviewport.ScopeCatalog = (*authadapter.ReviewScopeCatalog)(nil)
+var _ transport.OAuthClientHandlers = (*oauthclientusecase.Handlers)(nil)
 
 func provideTesterJoinURLPrefix(configuration config.Config) string {
 	return configuration.TesterJoinURLPrefix

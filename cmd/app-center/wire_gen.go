@@ -11,12 +11,14 @@ import (
 	"iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
 	"iwut-app-center/internal/adapter/mongo"
+	"iwut-app-center/internal/adapter/oauthcredential"
 	"iwut-app-center/internal/adapter/preflight"
 	"iwut-app-center/internal/adapter/testercredential"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/application/usecase"
 	usecase6 "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
+	usecase8 "iwut-app-center/internal/oauthclient/usecase"
 	usecase7 "iwut-app-center/internal/profile/usecase"
 	usecase4 "iwut-app-center/internal/publication/usecase"
 	usecase3 "iwut-app-center/internal/review/usecase"
@@ -142,7 +144,12 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	submitApplicationProfileRevisionReviewHandler := usecase7.NewSubmitApplicationProfileRevisionReviewHandler(applicationProfileReviewUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
 	decideApplicationProfileRevisionReviewHandler := usecase7.NewDecideApplicationProfileRevisionReviewHandler(systemClock, applicationProfileRevisionRepository)
 	applicationProfileReviewService := transport.NewApplicationProfileReviewService(submitApplicationProfileRevisionReviewHandler, decideApplicationProfileRevisionReviewHandler)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService, applicationProfileReviewService)
+	oAuthClientUUIDv4Generator := generator.NewOAuthClientUUIDv4Generator()
+	secretFactory := oauthcredential.NewSecretFactory()
+	oAuthClientRepository := mongo.NewOAuthClientRepository(database)
+	handlers := usecase8.NewHandlers(oAuthClientUUIDv4Generator, secretFactory, systemClock, oAuthClientRepository)
+	oAuthClientService := transport.NewOAuthClientService(handlers)
+	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService)
 	if err != nil {
 		cleanup2()
 		cleanup()

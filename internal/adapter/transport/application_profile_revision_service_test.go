@@ -43,7 +43,7 @@ func profileFixture(t *testing.T) *profiledomain.ApplicationProfileRevision {
 }
 func profileServers(t *testing.T, h *fakeCreateProfileHandler) *Servers {
 	t.Helper()
-	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(h, nil), NewApplicationProfileReviewService(nil, nil))
+	s, e := NewServers(ServerConfig{}, newTestVerifier(t), NewApplicationService(nil), NewApplicationVersionService(nil, nil), NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil), NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil), NewApplicationProfileRevisionService(h, nil), NewApplicationProfileReviewService(nil, nil), NewOAuthClientService(nil))
 	if e != nil {
 		t.Fatal(e)
 	}
