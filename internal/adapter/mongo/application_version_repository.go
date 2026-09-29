@@ -18,7 +18,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
 )
 
-const applicationVersionsCollectionName = "application_versions"
+const (
+	applicationVersionsCollectionName            = "application_versions"
+	applicationVersionOAuthConfigsCollectionName = "application_version_oauth_configs"
+)
 
 type ApplicationVersionRepository struct {
 	database *drivermongo.Database
@@ -150,6 +153,7 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 ) (*versiondomain.ApplicationVersion, error) {
 	applications := repository.database.Collection(applicationsCollectionName)
 	versions := repository.database.Collection(applicationVersionsCollectionName)
+	oauthConfigs := repository.database.Collection(applicationVersionOAuthConfigsCollectionName)
 
 	// The conditional $inc on the adapter-only coordinationRevision is the
 	// write fence. A same-value $set would not reliably create a document-level
@@ -201,7 +205,15 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 	if err != nil {
 		return nil, fmt.Errorf("read application version draft: %w", err)
 	}
-	current, err := applicationVersionFromDocument(currentDocument)
+	var currentOAuthDocument applicationVersionOAuthConfigDocument
+	err = oauthConfigs.FindOne(ctx, bson.D{{Key: "applicationVersionId", Value: versionID.String()}, {Key: "applicationId", Value: applicationID.String()}}).Decode(&currentOAuthDocument)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("read application version OAuth config: missing dependent configuration")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read application version OAuth config: %w", err)
+	}
+	current, err := applicationVersionFromDocument(currentDocument, currentOAuthDocument)
 	if err != nil {
 		return nil, err
 	}
@@ -225,6 +237,10 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 	}
 	if updated.Revision() == current.Revision() {
 		return updated, nil
+	}
+	updatedOAuthDocument, err := applicationVersionOAuthConfigToDocument(updated)
+	if err != nil {
+		return nil, err
 	}
 
 	var updatedDocument applicationVersionDocument
@@ -261,7 +277,18 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 	if err != nil {
 		return nil, fmt.Errorf("update application version draft: %w", err)
 	}
-	result, err := applicationVersionFromDocument(updatedDocument)
+	oauthUpdate, err := oauthConfigs.ReplaceOne(
+		ctx,
+		bson.D{{Key: "applicationVersionId", Value: versionID.String()}, {Key: "applicationId", Value: applicationID.String()}},
+		updatedOAuthDocument,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("replace application version OAuth config: %w", err)
+	}
+	if oauthUpdate.MatchedCount != 1 {
+		return nil, fmt.Errorf("replace application version OAuth config: missing dependent configuration")
+	}
+	result, err := applicationVersionFromDocument(updatedDocument, updatedOAuthDocument)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +302,7 @@ func (repository *ApplicationVersionRepository) createDraftTransaction(
 ) (*versiondomain.ApplicationVersion, error) {
 	applications := repository.database.Collection(applicationsCollectionName)
 	versions := repository.database.Collection(applicationVersionsCollectionName)
+	oauthConfigs := repository.database.Collection(applicationVersionOAuthConfigsCollectionName)
 
 	var allocation struct {
 		NextVersionSequence int32 `bson:"nextVersionSequence"`
@@ -325,10 +353,16 @@ func (repository *ApplicationVersionRepository) createDraftTransaction(
 		}
 		return nil, fmt.Errorf("insert application version: %w", err)
 	}
-
-	version, err := applicationVersionFromDocument(document)
+	version, err := versiondomain.NewApplicationVersion(draft, sequence)
 	if err != nil {
 		return nil, err
+	}
+	oauthDocument, err := applicationVersionOAuthConfigToDocument(version)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := oauthConfigs.InsertOne(ctx, oauthDocument); err != nil {
+		return nil, fmt.Errorf("insert application version OAuth config: %w", err)
 	}
 	return version, nil
 }

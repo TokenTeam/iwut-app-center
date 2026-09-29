@@ -194,6 +194,11 @@ func TestApplicationReviewDecisionCandidate_BR_REV_011_013_ConflictsAndState(t *
 	if want := []ScopeName{"profile.basic", "schedule.read"}; !reflect.DeepEqual(candidate.AllScopes(), want) {
 		t.Fatalf("candidate scopes = %v, want %v", candidate.AllScopes(), want)
 	}
+	returnedSnapshot := candidate.VersionSnapshot()
+	returnedSnapshot.oauthRedirects.pkceRedirectURIs[0] = "https://changed.example.edu/callback"
+	if got := candidate.VersionSnapshot().OAuthRedirects().PKCERedirectURIs(); !reflect.DeepEqual(got, []string{"https://app.example.edu/oauth/callback"}) {
+		t.Fatalf("candidate snapshot getter exposed OAuth redirects: %v", got)
+	}
 
 	otherSnapshot, err := NewApplicationVersionReviewSnapshot("v3", "https://example.edu/other", 1, 3, []string{"camera.read.v1", "user.profile.v1"}, []ScopeName{"profile.basic"}, []ScopeName{"schedule.read"})
 	if err != nil {

@@ -40,22 +40,24 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-018 — Manage application OAuth clients.** Design input:
-`../../docs/app-center/briefs/UC-APP-018.md` (BR-OAC-001–005), the engineering
-baseline, readiness note and implements README. Implement the TEST-only
-administrator management slice in a dedicated `internal/oauthclient` capability:
-stable PUBLIC/CONFIDENTIAL UUIDv4 client identities, registrationRevision,
-authorizationEpoch, independent confidential credentialRevision and one-time
-32-byte secret disclosure. Add Mongo migration/readiness, validators, unique
-indexes and Application coordination write fences; add the committed public
-HTTP/gRPC management API and actual generated-client E2E. Cover administrator
-transfer, dual-type registration, status OCC, credential OCC, transaction
-rollback and secret redaction. Do not implement UC019 provider methods, secret
-verification for Auth, Version OAuth redirect configuration, OAuth grants,
-tokens, sector/sub, frontend or future channels. Required final tier:
-`make check-auth-app`; existing Auth regression does not prove OAuth provider or
-login delivery. Commit the API first, update the service gitlink, and keep all
-commits local.
+**UC-APP-002 → UC-APP-003 → UC-APP-004 → UC-APP-005 → UC-APP-007 — Version
+OAuth redirect delivery.** Design inputs are the corresponding generated briefs
+under `../../docs/app-center/briefs/`, the engineering baseline, the readiness
+note and implements README. Deliver the accepted extensions serially: attach the
+PKCE and confidential redirect URI arrays to each ApplicationVersion through a
+dependent `ApplicationVersionOAuthConfig`; create and replace it atomically with
+the Version under the Version revision; deep-copy it into immutable review
+snapshots; require the immutable `app-version-review-v2` redirect checks for new
+decisions; and recheck the TEST registration/credential required by non-empty
+approved arrays before publication commits. Add the committed backward-compatible
+Proto surface, migration/backfill, validators, HTTP/gRPC/Wire mappings and real
+MongoDB concurrency/E2E coverage. Keep the existing Scope Catalog `requestable`
+consumer contract: Auth now derives that compatibility projection from its single
+authoritative `enabled` state. Do not implement UC-APP-019 provider resolution,
+Auth secret verification, grants, tokens, sector/sub, frontend or future channels
+in this work package. Required final tier: `make check-auth-app`. Commit API inputs
+and generated outputs before the service gitlink, keep each accepted UC boundary
+reviewable, and keep all commits local.
 
 ## Verification entry points
 

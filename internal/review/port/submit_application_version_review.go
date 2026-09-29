@@ -12,6 +12,7 @@ import (
 var (
 	ErrScopeNotRequestable                = errors.New("scope is not requestable")
 	ErrScopeCatalogUnavailable            = errors.New("scope catalog unavailable")
+	ErrOAuthRedirectNotReviewable         = errors.New("OAuth redirect configuration is not reviewable")
 	ErrLaunchURLNotReviewable             = errors.New("launch URL is not reviewable")
 	ErrLaunchURLInspectionUnavailable     = errors.New("launch URL inspection unavailable")
 	ErrApplicationVersionNotFound         = errors.New("application version not found")
@@ -26,6 +27,10 @@ type ScopeCatalog interface {
 
 type LaunchURLSubmissionPolicy interface {
 	Inspect(ctx context.Context, launchURL domain.LaunchURL) (domain.PreflightPolicyVersion, error)
+}
+
+type OAuthRedirectPolicy interface {
+	Validate(pkceRedirectURIs, confidentialRedirectURIs []string) error
 }
 
 type ApplicationReviewIDGenerator interface {

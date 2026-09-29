@@ -53,12 +53,15 @@ func TestApplicationReview_BR_REV_003_004_005_006_007_ImmutablePendingAttempt(t 
 	capabilities := snapshot.RequiredCapabilities()
 	required := snapshot.RequiredScopes()
 	optional := snapshot.OptionalScopes()
+	redirects := snapshot.OAuthRedirects()
 	capabilities[0] = "changed.v1"
 	required[0] = "changed"
 	optional[0] = "changed"
+	redirects.pkceRedirectURIs[0] = "https://changed.example.edu/callback"
 	if got := review.Snapshot(); !reflect.DeepEqual(got.RequiredCapabilities(), []string{"camera.read.v1", "user.profile.v1"}) ||
 		!reflect.DeepEqual(got.RequiredScopes(), []ScopeName{"profile.basic"}) ||
-		!reflect.DeepEqual(got.OptionalScopes(), []ScopeName{"schedule.read"}) {
+		!reflect.DeepEqual(got.OptionalScopes(), []ScopeName{"schedule.read"}) ||
+		!reflect.DeepEqual(got.OAuthRedirects().PKCERedirectURIs(), []string{"https://app.example.edu/oauth/callback"}) {
 		t.Fatal("snapshot getter exposed mutable collection state")
 	}
 }
@@ -177,6 +180,7 @@ func validCandidate(t *testing.T) *SubmissionCandidate {
 		"v2", "https://example.edu/app", 1, 3,
 		[]string{"camera.read.v1", "user.profile.v1"},
 		[]ScopeName{"profile.basic"}, []ScopeName{"schedule.read"},
+		OAuthRedirectConfiguration{pkceRedirectURIs: []string{"https://app.example.edu/oauth/callback"}, confidentialRedirectURIs: []string{}},
 	)
 	if err != nil {
 		t.Fatalf("create snapshot: %v", err)

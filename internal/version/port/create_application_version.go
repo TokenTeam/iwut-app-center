@@ -18,12 +18,17 @@ var (
 	ErrApplicationVersionNotDraft           = errors.New("application version not draft")
 	ErrApplicationVersionRevisionConflict   = errors.New("application version revision conflict")
 	ErrApplicationVersionLabelAlreadyExists = errors.New("application version label already exists")
+	ErrInvalidOAuthRedirectConfiguration    = errors.New("OAuth redirect configuration is invalid")
 )
 
 type ScopeCatalogRevision int64
 
 type ScopeCatalog interface {
 	EnsureAllRequestable(ctx context.Context, scopes []domain.ScopeName) (ScopeCatalogRevision, error)
+}
+
+type OAuthRedirectPolicy interface {
+	EnsureCanonical(pkceRedirectURIs, confidentialRedirectURIs []string) error
 }
 
 type ApplicationVersionIDGenerator interface {

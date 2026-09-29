@@ -144,6 +144,7 @@ func TestPublicationService_UCAPP007_ErrorMappings(t *testing.T) {
 		{publicationdomain.ErrApplicationLaunchURLNotReviewable, codes.InvalidArgument, ReasonApplicationLaunchURLNotReviewable},
 		{publicationdomain.ErrScopeCatalogUnavailable, codes.Unavailable, ReasonScopeCatalogUnavailable},
 		{publicationdomain.ErrLaunchURLInspectionUnavailable, codes.Unavailable, ReasonLaunchURLInspectionUnavailable},
+		{publicationdomain.ErrOAuthClientRegistrationRequired, codes.FailedPrecondition, ReasonOAuthClientRegistrationRequired},
 		{errors.New("secret database details"), codes.Internal, ReasonInternal},
 	}
 	for _, tc := range tests {
@@ -178,6 +179,7 @@ func TestPublicationService_UCAPP007_HTTPErrorStatus(t *testing.T) {
 		{publicationdomain.ErrApplicationPublicationRevisionConflict, 409},
 		{publicationdomain.ErrScopeCatalogUnavailable, 503},
 		{publicationdomain.ErrLaunchURLInspectionUnavailable, 503},
+		{publicationdomain.ErrOAuthClientRegistrationRequired, 422},
 	} {
 		t.Run(tc.err.Error(), func(t *testing.T) {
 			h := &fakePlaceHandler{err: tc.err}

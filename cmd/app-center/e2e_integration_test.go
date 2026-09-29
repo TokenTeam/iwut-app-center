@@ -1013,14 +1013,14 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	approvedVersion, approvedReview := createAndSubmit("v5.0.0")
 	deniedStatus, deniedBody := e2eHTTPDecideReview(
 		t, httpAddress, noPermissionToken, application.GetId(), approvedVersion.GetVersionId(), approvedReview.GetReview().GetReviewId(),
-		"APPROVE", "app-version-review-v1", []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"}, "",
+		"APPROVE", "app-version-review-v2", []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"}, "",
 	)
 	if deniedStatus != http.StatusForbidden || !bytes.Contains(deniedBody, []byte(transport.ReasonApplicationReviewPermissionRequired)) {
 		t.Fatalf("permission response = status:%d body:%s", deniedStatus, deniedBody)
 	}
 	approveStatus, approveBody := e2eHTTPDecideReview(
 		t, httpAddress, reviewerToken, application.GetId(), approvedVersion.GetVersionId(), approvedReview.GetReview().GetReviewId(),
-		"APPROVE", "app-version-review-v1", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed"}, "",
+		"APPROVE", "app-version-review-v2", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed", "oauth-redirects-reviewed"}, "",
 	)
 	if approveStatus != http.StatusOK {
 		t.Fatalf("approve response = status:%d body:%s", approveStatus, approveBody)
@@ -1045,8 +1045,8 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 		ReviewId:      suspendedReview.GetReview().GetReviewId(),
 		Command: &applicationreviewv1.DecideApplicationVersionReviewCommand{
 			Outcome:               applicationreviewv1.ReviewDecisionAction_APPROVE,
-			ExpectedPolicyVersion: "app-version-review-v1",
-			ConfirmedCheckIds:     []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"},
+			ExpectedPolicyVersion: "app-version-review-v2",
+			ConfirmedCheckIds:     []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 		},
 	})
 	if err != nil {
@@ -1175,8 +1175,8 @@ func TestE2E_UCAPP005_RealAuthProcessServiceIdentity(t *testing.T) {
 	result, err := grpcClient.DecideApplicationVersionReview(grpcCtx, &applicationreviewv1.DecideApplicationVersionReviewRequest{
 		ApplicationId: application.GetId(), VersionId: version.GetVersionId(), ReviewId: submitted.GetReview().GetReviewId(),
 		Command: &applicationreviewv1.DecideApplicationVersionReviewCommand{
-			Outcome: applicationreviewv1.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v1",
-			ConfirmedCheckIds: []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"},
+			Outcome: applicationreviewv1.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v2",
+			ConfirmedCheckIds: []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 		},
 	})
 	if err != nil {

@@ -77,6 +77,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationProfileReviewMigrationID, apply: migrator.applyApplicationProfileReviewMigration},
 		{id: applicationProfileReviewDecisionMigrationID, apply: migrator.applyApplicationProfileReviewDecisionMigration},
 		{id: oauthClientManagementMigrationID, apply: migrator.applyOAuthClientManagementMigration},
+		{id: versionOAuthRedirectMigrationID, apply: migrator.applyVersionOAuthRedirectMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -629,6 +630,10 @@ func applicationReviewValidatorForLifecycle(includeDecision, includeRestoration 
 			bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$snapshot.requiredScopes", "$snapshot.optionalScopes"}}}}},
 			0,
 		}}},
+		bson.D{{Key: "$eq", Value: bson.A{
+			bson.D{{Key: "$size", Value: bson.D{{Key: "$setIntersection", Value: bson.A{"$snapshot.oauthRedirects.pkceRedirectUris", "$snapshot.oauthRedirects.confidentialRedirectUris"}}}}},
+			0,
+		}}},
 	}
 	if includeDecision {
 		statuses = bson.A{"PENDING", "APPROVED", "REJECTED"}
@@ -801,7 +806,7 @@ func applicationReviewSnapshotSchema() bson.D {
 		{Key: "bsonType", Value: "object"},
 		{Key: "required", Value: bson.A{
 			"versionLabel", "launchUrl", "rpcApiMinVersion", "rpcApiMaxVersionExclusive",
-			"requiredCapabilities", "requiredScopes", "optionalScopes",
+			"requiredCapabilities", "requiredScopes", "optionalScopes", "oauthRedirects",
 		}},
 		{Key: "additionalProperties", Value: false},
 		{Key: "properties", Value: bson.D{
@@ -812,6 +817,7 @@ func applicationReviewSnapshotSchema() bson.D {
 			{Key: "requiredCapabilities", Value: stringSetSchema("^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)*\\.v[1-9][0-9]*$")},
 			{Key: "requiredScopes", Value: stringSetSchema("")},
 			{Key: "optionalScopes", Value: stringSetSchema("")},
+			{Key: "oauthRedirects", Value: oauthRedirectConfigurationSchema()},
 		}},
 	}
 }

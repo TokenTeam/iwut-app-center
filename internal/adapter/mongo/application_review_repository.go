@@ -54,7 +54,11 @@ func (repository *ApplicationReviewRepository) LoadSubmissionCandidate(
 	if document.Revision != expectedRevision {
 		return nil, reviewport.ErrApplicationVersionRevisionConflict
 	}
-	candidate, err := applicationVersionDocumentToSubmissionCandidate(document)
+	oauthDocument, err := repository.loadVersionOAuthConfig(ctx, applicationID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := applicationVersionDocumentToSubmissionCandidate(document, oauthDocument)
 	if err != nil {
 		return nil, fmt.Errorf("load review submission candidate: %w", err)
 	}
@@ -139,7 +143,11 @@ func (repository *ApplicationReviewRepository) submitTransaction(
 	if document.Revision != candidate.Revision() {
 		return nil, reviewport.ErrApplicationVersionRevisionConflict
 	}
-	currentCandidate, err := applicationVersionDocumentToSubmissionCandidate(document)
+	oauthDocument, err := repository.loadVersionOAuthConfig(ctx, candidate.ApplicationID(), candidate.VersionID())
+	if err != nil {
+		return nil, err
+	}
+	currentCandidate, err := applicationVersionDocumentToSubmissionCandidate(document, oauthDocument)
 	if err != nil {
 		return nil, fmt.Errorf("validate current review submission candidate: %w", err)
 	}
@@ -307,6 +315,25 @@ func (repository *ApplicationReviewRepository) loadVersion(
 	return document, nil
 }
 
+func (repository *ApplicationReviewRepository) loadVersionOAuthConfig(
+	ctx context.Context,
+	applicationID shared.ApplicationID,
+	versionID reviewdomain.ApplicationVersionID,
+) (applicationVersionOAuthConfigDocument, error) {
+	var document applicationVersionOAuthConfigDocument
+	err := repository.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(
+		ctx,
+		bson.D{{Key: "applicationVersionId", Value: versionID.String()}, {Key: "applicationId", Value: applicationID.String()}},
+	).Decode(&document)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return applicationVersionOAuthConfigDocument{}, fmt.Errorf("read application version OAuth config: missing dependent configuration")
+	}
+	if err != nil {
+		return applicationVersionOAuthConfigDocument{}, fmt.Errorf("read application version OAuth config: %w", err)
+	}
+	return document, nil
+}
+
 func (repository *ApplicationReviewRepository) nextAttempt(ctx context.Context, versionID reviewdomain.ApplicationVersionID) (reviewdomain.ReviewAttempt, error) {
 	var latest struct {
 		Attempt int32 `bson:"attempt"`
@@ -345,5 +372,6 @@ func submissionCandidatesEqual(left, right *reviewdomain.SubmissionCandidate) bo
 		leftSnapshot.RPCAPIMaxVersionExclusive() == rightSnapshot.RPCAPIMaxVersionExclusive() &&
 		slices.Equal(leftSnapshot.RequiredCapabilities(), rightSnapshot.RequiredCapabilities()) &&
 		slices.Equal(leftSnapshot.RequiredScopes(), rightSnapshot.RequiredScopes()) &&
-		slices.Equal(leftSnapshot.OptionalScopes(), rightSnapshot.OptionalScopes())
+		slices.Equal(leftSnapshot.OptionalScopes(), rightSnapshot.OptionalScopes()) &&
+		leftSnapshot.OAuthRedirects().Equal(rightSnapshot.OAuthRedirects())
 }

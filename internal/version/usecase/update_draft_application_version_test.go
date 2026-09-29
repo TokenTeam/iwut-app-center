@@ -65,7 +65,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_010_011_012_013_014_015_016_017_Su
 	repository := &fakeUpdateVersionRepository{events: &events, result: result}
 	catalog := &fakeScopeCatalog{events: &events}
 	clock := &fakeVersionClock{events: &events, now: updatedAt}
-	handler := NewUpdateDraftApplicationVersionHandler(catalog, clock, repository)
+	handler := NewUpdateDraftApplicationVersionHandler(catalog, &fakeOAuthRedirectPolicy{}, clock, repository)
 
 	version, err := handler.Handle(t.Context(), approvedIdentity(), usecaseApplicationID(t), testVersionID, validUpdateCommand())
 	if err != nil {
@@ -117,7 +117,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_013_ApprovedIdentityAndRevisionReq
 			catalog := &fakeScopeCatalog{}
 			clock := &fakeVersionClock{now: time.Now()}
 			repository := &fakeUpdateVersionRepository{}
-			version, err := NewUpdateDraftApplicationVersionHandler(catalog, clock, repository).Handle(
+			version, err := NewUpdateDraftApplicationVersionHandler(catalog, &fakeOAuthRedirectPolicy{}, clock, repository).Handle(
 				t.Context(), test.identity, usecaseApplicationID(t), testVersionID, command,
 			)
 			if version != nil || !errors.Is(err, test.want) {
@@ -160,7 +160,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_014_015_FieldValidationStopsBefore
 			catalog := &fakeScopeCatalog{}
 			clock := &fakeVersionClock{now: time.Now()}
 			repository := &fakeUpdateVersionRepository{}
-			version, err := NewUpdateDraftApplicationVersionHandler(catalog, clock, repository).Handle(
+			version, err := NewUpdateDraftApplicationVersionHandler(catalog, &fakeOAuthRedirectPolicy{}, clock, repository).Handle(
 				t.Context(), approvedIdentity(), usecaseApplicationID(t), testVersionID, command,
 			)
 			if version != nil || !errors.Is(err, test.want) {
@@ -191,7 +191,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_015_CatalogFailureStopsBeforeClock
 			catalog := &fakeScopeCatalog{err: test.catalogErr}
 			clock := &fakeVersionClock{now: time.Now()}
 			repository := &fakeUpdateVersionRepository{}
-			version, err := NewUpdateDraftApplicationVersionHandler(catalog, clock, repository).Handle(
+			version, err := NewUpdateDraftApplicationVersionHandler(catalog, &fakeOAuthRedirectPolicy{}, clock, repository).Handle(
 				t.Context(), approvedIdentity(), usecaseApplicationID(t), testVersionID, validUpdateCommand(),
 			)
 			if version != nil || !errors.Is(err, test.want) {
@@ -224,7 +224,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_010_013_016_RepositoryErrorsMapWit
 			t.Parallel()
 			repository := &fakeUpdateVersionRepository{err: test.repositoryErr}
 			version, err := NewUpdateDraftApplicationVersionHandler(
-				&fakeScopeCatalog{}, &fakeVersionClock{now: time.Now()}, repository,
+				&fakeScopeCatalog{}, &fakeOAuthRedirectPolicy{}, &fakeVersionClock{now: time.Now()}, repository,
 			).Handle(t.Context(), approvedIdentity(), usecaseApplicationID(t), testVersionID, validUpdateCommand())
 			if version != nil || !errors.Is(err, test.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil and %v", version, err, test.want)
@@ -245,6 +245,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_011_CommandContainsOnlyCompleteEdi
 	wantFields := []string{
 		"ExpectedRevision", "VersionLabel", "LaunchURL", "RPCApiMinVersion", "RPCApiMaxVersionExclusive",
 		"RequiredCapabilities", "RequiredScopes", "OptionalScopes",
+		"PKCERedirectURIs", "ConfidentialRedirectURIs",
 	}
 	if commandType.NumField() != len(wantFields) {
 		t.Fatalf("command has %d fields, want %d", commandType.NumField(), len(wantFields))

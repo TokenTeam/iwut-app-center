@@ -136,6 +136,7 @@ func mapRepositoryError(err error) error {
 		{port.ErrApplicationPublicationAlreadyExists, domain.ErrApplicationPublicationAlreadyExists},
 		{port.ErrApplicationPublicationNotFound, domain.ErrApplicationPublicationNotFound},
 		{port.ErrApplicationPublicationRevisionConflict, domain.ErrApplicationPublicationRevisionConflict},
+		{port.ErrOAuthClientRegistrationRequired, domain.ErrOAuthClientRegistrationRequired},
 	} {
 		if errors.Is(err, entry.port) || errors.Is(err, entry.domain) {
 			return entry.domain

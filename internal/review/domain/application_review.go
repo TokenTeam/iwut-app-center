@@ -58,6 +58,40 @@ func (version PreflightPolicyVersion) String() string { return string(version) }
 type ScopeName string
 type LaunchURL string
 
+type OAuthRedirectConfiguration struct {
+	pkceRedirectURIs         []string
+	confidentialRedirectURIs []string
+}
+
+func NewOAuthRedirectConfiguration(pkce, confidential []string) (OAuthRedirectConfiguration, error) {
+	if pkce == nil || confidential == nil || len(pkce) > 10 || len(confidential) > 10 ||
+		!strictlySortedUnique(pkce) || !strictlySortedUnique(confidential) || hasOverlap(pkce, confidential) {
+		return OAuthRedirectConfiguration{}, NewInternalError(nil)
+	}
+	return OAuthRedirectConfiguration{
+		pkceRedirectURIs:         append([]string{}, pkce...),
+		confidentialRedirectURIs: append([]string{}, confidential...),
+	}, nil
+}
+
+func EmptyOAuthRedirectConfiguration() OAuthRedirectConfiguration {
+	configuration, _ := NewOAuthRedirectConfiguration([]string{}, []string{})
+	return configuration
+}
+
+func (configuration OAuthRedirectConfiguration) PKCERedirectURIs() []string {
+	return append([]string{}, configuration.pkceRedirectURIs...)
+}
+
+func (configuration OAuthRedirectConfiguration) ConfidentialRedirectURIs() []string {
+	return append([]string{}, configuration.confidentialRedirectURIs...)
+}
+
+func (configuration OAuthRedirectConfiguration) Equal(other OAuthRedirectConfiguration) bool {
+	return slices.Equal(configuration.pkceRedirectURIs, other.pkceRedirectURIs) &&
+		slices.Equal(configuration.confidentialRedirectURIs, other.confidentialRedirectURIs)
+}
+
 type ReviewStatus string
 
 const (
@@ -87,6 +121,7 @@ type ApplicationVersionReviewSnapshot struct {
 	requiredCapabilities      []string
 	requiredScopes            []ScopeName
 	optionalScopes            []ScopeName
+	oauthRedirects            OAuthRedirectConfiguration
 }
 
 func NewApplicationVersionReviewSnapshot(
@@ -97,11 +132,23 @@ func NewApplicationVersionReviewSnapshot(
 	requiredCapabilities []string,
 	requiredScopes []ScopeName,
 	optionalScopes []ScopeName,
+	oauthRedirects ...OAuthRedirectConfiguration,
 ) (*ApplicationVersionReviewSnapshot, error) {
+	redirects := EmptyOAuthRedirectConfiguration()
+	if len(oauthRedirects) == 1 {
+		redirects = OAuthRedirectConfiguration{
+			pkceRedirectURIs:         oauthRedirects[0].PKCERedirectURIs(),
+			confidentialRedirectURIs: oauthRedirects[0].ConfidentialRedirectURIs(),
+		}
+	} else if len(oauthRedirects) > 1 {
+		return nil, NewInternalError(nil)
+	}
 	if versionLabel == "" || !utf8.ValidString(versionLabel) || launchURL == "" ||
 		rpcAPIMinVersion < 1 || rpcAPIMaxVersionExclusive <= rpcAPIMinVersion ||
 		!strictlySortedUnique(requiredCapabilities) || !strictlySortedUnique(requiredScopes) ||
-		!strictlySortedUnique(optionalScopes) || hasOverlap(requiredScopes, optionalScopes) {
+		!strictlySortedUnique(optionalScopes) || hasOverlap(requiredScopes, optionalScopes) ||
+		!strictlySortedUnique(redirects.pkceRedirectURIs) || !strictlySortedUnique(redirects.confidentialRedirectURIs) ||
+		hasOverlap(redirects.pkceRedirectURIs, redirects.confidentialRedirectURIs) {
 		return nil, NewInternalError(nil)
 	}
 	return &ApplicationVersionReviewSnapshot{
@@ -112,6 +159,7 @@ func NewApplicationVersionReviewSnapshot(
 		requiredCapabilities:      append([]string{}, requiredCapabilities...),
 		requiredScopes:            append([]ScopeName{}, requiredScopes...),
 		optionalScopes:            append([]ScopeName{}, optionalScopes...),
+		oauthRedirects:            redirects,
 	}, nil
 }
 
@@ -132,6 +180,12 @@ func (snapshot ApplicationVersionReviewSnapshot) RequiredScopes() []ScopeName {
 func (snapshot ApplicationVersionReviewSnapshot) OptionalScopes() []ScopeName {
 	return append([]ScopeName{}, snapshot.optionalScopes...)
 }
+func (snapshot ApplicationVersionReviewSnapshot) OAuthRedirects() OAuthRedirectConfiguration {
+	return OAuthRedirectConfiguration{
+		pkceRedirectURIs:         snapshot.oauthRedirects.PKCERedirectURIs(),
+		confidentialRedirectURIs: snapshot.oauthRedirects.ConfidentialRedirectURIs(),
+	}
+}
 
 // Equal reports whether two snapshots carry exactly the same reviewed content.
 func (snapshot ApplicationVersionReviewSnapshot) Equal(other ApplicationVersionReviewSnapshot) bool {
@@ -141,7 +195,8 @@ func (snapshot ApplicationVersionReviewSnapshot) Equal(other ApplicationVersionR
 		snapshot.rpcAPIMaxVersionExclusive == other.rpcAPIMaxVersionExclusive &&
 		slices.Equal(snapshot.requiredCapabilities, other.requiredCapabilities) &&
 		slices.Equal(snapshot.requiredScopes, other.requiredScopes) &&
-		slices.Equal(snapshot.optionalScopes, other.optionalScopes)
+		slices.Equal(snapshot.optionalScopes, other.optionalScopes) &&
+		snapshot.oauthRedirects.Equal(other.oauthRedirects)
 }
 
 type SubmissionCandidate struct {
@@ -178,6 +233,7 @@ func (candidate *SubmissionCandidate) Snapshot() ApplicationVersionReviewSnapsho
 	copy.requiredCapabilities = candidate.snapshot.RequiredCapabilities()
 	copy.requiredScopes = candidate.snapshot.RequiredScopes()
 	copy.optionalScopes = candidate.snapshot.OptionalScopes()
+	copy.oauthRedirects = candidate.snapshot.OAuthRedirects()
 	return copy
 }
 func (candidate *SubmissionCandidate) AllScopes() []ScopeName {
@@ -332,6 +388,7 @@ func (review *ApplicationReview) Snapshot() ApplicationVersionReviewSnapshot {
 	copy.requiredCapabilities = review.snapshot.RequiredCapabilities()
 	copy.requiredScopes = review.snapshot.RequiredScopes()
 	copy.optionalScopes = review.snapshot.OptionalScopes()
+	copy.oauthRedirects = review.snapshot.OAuthRedirects()
 	return copy
 }
 func (review *ApplicationReview) ScopeCatalogRevision() ScopeCatalogRevision {

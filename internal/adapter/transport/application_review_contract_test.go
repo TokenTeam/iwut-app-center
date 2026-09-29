@@ -212,6 +212,7 @@ func TestAPIContract_UCAPP005_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
 		ReasonInvalidApplicationReviewChecks,
 		ReasonInvalidApplicationReviewReason,
 		ReasonDeveloperStatusUnavailable,
+		ReasonInvalidOAuthRedirectConfiguration,
 	} {
 		if _, ok := applicationreviewv1.ErrorReason_value[reason]; !ok {
 			t.Fatalf("generated UC-APP-005 ErrorReason enum is missing %q", reason)

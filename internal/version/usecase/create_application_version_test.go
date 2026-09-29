@@ -32,6 +32,10 @@ func (fake *fakeScopeCatalog) EnsureAllRequestable(_ context.Context, scopes []d
 	return fake.revision, fake.err
 }
 
+type fakeOAuthRedirectPolicy struct{ err error }
+
+func (fake *fakeOAuthRedirectPolicy) EnsureCanonical(_, _ []string) error { return fake.err }
+
 type fakeVersionIDGenerator struct {
 	events *[]string
 	id     domain.ApplicationVersionID
@@ -129,7 +133,7 @@ func TestCreateApplicationVersion_BR_VER_001_002_003_004_005_006_007_008_009_Suc
 	idGenerator := &fakeVersionIDGenerator{events: &events, id: testVersionID}
 	clock := &fakeVersionClock{events: &events, now: createdAt}
 	repository := &fakeVersionRepository{events: &events}
-	handler := NewCreateApplicationVersionHandler(scopeCatalog, idGenerator, clock, repository)
+	handler := NewCreateApplicationVersionHandler(scopeCatalog, &fakeOAuthRedirectPolicy{}, idGenerator, clock, repository)
 
 	version, err := handler.Handle(context.Background(), approvedIdentity(), validCommand())
 	if err != nil {
@@ -186,7 +190,7 @@ func TestCreateApplicationVersion_BR_VER_002_OnlyApprovedIdentityReachesValidati
 			idGenerator := &fakeVersionIDGenerator{id: testVersionID}
 			clock := &fakeVersionClock{now: time.Now()}
 			repository := &fakeVersionRepository{}
-			handler := NewCreateApplicationVersionHandler(scopeCatalog, idGenerator, clock, repository)
+			handler := NewCreateApplicationVersionHandler(scopeCatalog, &fakeOAuthRedirectPolicy{}, idGenerator, clock, repository)
 			version, err := handler.Handle(context.Background(), testCase.identity, validCommand())
 			if version != nil || !errors.Is(err, testCase.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil and %v", version, err, testCase.want)
@@ -230,7 +234,7 @@ func TestCreateApplicationVersion_BR_VER_003_004_005_006_007_LocalValidationStop
 			idGenerator := &fakeVersionIDGenerator{id: testVersionID}
 			clock := &fakeVersionClock{now: time.Now()}
 			repository := &fakeVersionRepository{}
-			handler := NewCreateApplicationVersionHandler(scopeCatalog, idGenerator, clock, repository)
+			handler := NewCreateApplicationVersionHandler(scopeCatalog, &fakeOAuthRedirectPolicy{}, idGenerator, clock, repository)
 			version, err := handler.Handle(context.Background(), approvedIdentity(), command)
 			if version != nil || !errors.Is(err, testCase.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil and %v", version, err, testCase.want)
@@ -265,7 +269,7 @@ func TestCreateApplicationVersion_BR_VER_007_CatalogOutcomesFailClosedBeforeSyst
 			idGenerator := &fakeVersionIDGenerator{id: testVersionID}
 			clock := &fakeVersionClock{now: time.Now()}
 			repository := &fakeVersionRepository{}
-			handler := NewCreateApplicationVersionHandler(scopeCatalog, idGenerator, clock, repository)
+			handler := NewCreateApplicationVersionHandler(scopeCatalog, &fakeOAuthRedirectPolicy{}, idGenerator, clock, repository)
 			version, err := handler.Handle(context.Background(), approvedIdentity(), validCommand())
 			if version != nil || !errors.Is(err, testCase.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil and %v", version, err, testCase.want)
@@ -304,6 +308,7 @@ func TestCreateApplicationVersion_BR_VER_001_009_RepositoryOutcomesMapToStableEr
 			repository := &fakeVersionRepository{err: testCase.repositoryErr}
 			handler := NewCreateApplicationVersionHandler(
 				&fakeScopeCatalog{},
+				&fakeOAuthRedirectPolicy{},
 				&fakeVersionIDGenerator{id: testVersionID},
 				&fakeVersionClock{now: time.Now()},
 				repository,
@@ -344,7 +349,7 @@ func TestCreateApplicationVersion_BR_VER_001_009_DependencyFailuresReturnNoParti
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			handler := NewCreateApplicationVersionHandler(&fakeScopeCatalog{}, testCase.idGenerator, testCase.clock, testCase.repository)
+			handler := NewCreateApplicationVersionHandler(&fakeScopeCatalog{}, &fakeOAuthRedirectPolicy{}, testCase.idGenerator, testCase.clock, testCase.repository)
 			version, err := handler.Handle(context.Background(), approvedIdentity(), validCommand())
 			if version != nil || !errors.Is(err, domain.ErrInternal) {
 				t.Fatalf("Handle() = (%v, %v), want nil Internal", version, err)
@@ -369,6 +374,8 @@ func TestCreateApplicationVersion_BR_VER_008_RequestCannotSpecifyServerFields(t 
 		"RequiredCapabilities",
 		"RequiredScopes",
 		"OptionalScopes",
+		"PKCERedirectURIs",
+		"ConfidentialRedirectURIs",
 	}
 	if commandType.NumField() != len(wantFields) {
 		t.Fatalf("command has %d fields, want %d", commandType.NumField(), len(wantFields))
@@ -393,10 +400,11 @@ func TestCreateApplicationVersion_NilDependenciesReturnInternalFailure(t *testin
 		handler *CreateApplicationVersionHandler
 	}{
 		{name: "nil handler"},
-		{name: "nil catalog", handler: NewCreateApplicationVersionHandler(nil, validID(), validClock(), validRepository())},
-		{name: "nil ID generator", handler: NewCreateApplicationVersionHandler(validCatalog(), nil, validClock(), validRepository())},
-		{name: "nil clock", handler: NewCreateApplicationVersionHandler(validCatalog(), validID(), nil, validRepository())},
-		{name: "nil repository", handler: NewCreateApplicationVersionHandler(validCatalog(), validID(), validClock(), nil)},
+		{name: "nil catalog", handler: NewCreateApplicationVersionHandler(nil, &fakeOAuthRedirectPolicy{}, validID(), validClock(), validRepository())},
+		{name: "nil OAuth policy", handler: NewCreateApplicationVersionHandler(validCatalog(), nil, validID(), validClock(), validRepository())},
+		{name: "nil ID generator", handler: NewCreateApplicationVersionHandler(validCatalog(), &fakeOAuthRedirectPolicy{}, nil, validClock(), validRepository())},
+		{name: "nil clock", handler: NewCreateApplicationVersionHandler(validCatalog(), &fakeOAuthRedirectPolicy{}, validID(), nil, validRepository())},
+		{name: "nil repository", handler: NewCreateApplicationVersionHandler(validCatalog(), &fakeOAuthRedirectPolicy{}, validID(), validClock(), nil)},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

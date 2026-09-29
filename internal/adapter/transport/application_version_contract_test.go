@@ -47,7 +47,7 @@ func TestAPIContract_UCAPP002_RequestExcludesServerOwnedFieldsAndResponseIsCompl
 	t.Parallel()
 	request := &applicationversionv1.CreateApplicationVersionRequest{}
 	wantRequest := []string{
-		"application_id", "launch_url", "optional_scopes", "required_capabilities", "required_scopes",
+		"application_id", "launch_url", "oauth_redirects", "optional_scopes", "required_capabilities", "required_scopes",
 		"rpc_api_max_version_exclusive", "rpc_api_min_version", "version_label",
 	}
 	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != strings.Join(wantRequest, ",") {
@@ -61,7 +61,7 @@ func TestAPIContract_UCAPP002_RequestExcludesServerOwnedFieldsAndResponseIsCompl
 
 	response := &applicationversionv1.CreateApplicationVersionResponse{}
 	wantResponse := []string{
-		"application_id", "created_at", "created_by", "launch_url", "optional_scopes", "required_capabilities",
+		"application_id", "created_at", "created_by", "launch_url", "oauth_redirects", "optional_scopes", "required_capabilities",
 		"required_scopes", "review_status", "revision", "rpc_api_max_version_exclusive", "rpc_api_min_version",
 		"sequence", "updated_at", "updated_by", "version_id", "version_label",
 	}
@@ -80,6 +80,7 @@ func TestAPIContract_UCAPP002_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
 		ReasonInvalidRPCApiRange,
 		ReasonInvalidRequiredCapability,
 		ReasonInvalidApplicationScope,
+		ReasonInvalidOAuthRedirectConfiguration,
 		ReasonDeveloperIdentityRequired,
 		ReasonInvalidDeveloperIdentity,
 		ReasonDeveloperApprovalRequired,
@@ -135,7 +136,7 @@ func TestAPIContract_UCAPP003_HTTPBodyIsCompleteReplacementWithoutServerState(t 
 		t.Fatalf("outer request fields = %v, want %v", fields, wantOuter)
 	}
 	replacement := &applicationversionv1.DraftApplicationVersionReplacement{}
-	wantReplacement := []string{"launch_url", "optional_scopes", "required_capabilities", "required_scopes", "rpc_api_max_version_exclusive", "rpc_api_min_version", "version_label"}
+	wantReplacement := []string{"launch_url", "oauth_redirects", "optional_scopes", "required_capabilities", "required_scopes", "rpc_api_max_version_exclusive", "rpc_api_min_version", "version_label"}
 	if fields := messageFieldNames(t, replacement); strings.Join(fields, ",") != strings.Join(wantReplacement, ",") {
 		t.Fatalf("replacement fields = %v, want %v", fields, wantReplacement)
 	}

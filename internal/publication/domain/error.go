@@ -34,6 +34,7 @@ const (
 	ErrorCodeScopeCatalogUnavailable                ErrorCode = "ScopeCatalogUnavailable"
 	ErrorCodeApplicationLaunchURLNotReviewable      ErrorCode = "ApplicationLaunchUrlNotReviewable"
 	ErrorCodeLaunchURLInspectionUnavailable         ErrorCode = "LaunchUrlInspectionUnavailable"
+	ErrorCodeOAuthClientRegistrationRequired        ErrorCode = "OAuthClientRegistrationRequired"
 	ErrorCodeInternal                               ErrorCode = "Internal"
 )
 
@@ -87,5 +88,6 @@ var (
 	ErrScopeCatalogUnavailable                = newError(ErrorCategoryDependencyUnavailable, ErrorCodeScopeCatalogUnavailable, "scope catalog is unavailable", nil)
 	ErrApplicationLaunchURLNotReviewable      = newError(ErrorCategoryValidation, ErrorCodeApplicationLaunchURLNotReviewable, "application launch URL is not reviewable", nil)
 	ErrLaunchURLInspectionUnavailable         = newError(ErrorCategoryDependencyUnavailable, ErrorCodeLaunchURLInspectionUnavailable, "launch URL inspection is unavailable", nil)
+	ErrOAuthClientRegistrationRequired        = newError(ErrorCategoryConflict, ErrorCodeOAuthClientRegistrationRequired, "OAuth client registration is required", nil)
 	ErrInternal                               = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

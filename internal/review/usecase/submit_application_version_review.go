@@ -21,6 +21,7 @@ type SubmitApplicationVersionReviewCommand struct {
 type SubmitApplicationVersionReviewHandler struct {
 	scopeCatalog port.ScopeCatalog
 	launchPolicy port.LaunchURLSubmissionPolicy
+	oauthPolicy  port.OAuthRedirectPolicy
 	idGenerator  port.ApplicationReviewIDGenerator
 	clock        port.Clock
 	repository   port.ApplicationReviewRepository
@@ -29,6 +30,7 @@ type SubmitApplicationVersionReviewHandler struct {
 func NewSubmitApplicationVersionReviewHandler(
 	scopeCatalog port.ScopeCatalog,
 	launchPolicy port.LaunchURLSubmissionPolicy,
+	oauthPolicy port.OAuthRedirectPolicy,
 	idGenerator port.ApplicationReviewIDGenerator,
 	clock port.Clock,
 	repository port.ApplicationReviewRepository,
@@ -36,6 +38,7 @@ func NewSubmitApplicationVersionReviewHandler(
 	return &SubmitApplicationVersionReviewHandler{
 		scopeCatalog: scopeCatalog,
 		launchPolicy: launchPolicy,
+		oauthPolicy:  oauthPolicy,
 		idGenerator:  idGenerator,
 		clock:        clock,
 		repository:   repository,
@@ -61,7 +64,7 @@ func (handler *SubmitApplicationVersionReviewHandler) Handle(
 	if !applicationID.IsValid() || !versionID.IsValid() {
 		return nil, domain.ErrApplicationVersionNotFound
 	}
-	if handler == nil || handler.scopeCatalog == nil || handler.launchPolicy == nil ||
+	if handler == nil || handler.scopeCatalog == nil || handler.launchPolicy == nil || handler.oauthPolicy == nil ||
 		handler.idGenerator == nil || handler.clock == nil || handler.repository == nil {
 		return nil, domain.NewInternalError(nil)
 	}
@@ -75,6 +78,13 @@ func (handler *SubmitApplicationVersionReviewHandler) Handle(
 	if candidate == nil || candidate.ApplicationID() != applicationID || candidate.VersionID() != versionID ||
 		candidate.Revision() != command.ExpectedRevision {
 		return nil, domain.NewInternalError(nil)
+	}
+	redirects := candidate.Snapshot().OAuthRedirects()
+	if err := handler.oauthPolicy.Validate(redirects.PKCERedirectURIs(), redirects.ConfidentialRedirectURIs()); err != nil {
+		if errors.Is(err, port.ErrOAuthRedirectNotReviewable) {
+			return nil, domain.ErrInvalidOAuthRedirectConfiguration
+		}
+		return nil, domain.NewInternalError(err)
 	}
 
 	scopeCatalogRevision, err := handler.scopeCatalog.EnsureAllRequestable(ctx, candidate.AllScopes())

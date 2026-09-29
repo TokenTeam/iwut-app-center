@@ -63,7 +63,11 @@ func (repository *ApplicationReviewDecisionRepository) LoadDecisionCandidate(
 	if err != nil {
 		return nil, err
 	}
-	candidate, err := decisionCandidateFromDocuments(review, versionDocument, adminID)
+	oauthDocument, err := repository.readDecisionVersionOAuthConfig(ctx, applicationID, versionID)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := decisionCandidateFromDocuments(review, versionDocument, oauthDocument, adminID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,11 +165,15 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 	if err != nil {
 		return nil, err
 	}
+	oauthDocument, err := repository.readDecisionVersionOAuthConfig(ctx, applicationID, versionID)
+	if err != nil {
+		return nil, err
+	}
 	if versionDocument.ReviewStatus != reviewdomain.SubmittedVersionReviewStatus ||
 		versionDocument.Revision != currentReview.SourceVersionRevision()+1 {
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
 	}
-	currentVersionRevision, versionCreatedBy, currentVersionSnapshot, err := applicationVersionDocumentToDecisionVersion(versionDocument)
+	currentVersionRevision, versionCreatedBy, currentVersionSnapshot, err := applicationVersionDocumentToDecisionVersion(versionDocument, oauthDocument)
 	if err != nil {
 		return nil, fmt.Errorf("decide application review: %w", err)
 	}
@@ -362,15 +370,35 @@ func (repository *ApplicationReviewDecisionRepository) readDecisionVersion(
 	return document, nil
 }
 
+func (repository *ApplicationReviewDecisionRepository) readDecisionVersionOAuthConfig(
+	ctx context.Context,
+	applicationID shared.ApplicationID,
+	versionID reviewdomain.ApplicationVersionID,
+) (applicationVersionOAuthConfigDocument, error) {
+	var document applicationVersionOAuthConfigDocument
+	err := repository.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(
+		ctx,
+		bson.D{{Key: "applicationVersionId", Value: versionID.String()}, {Key: "applicationId", Value: applicationID.String()}},
+	).Decode(&document)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return applicationVersionOAuthConfigDocument{}, reviewport.ErrApplicationReviewStateInconsistent
+	}
+	if err != nil {
+		return applicationVersionOAuthConfigDocument{}, fmt.Errorf("read application version OAuth config for decision: %w", err)
+	}
+	return document, nil
+}
+
 func decisionCandidateFromDocuments(
 	review *reviewdomain.ApplicationReview,
 	versionDocument applicationVersionDocument,
+	oauthDocument applicationVersionOAuthConfigDocument,
 	adminID shared.AuthID,
 ) (*reviewdomain.ApplicationReviewDecisionCandidate, error) {
 	if versionDocument.ReviewStatus != reviewdomain.SubmittedVersionReviewStatus {
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
 	}
-	revision, createdBy, snapshot, err := applicationVersionDocumentToDecisionVersion(versionDocument)
+	revision, createdBy, snapshot, err := applicationVersionDocumentToDecisionVersion(versionDocument, oauthDocument)
 	if err != nil {
 		return nil, fmt.Errorf("load application review decision candidate: %w", err)
 	}

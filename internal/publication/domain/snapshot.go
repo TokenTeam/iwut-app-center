@@ -5,6 +5,11 @@ import (
 	"unicode/utf8"
 )
 
+type OAuthRedirectConfiguration struct {
+	PKCE         []string
+	Confidential []string
+}
+
 type ApplicationVersionReviewSnapshot struct {
 	versionLabel              string
 	launchURL                 LaunchURL
@@ -13,6 +18,8 @@ type ApplicationVersionReviewSnapshot struct {
 	requiredCapabilities      []string
 	requiredScopes            []ScopeName
 	optionalScopes            []ScopeName
+	pkceRedirectURIs          []string
+	confidentialRedirectURIs  []string
 }
 
 func NewApplicationVersionReviewSnapshot(
@@ -23,11 +30,20 @@ func NewApplicationVersionReviewSnapshot(
 	requiredCapabilities []string,
 	requiredScopes []ScopeName,
 	optionalScopes []ScopeName,
+	oauthRedirects ...OAuthRedirectConfiguration,
 ) (*ApplicationVersionReviewSnapshot, error) {
+	pkce, confidential := []string{}, []string{}
+	if len(oauthRedirects) == 1 {
+		pkce = oauthRedirects[0].PKCE
+		confidential = oauthRedirects[0].Confidential
+	} else if len(oauthRedirects) > 1 {
+		return nil, NewInternalError(nil)
+	}
 	if versionLabel == "" || !utf8.ValidString(versionLabel) || launchURL == "" ||
 		rpcAPIMinVersion < 1 || rpcAPIMaxVersionExclusive <= rpcAPIMinVersion ||
 		!strictlySortedUnique(requiredCapabilities) || !strictlySortedUnique(requiredScopes) ||
-		!strictlySortedUnique(optionalScopes) || hasOverlap(requiredScopes, optionalScopes) {
+		!strictlySortedUnique(optionalScopes) || hasOverlap(requiredScopes, optionalScopes) ||
+		!strictlySortedUnique(pkce) || !strictlySortedUnique(confidential) || hasOverlap(pkce, confidential) {
 		return nil, NewInternalError(nil)
 	}
 	return &ApplicationVersionReviewSnapshot{
@@ -38,6 +54,8 @@ func NewApplicationVersionReviewSnapshot(
 		requiredCapabilities:      append([]string{}, requiredCapabilities...),
 		requiredScopes:            append([]ScopeName{}, requiredScopes...),
 		optionalScopes:            append([]ScopeName{}, optionalScopes...),
+		pkceRedirectURIs:          append([]string{}, pkce...),
+		confidentialRedirectURIs:  append([]string{}, confidential...),
 	}, nil
 }
 
@@ -58,6 +76,12 @@ func (snapshot ApplicationVersionReviewSnapshot) RequiredScopes() []ScopeName {
 func (snapshot ApplicationVersionReviewSnapshot) OptionalScopes() []ScopeName {
 	return append([]ScopeName{}, snapshot.optionalScopes...)
 }
+func (snapshot ApplicationVersionReviewSnapshot) PKCERedirectURIs() []string {
+	return append([]string{}, snapshot.pkceRedirectURIs...)
+}
+func (snapshot ApplicationVersionReviewSnapshot) ConfidentialRedirectURIs() []string {
+	return append([]string{}, snapshot.confidentialRedirectURIs...)
+}
 
 // Equal reports whether two snapshots carry exactly the same reviewed content.
 func (snapshot ApplicationVersionReviewSnapshot) Equal(other ApplicationVersionReviewSnapshot) bool {
@@ -67,7 +91,9 @@ func (snapshot ApplicationVersionReviewSnapshot) Equal(other ApplicationVersionR
 		snapshot.rpcAPIMaxVersionExclusive == other.rpcAPIMaxVersionExclusive &&
 		slices.Equal(snapshot.requiredCapabilities, other.requiredCapabilities) &&
 		slices.Equal(snapshot.requiredScopes, other.requiredScopes) &&
-		slices.Equal(snapshot.optionalScopes, other.optionalScopes)
+		slices.Equal(snapshot.optionalScopes, other.optionalScopes) &&
+		slices.Equal(snapshot.pkceRedirectURIs, other.pkceRedirectURIs) &&
+		slices.Equal(snapshot.confidentialRedirectURIs, other.confidentialRedirectURIs)
 }
 
 func strictlySortedUnique[T ~string](values []T) bool {

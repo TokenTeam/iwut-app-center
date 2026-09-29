@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/event"
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	oauthclientdomain "iwut-app-center/internal/oauthclient/domain"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	publicationport "iwut-app-center/internal/publication/port"
 	reviewdomain "iwut-app-center/internal/review/domain"
@@ -207,6 +208,65 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestApplicationPublicationRepositoryIntegration_BR_PUB_003_008_009_OAuthRegistrationRequirements(t *testing.T) {
+	client := integrationClient(t)
+	db := migratedIntegrationDatabase(t, client)
+	seed := createApprovedPublicationVersion(t, db, "publication-oauth-registration")
+	pkceURI := "https://app.example.edu/oauth/callback"
+	confidentialURI := "https://server.example.edu/oauth/callback"
+
+	setRedirects := func(pkce, confidential []string) {
+		t.Helper()
+		redirects := oauthRedirectConfigurationDocument{PKCERedirectURIs: pkce, ConfidentialRedirectURIs: confidential}
+		if _, err := db.Collection(applicationVersionOAuthConfigsCollectionName).UpdateOne(
+			t.Context(),
+			bson.D{{Key: "applicationVersionId", Value: seed.versionID.String()}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "oauthRedirects", Value: redirects}}}},
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Collection(applicationReviewsCollectionName).UpdateOne(
+			t.Context(),
+			bson.D{{Key: "reviewId", Value: seed.reviewID.String()}},
+			bson.D{{Key: "$set", Value: bson.D{{Key: "snapshot.oauthRedirects", Value: redirects}}}},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	repository := NewApplicationPublicationRepository(db)
+	setRedirects([]string{pkceURI}, []string{})
+	if candidate, err := repository.LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); candidate != nil || !errors.Is(err, publicationport.ErrOAuthClientRegistrationRequired) {
+		t.Fatalf("missing PUBLIC registration = (%v, %v)", candidate, err)
+	}
+	oauthRepository := NewOAuthClientRepository(db)
+	if _, err := oauthRepository.Register(t.Context(), seed.applicationID, oauthclientdomain.ChannelTest, oauthclientdomain.ClientTypePublicPKCE, nil, oauthclientdomain.ClientID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), nil, seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if candidate, err := repository.LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); err != nil || candidate == nil {
+		t.Fatalf("PUBLIC registration was not accepted = (%v, %v)", candidate, err)
+	}
+
+	setRedirects([]string{pkceURI}, []string{confidentialURI})
+	if candidate, err := repository.LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); candidate != nil || !errors.Is(err, publicationport.ErrOAuthClientRegistrationRequired) {
+		t.Fatalf("missing CONFIDENTIAL registration = (%v, %v)", candidate, err)
+	}
+	revision := int64(1)
+	digest := oauthclientdomain.NewSecretDigest([32]byte{1})
+	if _, err := oauthRepository.Register(t.Context(), seed.applicationID, oauthclientdomain.ChannelTest, oauthclientdomain.ClientTypeConfidentialSecret, &revision, oauthclientdomain.ClientID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), &digest, seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if candidate, err := repository.LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); err != nil || candidate == nil {
+		t.Fatalf("complete registration was not accepted = (%v, %v)", candidate, err)
+	}
+	if _, err := db.Collection(oauthClientCredentialsCollectionName).DeleteOne(t.Context(), bson.D{{Key: "clientId", Value: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}}); err != nil {
+		t.Fatal(err)
+	}
+	if candidate, err := repository.LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); candidate != nil || !errors.Is(err, publicationport.ErrOAuthClientRegistrationRequired) {
+		t.Fatalf("missing credential = (%v, %v)", candidate, err)
+	}
 }
 
 func TestApplicationPublicationEligibilityIntegration(t *testing.T) {

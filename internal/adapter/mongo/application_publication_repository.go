@@ -79,17 +79,40 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 	if review.Status != "APPROVED" {
 		return nil, publicationport.ErrApplicationVersionNotApproved
 	}
+	var oauthConfig applicationVersionOAuthConfigDocument
+	err = r.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(ctx, bson.D{{Key: "applicationVersionId", Value: versionID.String()}, {Key: "applicationId", Value: applicationID.String()}}).Decode(&oauthConfig)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationReviewStateInconsistent
+	}
+	if err != nil {
+		return nil, err
+	}
 	approved, err := applicationReviewFromDocument(review)
 	if err != nil || review.Decision == nil || review.Decision.Outcome != "APPROVED" || review.SourceVersionRevision > math.MaxInt64-2 || version.Revision != review.SourceVersionRevision+2 {
 		return nil, publicationport.ErrApplicationReviewStateInconsistent
 	}
-	_, _, snapshot, err := applicationVersionDocumentToDecisionVersion(version)
+	_, _, snapshot, err := applicationVersionDocumentToDecisionVersion(version, oauthConfig)
 	if err != nil || !snapshot.Equal(approved.Snapshot()) {
 		return nil, publicationport.ErrApplicationReviewStateInconsistent
 	}
-	publicationSnapshot, err := publicationdomain.NewApplicationVersionReviewSnapshot(review.Snapshot.VersionLabel, publicationdomain.LaunchURL(review.Snapshot.LaunchURL), review.Snapshot.RPCApiMinVersion, review.Snapshot.RPCApiMaxVersionExclusive, review.Snapshot.RequiredCapabilities, publicationScopeNames(review.Snapshot.RequiredScopes), publicationScopeNames(review.Snapshot.OptionalScopes))
+	publicationSnapshot, err := publicationdomain.NewApplicationVersionReviewSnapshot(
+		review.Snapshot.VersionLabel,
+		publicationdomain.LaunchURL(review.Snapshot.LaunchURL),
+		review.Snapshot.RPCApiMinVersion,
+		review.Snapshot.RPCApiMaxVersionExclusive,
+		review.Snapshot.RequiredCapabilities,
+		publicationScopeNames(review.Snapshot.RequiredScopes),
+		publicationScopeNames(review.Snapshot.OptionalScopes),
+		publicationdomain.OAuthRedirectConfiguration{
+			PKCE:         append([]string{}, review.Snapshot.OAuthRedirects.PKCERedirectURIs...),
+			Confidential: append([]string{}, review.Snapshot.OAuthRedirects.ConfidentialRedirectURIs...),
+		},
+	)
 	if err != nil {
 		return nil, publicationport.ErrApplicationReviewStateInconsistent
+	}
+	if err := r.ensureTestOAuthRegistration(ctx, applicationID, len(publicationSnapshot.PKCERedirectURIs()) > 0, len(publicationSnapshot.ConfidentialRedirectURIs()) > 0); err != nil {
+		return nil, err
 	}
 	var document applicationPublicationDocument
 	var publication *publicationdomain.ApplicationPublication
@@ -136,6 +159,43 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 		}
 	}
 	return candidate, nil
+}
+
+func (r *ApplicationPublicationRepository) ensureTestOAuthRegistration(ctx context.Context, applicationID shared.ApplicationID, requirePublic, requireConfidential bool) error {
+	if !requirePublic && !requireConfidential {
+		return nil
+	}
+	var registration applicationOAuthRegistrationDocument
+	err := r.database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(
+		ctx,
+		bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "channel", Value: "TEST"}},
+	).Decode(&registration)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return publicationport.ErrOAuthClientRegistrationRequired
+	}
+	if err != nil {
+		return err
+	}
+	if requirePublic && registration.PublicClient == nil {
+		return publicationport.ErrOAuthClientRegistrationRequired
+	}
+	if requireConfidential {
+		if registration.ConfidentialClient == nil {
+			return publicationport.ErrOAuthClientRegistrationRequired
+		}
+		err = r.database.Collection(oauthClientCredentialsCollectionName).FindOne(
+			ctx,
+			bson.D{{Key: "clientId", Value: registration.ConfidentialClient.ClientID}, {Key: "applicationId", Value: applicationID.String()}},
+			options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}}),
+		).Err()
+		if errors.Is(err, drivermongo.ErrNoDocuments) {
+			return publicationport.ErrOAuthClientRegistrationRequired
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func publicationFenceUpdate() bson.D {

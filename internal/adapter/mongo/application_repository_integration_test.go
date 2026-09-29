@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 14)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 15)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -352,7 +352,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 14)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 15)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
@@ -365,6 +365,9 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	assertIndexNames(t, database.Collection(versionReviewPoliciesCollectionName), []string{
 		"_id_", versionReviewPolicyVersionUniqueIndexName,
 	})
+	assertIndexNames(t, database.Collection(applicationVersionOAuthConfigsCollectionName), []string{
+		"_id_", applicationVersionOAuthConfigVersionUniqueIndex,
+	})
 	var policy versionReviewPolicyDocument
 	if err := database.Collection(versionReviewPoliciesCollectionName).FindOne(
 		t.Context(), bson.D{{Key: "version", Value: "app-version-review-v1"}},
@@ -376,9 +379,23 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 		RequiredChecks: []string{
 			"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed",
 		},
-		Status: "ACTIVE",
+		Status: "RETIRED",
 	}) {
 		t.Fatalf("seeded version review policy = %#v", policy)
+	}
+	if err := database.Collection(versionReviewPoliciesCollectionName).FindOne(
+		t.Context(), bson.D{{Key: "version", Value: "app-version-review-v2"}},
+	).Decode(&policy); err != nil {
+		t.Fatalf("read seeded version review policy v2: %v", err)
+	}
+	if !equalVersionReviewPolicyDocuments(policy, versionReviewPolicyDocument{
+		Version: "app-version-review-v2",
+		RequiredChecks: []string{
+			"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed",
+		},
+		Status: "ACTIVE",
+	}) {
+		t.Fatalf("seeded version review policy v2 = %#v", policy)
 	}
 }
 
@@ -415,6 +432,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		applicationProfileReviewMigrationID,
 		applicationProfileReviewDecisionMigrationID,
 		oauthClientManagementMigrationID,
+		versionOAuthRedirectMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -454,6 +472,8 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: applicationProfileRevisionMigrationID, apply: sequential.applyApplicationProfileRevisionMigration},
 		{id: applicationProfileReviewMigrationID, apply: sequential.applyApplicationProfileReviewMigration},
 		{id: applicationProfileReviewDecisionMigrationID, apply: sequential.applyApplicationProfileReviewDecisionMigration},
+		{id: oauthClientManagementMigrationID, apply: sequential.applyOAuthClientManagementMigration},
+		{id: versionOAuthRedirectMigrationID, apply: sequential.applyVersionOAuthRedirectMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)
@@ -474,6 +494,9 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		applicationProfileReviewsCollectionName,
 		profileReviewPoliciesCollectionName,
 		applicationProfilesCollectionName,
+		applicationOAuthRegistrationsCollectionName,
+		oauthClientCredentialsCollectionName,
+		applicationVersionOAuthConfigsCollectionName,
 	} {
 		freshValidator := collectionValidator(t, freshDatabase, collectionName)
 		sequentialValidator := collectionValidator(t, sequentialDatabase, collectionName)

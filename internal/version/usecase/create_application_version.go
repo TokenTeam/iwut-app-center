@@ -28,10 +28,13 @@ type CreateApplicationVersionCommand struct {
 	RequiredCapabilities      []string
 	RequiredScopes            []string
 	OptionalScopes            []string
+	PKCERedirectURIs          []string
+	ConfidentialRedirectURIs  []string
 }
 
 type CreateApplicationVersionHandler struct {
 	scopeCatalog port.ScopeCatalog
+	oauthPolicy  port.OAuthRedirectPolicy
 	idGenerator  port.ApplicationVersionIDGenerator
 	clock        port.Clock
 	repository   port.ApplicationVersionRepository
@@ -39,12 +42,14 @@ type CreateApplicationVersionHandler struct {
 
 func NewCreateApplicationVersionHandler(
 	scopeCatalog port.ScopeCatalog,
+	oauthPolicy port.OAuthRedirectPolicy,
 	idGenerator port.ApplicationVersionIDGenerator,
 	clock port.Clock,
 	repository port.ApplicationVersionRepository,
 ) *CreateApplicationVersionHandler {
 	return &CreateApplicationVersionHandler{
 		scopeCatalog: scopeCatalog,
+		oauthPolicy:  oauthPolicy,
 		idGenerator:  idGenerator,
 		clock:        clock,
 		repository:   repository,
@@ -87,8 +92,24 @@ func (handler *CreateApplicationVersionHandler) Handle(
 	if err != nil {
 		return nil, err
 	}
+	oauthRedirects, err := domain.NewOAuthRedirectConfiguration(
+		append([]string{}, command.PKCERedirectURIs...),
+		append([]string{}, command.ConfidentialRedirectURIs...),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if handler == nil || handler.oauthPolicy == nil {
+		return nil, domain.NewInternalError(nil)
+	}
+	if err := handler.oauthPolicy.EnsureCanonical(oauthRedirects.PKCERedirectURIs(), oauthRedirects.ConfidentialRedirectURIs()); err != nil {
+		if errors.Is(err, port.ErrInvalidOAuthRedirectConfiguration) {
+			return nil, domain.ErrInvalidOAuthRedirectConfiguration
+		}
+		return nil, domain.NewInternalError(err)
+	}
 
-	if handler == nil || handler.scopeCatalog == nil || handler.idGenerator == nil || handler.clock == nil || handler.repository == nil {
+	if handler.scopeCatalog == nil || handler.idGenerator == nil || handler.clock == nil || handler.repository == nil {
 		return nil, domain.NewInternalError(nil)
 	}
 
@@ -109,7 +130,7 @@ func (handler *CreateApplicationVersionHandler) Handle(
 		return nil, domain.NewInternalError(err)
 	}
 	createdAt := handler.clock.Now().UTC()
-	draft, err := domain.NewDraftApplicationVersion(
+	draft, err := domain.NewDraftApplicationVersionWithOAuth(
 		versionID,
 		applicationID,
 		versionLabel,
@@ -117,6 +138,7 @@ func (handler *CreateApplicationVersionHandler) Handle(
 		rpcAPIRange,
 		requiredCapabilities,
 		scopeRequest,
+		oauthRedirects,
 		identity.AuthID,
 		createdAt,
 	)

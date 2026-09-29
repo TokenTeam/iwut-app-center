@@ -40,6 +40,7 @@ type DecideApplicationVersionReviewHandler struct {
 	developerSuspensionChecker port.DeveloperSuspensionChecker
 	scopeCatalog               port.ScopeCatalog
 	launchPolicy               port.LaunchURLSubmissionPolicy
+	oauthPolicy                port.OAuthRedirectPolicy
 	clock                      port.Clock
 	repository                 port.ApplicationReviewDecisionRepository
 	systemPrincipalResolver    port.SystemPrincipalResolver
@@ -50,6 +51,7 @@ func NewDecideApplicationVersionReviewHandler(
 	developerSuspensionChecker port.DeveloperSuspensionChecker,
 	scopeCatalog port.ScopeCatalog,
 	launchPolicy port.LaunchURLSubmissionPolicy,
+	oauthPolicy port.OAuthRedirectPolicy,
 	clock port.Clock,
 	repository port.ApplicationReviewDecisionRepository,
 	systemPrincipalResolver port.SystemPrincipalResolver,
@@ -59,6 +61,7 @@ func NewDecideApplicationVersionReviewHandler(
 		developerSuspensionChecker: developerSuspensionChecker,
 		scopeCatalog:               scopeCatalog,
 		launchPolicy:               launchPolicy,
+		oauthPolicy:                oauthPolicy,
 		clock:                      clock,
 		repository:                 repository,
 		systemPrincipalResolver:    systemPrincipalResolver,
@@ -108,7 +111,7 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 		return nil, err
 	}
 	if handler == nil || handler.reviewPolicyProvider == nil || handler.developerSuspensionChecker == nil ||
-		handler.scopeCatalog == nil || handler.launchPolicy == nil || handler.clock == nil ||
+		handler.scopeCatalog == nil || handler.launchPolicy == nil || handler.oauthPolicy == nil || handler.clock == nil ||
 		handler.repository == nil || handler.systemPrincipalResolver == nil {
 		return nil, domain.NewInternalError(nil)
 	}
@@ -183,6 +186,13 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 		// The persisted actor is System, but the reviewer that initiated the
 		// command remains the subject of the final conflict-of-interest recheck.
 		return handler.decide(ctx, candidate, identity.AuthID, decision)
+	}
+	redirects := snapshot.OAuthRedirects()
+	if err := handler.oauthPolicy.Validate(redirects.PKCERedirectURIs(), redirects.ConfidentialRedirectURIs()); err != nil {
+		if errors.Is(err, port.ErrOAuthRedirectNotReviewable) {
+			return nil, domain.ErrInvalidOAuthRedirectConfiguration
+		}
+		return nil, domain.NewInternalError(err)
 	}
 
 	scopeCatalogRevision, err := handler.scopeCatalog.EnsureAllRequestable(ctx, candidate.AllScopes())

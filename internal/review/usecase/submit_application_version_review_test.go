@@ -83,6 +83,22 @@ type fakePolicy struct {
 	launchURL domain.LaunchURL
 }
 
+type fakeOAuthPolicy struct {
+	events       *[]string
+	err          error
+	calls        int
+	pkce         []string
+	confidential []string
+}
+
+func (fake *fakeOAuthPolicy) Validate(pkce, confidential []string) error {
+	fake.calls++
+	fake.pkce = append([]string{}, pkce...)
+	fake.confidential = append([]string{}, confidential...)
+	appendEvent(fake.events, "oauth")
+	return fake.err
+}
+
 func (fake *fakePolicy) Inspect(_ context.Context, launchURL domain.LaunchURL) (domain.PreflightPolicyVersion, error) {
 	fake.calls++
 	fake.launchURL = launchURL
@@ -125,13 +141,14 @@ func TestSubmitApplicationVersionReview_BR_REV_001_003_004_005_006_007_009_Succe
 	idGenerator := &fakeIDGenerator{events: &events, id: reviewID}
 	now := time.Date(2026, time.September, 20, 20, 0, 0, 99, time.FixedZone("CST", 8*60*60))
 	clock := &fakeClock{events: &events, now: now}
-	handler := NewSubmitApplicationVersionReviewHandler(catalog, policy, idGenerator, clock, repository)
+	oauthPolicy := &fakeOAuthPolicy{events: &events}
+	handler := NewSubmitApplicationVersionReviewHandler(catalog, policy, oauthPolicy, idGenerator, clock, repository)
 
 	result, err := handler.Handle(context.Background(), approvedIdentity(), applicationID, versionID, SubmitApplicationVersionReviewCommand{ExpectedRevision: 7})
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if want := []string{"candidate", "scopes", "preflight", "id", "clock", "submit"}; !reflect.DeepEqual(events, want) {
+	if want := []string{"candidate", "oauth", "scopes", "preflight", "id", "clock", "submit"}; !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
 	if repository.loadedApplicationID != applicationID || repository.loadedVersionID != versionID || repository.loadedAdminID != "auth-1" || repository.loadedRevision != 7 {
@@ -174,12 +191,13 @@ func TestSubmitApplicationVersionReview_BR_REV_001_003_RejectsIdentityAndRevisio
 			policy := &fakePolicy{version: "v1"}
 			idGenerator := &fakeIDGenerator{id: reviewID}
 			clock := &fakeClock{now: time.Now()}
-			handler := NewSubmitApplicationVersionReviewHandler(catalog, policy, idGenerator, clock, repository)
+			oauthPolicy := &fakeOAuthPolicy{}
+			handler := NewSubmitApplicationVersionReviewHandler(catalog, policy, oauthPolicy, idGenerator, clock, repository)
 			result, err := handler.Handle(context.Background(), test.identity, applicationID, versionID, SubmitApplicationVersionReviewCommand{ExpectedRevision: test.revision})
 			if result != nil || !errors.Is(err, test.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil %v", result, err, test.want)
 			}
-			if repository.loadCalls != 0 || catalog.calls != 0 || policy.calls != 0 || idGenerator.calls != 0 || clock.calls != 0 {
+			if repository.loadCalls != 0 || catalog.calls != 0 || policy.calls != 0 || oauthPolicy.calls != 0 || idGenerator.calls != 0 || clock.calls != 0 {
 				t.Fatal("dependency called after early rejection")
 			}
 		})
@@ -223,11 +241,13 @@ func TestSubmitApplicationVersionReview_BR_REV_006_007_ExternalFailuresDoNotSubm
 		name       string
 		catalogErr error
 		policyErr  error
+		oauthErr   error
 		want       error
 		category   domain.ErrorCategory
 	}{
 		{name: "scope no longer requestable", catalogErr: port.ErrScopeNotRequestable, want: domain.ErrInvalidApplicationScope, category: domain.ErrorCategoryValidation},
 		{name: "scope catalog unavailable", catalogErr: errors.Join(port.ErrScopeCatalogUnavailable, cause), want: domain.ErrScopeCatalogUnavailable, category: domain.ErrorCategoryDependencyUnavailable},
+		{name: "OAuth redirect not reviewable", oauthErr: port.ErrOAuthRedirectNotReviewable, want: domain.ErrInvalidOAuthRedirectConfiguration, category: domain.ErrorCategoryValidation},
 		{name: "URL not public HTTPS", policyErr: port.ErrLaunchURLNotReviewable, want: domain.ErrApplicationLaunchURLNotReviewable, category: domain.ErrorCategoryValidation},
 		{name: "DNS unavailable", policyErr: errors.Join(port.ErrLaunchURLInspectionUnavailable, cause), want: domain.ErrLaunchURLInspectionUnavailable, category: domain.ErrorCategoryDependencyUnavailable},
 	}
@@ -237,7 +257,7 @@ func TestSubmitApplicationVersionReview_BR_REV_006_007_ExternalFailuresDoNotSubm
 			repository := &fakeRepository{candidate: submissionCandidate(t)}
 			catalog := &fakeCatalog{revision: 5, err: test.catalogErr}
 			policy := &fakePolicy{version: "v1", err: test.policyErr}
-			handler := validHandler(repository, catalog, policy)
+			handler := NewSubmitApplicationVersionReviewHandler(catalog, policy, &fakeOAuthPolicy{err: test.oauthErr}, &fakeIDGenerator{id: reviewID}, &fakeClock{now: time.Now()}, repository)
 			result, err := handler.Handle(context.Background(), approvedIdentity(), applicationID, versionID, SubmitApplicationVersionReviewCommand{ExpectedRevision: 7})
 			if result != nil || !errors.Is(err, test.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil %v", result, err, test.want)
@@ -262,7 +282,7 @@ func appendEvent(events *[]string, value string) {
 	}
 }
 func validHandler(repository *fakeRepository, catalog *fakeCatalog, policy *fakePolicy) *SubmitApplicationVersionReviewHandler {
-	return NewSubmitApplicationVersionReviewHandler(catalog, policy, &fakeIDGenerator{id: reviewID}, &fakeClock{now: time.Now()}, repository)
+	return NewSubmitApplicationVersionReviewHandler(catalog, policy, &fakeOAuthPolicy{}, &fakeIDGenerator{id: reviewID}, &fakeClock{now: time.Now()}, repository)
 }
 func submissionCandidate(t *testing.T) *domain.SubmissionCandidate {
 	t.Helper()

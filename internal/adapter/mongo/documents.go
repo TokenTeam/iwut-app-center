@@ -57,14 +57,26 @@ type applicationVersionDocument struct {
 	UpdatedAt                 time.Time `bson:"updatedAt"`
 }
 
+type oauthRedirectConfigurationDocument struct {
+	PKCERedirectURIs         []string `bson:"pkceRedirectUris"`
+	ConfidentialRedirectURIs []string `bson:"confidentialRedirectUris"`
+}
+
+type applicationVersionOAuthConfigDocument struct {
+	ApplicationVersionID string                             `bson:"applicationVersionId"`
+	ApplicationID        string                             `bson:"applicationId"`
+	OAuthRedirects       oauthRedirectConfigurationDocument `bson:"oauthRedirects"`
+}
+
 type applicationVersionReviewSnapshotDocument struct {
-	VersionLabel              string   `bson:"versionLabel"`
-	LaunchURL                 string   `bson:"launchUrl"`
-	RPCApiMinVersion          int32    `bson:"rpcApiMinVersion"`
-	RPCApiMaxVersionExclusive int32    `bson:"rpcApiMaxVersionExclusive"`
-	RequiredCapabilities      []string `bson:"requiredCapabilities"`
-	RequiredScopes            []string `bson:"requiredScopes"`
-	OptionalScopes            []string `bson:"optionalScopes"`
+	VersionLabel              string                             `bson:"versionLabel"`
+	LaunchURL                 string                             `bson:"launchUrl"`
+	RPCApiMinVersion          int32                              `bson:"rpcApiMinVersion"`
+	RPCApiMaxVersionExclusive int32                              `bson:"rpcApiMaxVersionExclusive"`
+	RequiredCapabilities      []string                           `bson:"requiredCapabilities"`
+	RequiredScopes            []string                           `bson:"requiredScopes"`
+	OptionalScopes            []string                           `bson:"optionalScopes"`
+	OAuthRedirects            oauthRedirectConfigurationDocument `bson:"oauthRedirects"`
 }
 
 type applicationReviewDocument struct {
@@ -184,7 +196,7 @@ func applicationVersionEntityToDocument(version *versiondomain.ApplicationVersio
 // applicationVersionFromDocument re-enters the Domain through its
 // constructors. Stored invalidity is adapter corruption and never caller
 // validation.
-func applicationVersionFromDocument(document applicationVersionDocument) (*versiondomain.ApplicationVersion, error) {
+func applicationVersionFromDocument(document applicationVersionDocument, oauthDocuments ...applicationVersionOAuthConfigDocument) (*versiondomain.ApplicationVersion, error) {
 	versionID := versiondomain.ApplicationVersionID(document.VersionID)
 	if !versionID.IsValid() {
 		return nil, corruptApplicationVersion("invalid version ID")
@@ -222,6 +234,24 @@ func applicationVersionFromDocument(document applicationVersionDocument) (*versi
 		!slices.Equal(scopeNamesToStrings(scopeRequest.Optional()), document.OptionalScopes) {
 		return nil, corruptApplicationVersion("invalid scope request")
 	}
+	oauthRedirects := versiondomain.EmptyOAuthRedirectConfiguration()
+	if len(oauthDocuments) == 1 {
+		oauthDocument := oauthDocuments[0]
+		if oauthDocument.ApplicationVersionID != document.VersionID || oauthDocument.ApplicationID != document.ApplicationID ||
+			oauthDocument.OAuthRedirects.PKCERedirectURIs == nil || oauthDocument.OAuthRedirects.ConfidentialRedirectURIs == nil {
+			return nil, corruptApplicationVersion("invalid OAuth redirect ownership")
+		}
+		oauthRedirects, err = versiondomain.NewOAuthRedirectConfiguration(
+			oauthDocument.OAuthRedirects.PKCERedirectURIs,
+			oauthDocument.OAuthRedirects.ConfidentialRedirectURIs,
+		)
+		if err != nil || !slices.Equal(oauthRedirects.PKCERedirectURIs(), oauthDocument.OAuthRedirects.PKCERedirectURIs) ||
+			!slices.Equal(oauthRedirects.ConfidentialRedirectURIs(), oauthDocument.OAuthRedirects.ConfidentialRedirectURIs) {
+			return nil, corruptApplicationVersion("invalid OAuth redirect configuration")
+		}
+	} else if len(oauthDocuments) > 1 {
+		return nil, corruptApplicationVersion("multiple OAuth redirect configurations")
+	}
 	createdBy := shared.AuthID(document.CreatedBy)
 	if !createdBy.IsValid() {
 		return nil, corruptApplicationVersion("invalid created-by identity")
@@ -245,6 +275,7 @@ func applicationVersionFromDocument(document applicationVersionDocument) (*versi
 		document.Revision,
 		updatedBy,
 		document.UpdatedAt,
+		oauthRedirects,
 	)
 	if err != nil {
 		return nil, corruptApplicationVersion("invalid application version")
@@ -252,11 +283,26 @@ func applicationVersionFromDocument(document applicationVersionDocument) (*versi
 	return version, nil
 }
 
+func applicationVersionOAuthConfigToDocument(version *versiondomain.ApplicationVersion) (applicationVersionOAuthConfigDocument, error) {
+	if version == nil {
+		return applicationVersionOAuthConfigDocument{}, fmt.Errorf("map application version OAuth config: version is nil")
+	}
+	redirects := version.OAuthRedirects()
+	return applicationVersionOAuthConfigDocument{
+		ApplicationVersionID: version.ID().String(),
+		ApplicationID:        version.ApplicationID().String(),
+		OAuthRedirects: oauthRedirectConfigurationDocument{
+			PKCERedirectURIs:         redirects.PKCERedirectURIs(),
+			ConfidentialRedirectURIs: redirects.ConfidentialRedirectURIs(),
+		},
+	}, nil
+}
+
 func corruptApplicationVersion(reason string) error {
 	return fmt.Errorf("%w: %s", errCorruptApplicationVersionDocument, reason)
 }
 
-func applicationVersionDocumentToSubmissionCandidate(document applicationVersionDocument) (*reviewdomain.SubmissionCandidate, error) {
+func applicationVersionDocumentToSubmissionCandidate(document applicationVersionDocument, oauthDocuments ...applicationVersionOAuthConfigDocument) (*reviewdomain.SubmissionCandidate, error) {
 	versionID := versiondomain.ApplicationVersionID(document.VersionID)
 	if !versionID.IsValid() {
 		return nil, corruptApplicationVersion("invalid version ID")
@@ -286,6 +332,10 @@ func applicationVersionDocumentToSubmissionCandidate(document applicationVersion
 	if document.ReviewStatus != string(versiondomain.ReviewStatusDraft) || document.Revision < 1 {
 		return nil, corruptApplicationVersion("invalid submission lifecycle")
 	}
+	oauthRedirects, err := reviewOAuthRedirectsFromVersionDocument(document, oauthDocuments...)
+	if err != nil {
+		return nil, err
+	}
 
 	snapshot, err := reviewdomain.NewApplicationVersionReviewSnapshot(
 		document.VersionLabel,
@@ -295,6 +345,7 @@ func applicationVersionDocumentToSubmissionCandidate(document applicationVersion
 		append([]string{}, document.RequiredCapabilities...),
 		reviewScopeNames(document.RequiredScopes),
 		reviewScopeNames(document.OptionalScopes),
+		oauthRedirects,
 	)
 	if err != nil {
 		return nil, corruptApplicationVersion("invalid review snapshot")
@@ -316,6 +367,7 @@ func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applic
 		return applicationReviewDocument{}, fmt.Errorf("map application review document: invalid review")
 	}
 	snapshot := review.Snapshot()
+	oauthRedirects := snapshot.OAuthRedirects()
 	return applicationReviewDocument{
 		ReviewID:              review.ReviewID().String(),
 		ApplicationID:         review.ApplicationID().String(),
@@ -333,6 +385,10 @@ func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applic
 			RequiredCapabilities:      snapshot.RequiredCapabilities(),
 			RequiredScopes:            reviewScopeNamesToStrings(snapshot.RequiredScopes()),
 			OptionalScopes:            reviewScopeNamesToStrings(snapshot.OptionalScopes()),
+			OAuthRedirects: oauthRedirectConfigurationDocument{
+				PKCERedirectURIs:         oauthRedirects.PKCERedirectURIs(),
+				ConfidentialRedirectURIs: oauthRedirects.ConfidentialRedirectURIs(),
+			},
 		},
 		ScopeCatalogRevision:   review.ScopeCatalogRevision().Int64(),
 		PreflightPolicyVersion: review.PreflightPolicyVersion().String(),
@@ -422,6 +478,15 @@ func applicationReviewSnapshotFromDocument(document applicationVersionReviewSnap
 	if document.RequiredCapabilities == nil || document.RequiredScopes == nil || document.OptionalScopes == nil {
 		return nil, corruptApplicationReview("null snapshot set field")
 	}
+	pkce := document.OAuthRedirects.PKCERedirectURIs
+	confidential := document.OAuthRedirects.ConfidentialRedirectURIs
+	if pkce == nil && confidential == nil {
+		pkce, confidential = []string{}, []string{}
+	}
+	oauthRedirects, err := reviewdomain.NewOAuthRedirectConfiguration(pkce, confidential)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid snapshot OAuth redirects")
+	}
 	snapshot, err := reviewdomain.NewApplicationVersionReviewSnapshot(
 		document.VersionLabel,
 		reviewdomain.LaunchURL(document.LaunchURL),
@@ -430,6 +495,7 @@ func applicationReviewSnapshotFromDocument(document applicationVersionReviewSnap
 		append([]string{}, document.RequiredCapabilities...),
 		reviewScopeNames(document.RequiredScopes),
 		reviewScopeNames(document.OptionalScopes),
+		oauthRedirects,
 	)
 	if err != nil {
 		return nil, corruptApplicationReview("invalid review snapshot")
@@ -534,6 +600,7 @@ func applicationReviewDecisionFromDocument(
 // Review snapshot.
 func applicationVersionDocumentToDecisionVersion(
 	document applicationVersionDocument,
+	oauthDocuments ...applicationVersionOAuthConfigDocument,
 ) (int64, shared.AuthID, reviewdomain.ApplicationVersionReviewSnapshot, error) {
 	if _, err := versiondomain.NewVersionLabel(document.VersionLabel); err != nil {
 		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid version label")
@@ -561,6 +628,10 @@ func applicationVersionDocumentToDecisionVersion(
 	if !createdBy.IsValid() || document.Revision < 1 {
 		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid creation audit")
 	}
+	oauthRedirects, err := reviewOAuthRedirectsFromVersionDocument(document, oauthDocuments...)
+	if err != nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, err
+	}
 	snapshot, err := reviewdomain.NewApplicationVersionReviewSnapshot(
 		document.VersionLabel,
 		reviewdomain.LaunchURL(document.LaunchURL),
@@ -569,11 +640,32 @@ func applicationVersionDocumentToDecisionVersion(
 		append([]string{}, document.RequiredCapabilities...),
 		reviewScopeNames(document.RequiredScopes),
 		reviewScopeNames(document.OptionalScopes),
+		oauthRedirects,
 	)
 	if err != nil {
 		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid review snapshot")
 	}
 	return document.Revision, createdBy, *snapshot, nil
+}
+
+func reviewOAuthRedirectsFromVersionDocument(document applicationVersionDocument, oauthDocuments ...applicationVersionOAuthConfigDocument) (reviewdomain.OAuthRedirectConfiguration, error) {
+	pkce, confidential := []string{}, []string{}
+	if len(oauthDocuments) == 1 {
+		oauthDocument := oauthDocuments[0]
+		if oauthDocument.ApplicationVersionID != document.VersionID || oauthDocument.ApplicationID != document.ApplicationID ||
+			oauthDocument.OAuthRedirects.PKCERedirectURIs == nil || oauthDocument.OAuthRedirects.ConfidentialRedirectURIs == nil {
+			return reviewdomain.OAuthRedirectConfiguration{}, corruptApplicationVersion("invalid OAuth redirect ownership")
+		}
+		pkce = oauthDocument.OAuthRedirects.PKCERedirectURIs
+		confidential = oauthDocument.OAuthRedirects.ConfidentialRedirectURIs
+	} else if len(oauthDocuments) > 1 {
+		return reviewdomain.OAuthRedirectConfiguration{}, corruptApplicationVersion("multiple OAuth redirect configurations")
+	}
+	configuration, err := reviewdomain.NewOAuthRedirectConfiguration(pkce, confidential)
+	if err != nil {
+		return reviewdomain.OAuthRedirectConfiguration{}, corruptApplicationVersion("invalid OAuth redirect configuration")
+	}
+	return configuration, nil
 }
 
 func corruptApplicationReview(reason string) error {

@@ -52,7 +52,7 @@ func (service *ApplicationPublicationService) PlaceApprovedVersionInTestSlot(ctx
 	}
 	result, err := service.handler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), command)
 	if err != nil {
-		if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable)) {
+		if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired)) {
 			var domainError *publicationdomain.Error
 			errors.As(err, &domainError)
 			spec := publicationDomainErrorSpecs[domainError.Code()]

@@ -25,6 +25,7 @@ const (
 	ErrorCodeApplicationVersionNotDraft            ErrorCode = "ApplicationVersionNotDraft"
 	ErrorCodeApplicationVersionRevisionConflict    ErrorCode = "ApplicationVersionRevisionConflict"
 	ErrorCodeApplicationLaunchURLNotReviewable     ErrorCode = "ApplicationLaunchUrlNotReviewable"
+	ErrorCodeInvalidOAuthRedirectConfiguration     ErrorCode = "InvalidOAuthRedirectConfiguration"
 	ErrorCodeLaunchURLInspectionUnavailable        ErrorCode = "LaunchUrlInspectionUnavailable"
 	ErrorCodeInvalidApplicationScope               ErrorCode = "InvalidApplicationScope"
 	ErrorCodeScopeCatalogUnavailable               ErrorCode = "ScopeCatalogUnavailable"
@@ -97,6 +98,7 @@ var (
 	ErrApplicationVersionNotDraft            = newError(ErrorCategoryConflict, ErrorCodeApplicationVersionNotDraft, "application version is not a draft", nil)
 	ErrApplicationVersionRevisionConflict    = newError(ErrorCategoryConflict, ErrorCodeApplicationVersionRevisionConflict, "application version revision conflicts", nil)
 	ErrApplicationLaunchURLNotReviewable     = newError(ErrorCategoryValidation, ErrorCodeApplicationLaunchURLNotReviewable, "application launch URL is not reviewable", nil)
+	ErrInvalidOAuthRedirectConfiguration     = newError(ErrorCategoryValidation, ErrorCodeInvalidOAuthRedirectConfiguration, "OAuth redirect configuration is invalid", nil)
 	ErrLaunchURLInspectionUnavailable        = newError(ErrorCategoryDependencyUnavailable, ErrorCodeLaunchURLInspectionUnavailable, "launch URL inspection is unavailable", nil)
 	ErrInvalidApplicationScope               = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationScope, "application scope request is invalid", nil)
 	ErrScopeCatalogUnavailable               = newError(ErrorCategoryDependencyUnavailable, ErrorCodeScopeCatalogUnavailable, "scope catalog is unavailable", nil)

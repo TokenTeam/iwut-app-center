@@ -100,6 +100,7 @@ func TestApplicationReviewService_UCAPP005_ErrorMappings(t *testing.T) {
 		{name: "already decided", err: reviewdomain.ErrApplicationReviewAlreadyDecided, code: codes.Aborted, reason: ReasonApplicationReviewAlreadyDecided},
 		{name: "policy changed", err: reviewdomain.ErrApplicationReviewPolicyChanged, code: codes.Aborted, reason: ReasonApplicationReviewPolicyChanged},
 		{name: "developer status unavailable", err: reviewdomain.ErrDeveloperStatusUnavailable, code: codes.Unavailable, reason: ReasonDeveloperStatusUnavailable},
+		{name: "invalid OAuth redirects", err: reviewdomain.ErrInvalidOAuthRedirectConfiguration, code: codes.InvalidArgument, reason: ReasonInvalidOAuthRedirectConfiguration},
 	}
 	ctx := withTrustedIdentity(context.Background(), shared.TrustedIdentity{AuthID: "auth-reviewer", Permissions: []string{reviewusecase.PermissionApplicationVersionReview}})
 	for _, test := range tests {

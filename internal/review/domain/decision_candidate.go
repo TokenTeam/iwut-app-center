@@ -59,6 +59,7 @@ func (candidate *ApplicationReviewDecisionCandidate) VersionSnapshot() Applicati
 	copy.requiredCapabilities = candidate.versionSnapshot.RequiredCapabilities()
 	copy.requiredScopes = candidate.versionSnapshot.RequiredScopes()
 	copy.optionalScopes = candidate.versionSnapshot.OptionalScopes()
+	copy.oauthRedirects = candidate.versionSnapshot.OAuthRedirects()
 	return copy
 }
 func (candidate *ApplicationReviewDecisionCandidate) CurrentAdminID() shared.AuthID {

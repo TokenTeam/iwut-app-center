@@ -81,16 +81,17 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		cleanup()
 		return nil, nil, err
 	}
+	oAuthRedirectPolicy := preflight.NewOAuthRedirectPolicy()
 	applicationVersionUUIDv7Generator := generator.NewApplicationVersionUUIDv7Generator()
 	applicationVersionRepository := mongo.NewApplicationVersionRepository(database)
-	createApplicationVersionHandler := usecase2.NewCreateApplicationVersionHandler(scopeCatalogCache, applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
-	updateDraftApplicationVersionHandler := usecase2.NewUpdateDraftApplicationVersionHandler(scopeCatalogCache, systemClock, applicationVersionRepository)
+	createApplicationVersionHandler := usecase2.NewCreateApplicationVersionHandler(scopeCatalogCache, oAuthRedirectPolicy, applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
+	updateDraftApplicationVersionHandler := usecase2.NewUpdateDraftApplicationVersionHandler(scopeCatalogCache, oAuthRedirectPolicy, systemClock, applicationVersionRepository)
 	applicationVersionService := transport.NewApplicationVersionService(createApplicationVersionHandler, updateDraftApplicationVersionHandler)
 	reviewScopeCatalog := auth.NewReviewScopeCatalog(scopeCatalogCache)
 	launchURLSubmissionPolicy := preflight.NewLaunchURLSubmissionPolicy(resolver)
 	applicationReviewUUIDv7Generator := generator.NewApplicationReviewUUIDv7Generator()
 	applicationReviewRepository := mongo.NewApplicationReviewRepository(database)
-	submitApplicationVersionReviewHandler := usecase3.NewSubmitApplicationVersionReviewHandler(reviewScopeCatalog, launchURLSubmissionPolicy, applicationReviewUUIDv7Generator, systemClock, applicationReviewRepository)
+	submitApplicationVersionReviewHandler := usecase3.NewSubmitApplicationVersionReviewHandler(reviewScopeCatalog, launchURLSubmissionPolicy, oAuthRedirectPolicy, applicationReviewUUIDv7Generator, systemClock, applicationReviewRepository)
 	applicationReviewRestorationRepository := mongo.NewApplicationReviewRestorationRepository(database)
 	restoreRejectedApplicationVersionHandler := usecase3.NewRestoreRejectedApplicationVersionHandler(systemClock, applicationReviewRestorationRepository)
 	versionReviewPolicyRepository := mongo.NewVersionReviewPolicyRepository(database)
@@ -107,7 +108,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		cleanup()
 		return nil, nil, err
 	}
-	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, systemClock, applicationReviewDecisionRepository, grpcSystemPrincipalResolver)
+	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, oAuthRedirectPolicy, systemClock, applicationReviewDecisionRepository, grpcSystemPrincipalResolver)
 	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler, restoreRejectedApplicationVersionHandler, decideApplicationVersionReviewHandler)
 	publicationScopeCatalog := auth.NewPublicationScopeCatalog(scopeCatalogCache)
 	publicationLaunchURLSubmissionPolicy := preflight.NewPublicationLaunchURLSubmissionPolicy(launchURLSubmissionPolicy)

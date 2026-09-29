@@ -239,7 +239,10 @@ func TestDecideApplicationVersionReview_BR_REV_014_018_ApproveRevalidatesAndPers
 	policyProvider := reviewPolicyProviderWithEvents(t, &events, "review.v1", domain.ReviewPolicyStatusActive, "content-reviewed")
 	now := time.Date(2026, time.September, 21, 9, 30, 0, 99, time.FixedZone("CST", 8*60*60))
 	clock := &fakeClock{events: &events, now: now}
-	handler := newDecisionHandler(repository, policyProvider, suspension, catalog, launchPolicy, clock)
+	handler := NewDecideApplicationVersionReviewHandler(
+		policyProvider, suspension, catalog, launchPolicy, &fakeOAuthPolicy{events: &events},
+		clock, repository, &fakeSystemPrincipalResolver{authID: "auth-system"},
+	)
 
 	result, err := handler.Handle(context.Background(), reviewerIdentity(), applicationID, versionID, reviewID, DecideApplicationVersionReviewCommand{
 		Outcome: "APPROVE", ExpectedPolicyVersion: "review.v1", ConfirmedCheckIDs: []string{"content-reviewed"},
@@ -247,7 +250,7 @@ func TestDecideApplicationVersionReview_BR_REV_014_018_ApproveRevalidatesAndPers
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
-	if want := []string{"candidate", "policy", "suspension", "scopes", "preflight", "clock", "decide"}; !reflect.DeepEqual(events, want) {
+	if want := []string{"candidate", "policy", "suspension", "oauth", "scopes", "preflight", "clock", "decide"}; !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
 	if policyProvider.expectedVersion != "review.v1" || !policyProvider.snapshot.Equal(candidate.Review().Snapshot()) {
@@ -340,6 +343,7 @@ func TestDecideApplicationVersionReview_BR_REV_018_SystemPrincipalUnavailableKee
 		&fakeSuspensionChecker{suspended: true},
 		&fakeCatalog{revision: 1},
 		&fakePolicy{version: "public-https.v1"},
+		&fakeOAuthPolicy{},
 		&fakeClock{now: time.Now()},
 		repository,
 		resolver,
@@ -391,11 +395,13 @@ func TestDecideApplicationVersionReview_BR_REV_018_ExternalFailuresDoNotDecide(t
 		name       string
 		catalogErr error
 		policyErr  error
+		oauthErr   error
 		want       error
 		category   domain.ErrorCategory
 	}{
 		{name: "scope no longer requestable", catalogErr: port.ErrScopeNotRequestable, want: domain.ErrInvalidApplicationScope, category: domain.ErrorCategoryValidation},
 		{name: "scope catalog unavailable", catalogErr: errors.Join(port.ErrScopeCatalogUnavailable, cause), want: domain.ErrScopeCatalogUnavailable, category: domain.ErrorCategoryDependencyUnavailable},
+		{name: "OAuth redirect not reviewable", oauthErr: port.ErrOAuthRedirectNotReviewable, want: domain.ErrInvalidOAuthRedirectConfiguration, category: domain.ErrorCategoryValidation},
 		{name: "URL not reviewable", policyErr: port.ErrLaunchURLNotReviewable, want: domain.ErrApplicationLaunchURLNotReviewable, category: domain.ErrorCategoryValidation},
 		{name: "URL inspection unavailable", policyErr: errors.Join(port.ErrLaunchURLInspectionUnavailable, cause), want: domain.ErrLaunchURLInspectionUnavailable, category: domain.ErrorCategoryDependencyUnavailable},
 	}
@@ -405,7 +411,11 @@ func TestDecideApplicationVersionReview_BR_REV_018_ExternalFailuresDoNotDecide(t
 			repository := &fakeDecisionRepository{candidate: decisionCandidate(t)}
 			catalog := &fakeCatalog{revision: 5, err: test.catalogErr}
 			launchPolicy := &fakePolicy{version: "public-https.v1", err: test.policyErr}
-			handler := newDecisionHandler(repository, reviewPolicy(t, "review.v1", domain.ReviewPolicyStatusActive, "content-reviewed"), &fakeSuspensionChecker{}, catalog, launchPolicy, &fakeClock{now: time.Now()})
+			handler := NewDecideApplicationVersionReviewHandler(
+				reviewPolicy(t, "review.v1", domain.ReviewPolicyStatusActive, "content-reviewed"),
+				&fakeSuspensionChecker{}, catalog, launchPolicy, &fakeOAuthPolicy{err: test.oauthErr},
+				&fakeClock{now: time.Now()}, repository, &fakeSystemPrincipalResolver{authID: "auth-system"},
+			)
 			result, err := handler.Handle(context.Background(), reviewerIdentity(), applicationID, versionID, reviewID, approveCommand())
 			if result != nil || !errors.Is(err, test.want) {
 				t.Fatalf("Handle() = (%v, %v), want nil %v", result, err, test.want)
@@ -493,7 +503,7 @@ func newDecisionHandler(
 	launchPolicy port.LaunchURLSubmissionPolicy,
 	clock port.Clock,
 ) *DecideApplicationVersionReviewHandler {
-	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, clock, repository, &fakeSystemPrincipalResolver{authID: "auth-system"})
+	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, &fakeOAuthPolicy{}, clock, repository, &fakeSystemPrincipalResolver{authID: "auth-system"})
 }
 
 func newDecisionHandlerWithSystemID(
@@ -505,7 +515,7 @@ func newDecisionHandlerWithSystemID(
 	clock port.Clock,
 	systemAuthID shared.AuthID,
 ) *DecideApplicationVersionReviewHandler {
-	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, clock, repository, &fakeSystemPrincipalResolver{authID: systemAuthID})
+	return NewDecideApplicationVersionReviewHandler(policyProvider, suspension, catalog, launchPolicy, &fakeOAuthPolicy{}, clock, repository, &fakeSystemPrincipalResolver{authID: systemAuthID})
 }
 
 func decisionCandidate(t *testing.T) *domain.ApplicationReviewDecisionCandidate {

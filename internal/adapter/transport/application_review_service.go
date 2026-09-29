@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
+	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	reviewdomain "iwut-app-center/internal/review/domain"
 	reviewusecase "iwut-app-center/internal/review/usecase"
 	"iwut-app-center/internal/shared"
@@ -266,6 +267,7 @@ func applicationReviewResource(review *reviewdomain.ApplicationReview) *applicat
 	for index, scope := range optionalScopeValues {
 		optionalScopes[index] = string(scope)
 	}
+	oauthRedirects := snapshot.OAuthRedirects()
 	resource := &applicationreviewv1.ApplicationReviewResource{
 		ReviewId:              review.ReviewID().String(),
 		ApplicationId:         review.ApplicationID().String(),
@@ -281,6 +283,10 @@ func applicationReviewResource(review *reviewdomain.ApplicationReview) *applicat
 			RequiredCapabilities:      requiredCapabilities,
 			RequiredScopes:            requiredScopes,
 			OptionalScopes:            optionalScopes,
+			OauthRedirects: &applicationversionv1.OAuthRedirectConfiguration{
+				PkceRedirectUris:         oauthRedirects.PKCERedirectURIs(),
+				ConfidentialRedirectUris: oauthRedirects.ConfidentialRedirectURIs(),
+			},
 		},
 		ScopeCatalogRevision:   review.ScopeCatalogRevision().Int64(),
 		PreflightPolicyVersion: review.PreflightPolicyVersion().String(),

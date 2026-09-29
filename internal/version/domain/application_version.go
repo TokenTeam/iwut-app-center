@@ -47,6 +47,7 @@ type DraftApplicationVersion struct {
 	rpcAPIRange          RPCApiRange
 	requiredCapabilities CapabilitySet
 	scopeRequest         ScopeRequest
+	oauthRedirects       OAuthRedirectConfiguration
 	createdBy            shared.AuthID
 	createdAt            time.Time
 }
@@ -62,9 +63,24 @@ func NewDraftApplicationVersion(
 	createdBy shared.AuthID,
 	createdAt time.Time,
 ) (*DraftApplicationVersion, error) {
+	return NewDraftApplicationVersionWithOAuth(id, applicationID, versionLabel, launchURL, rpcAPIRange, requiredCapabilities, scopeRequest, EmptyOAuthRedirectConfiguration(), createdBy, createdAt)
+}
+
+func NewDraftApplicationVersionWithOAuth(
+	id ApplicationVersionID,
+	applicationID shared.ApplicationID,
+	versionLabel VersionLabel,
+	launchURL LaunchURL,
+	rpcAPIRange RPCApiRange,
+	requiredCapabilities CapabilitySet,
+	scopeRequest ScopeRequest,
+	oauthRedirects OAuthRedirectConfiguration,
+	createdBy shared.AuthID,
+	createdAt time.Time,
+) (*DraftApplicationVersion, error) {
 	if !id.IsValid() || !applicationID.IsValid() || !versionLabel.valid() || !launchURL.valid() ||
 		!rpcAPIRange.valid() || !requiredCapabilities.valid() || !scopeRequest.valid() ||
-		!createdBy.IsValid() || createdAt.IsZero() {
+		!oauthRedirects.valid() || !createdBy.IsValid() || createdAt.IsZero() {
 		return nil, NewInternalError(nil)
 	}
 	return &DraftApplicationVersion{
@@ -75,6 +91,7 @@ func NewDraftApplicationVersion(
 		rpcAPIRange:          rpcAPIRange,
 		requiredCapabilities: requiredCapabilities,
 		scopeRequest:         scopeRequest,
+		oauthRedirects:       oauthRedirects,
 		createdBy:            createdBy,
 		createdAt:            createdAt.UTC(),
 	}, nil
@@ -96,6 +113,9 @@ func (draft *DraftApplicationVersion) RequiredScopes() []ScopeName {
 func (draft *DraftApplicationVersion) OptionalScopes() []ScopeName {
 	return draft.scopeRequest.Optional()
 }
+func (draft *DraftApplicationVersion) OAuthRedirects() OAuthRedirectConfiguration {
+	return draft.oauthRedirects
+}
 func (draft *DraftApplicationVersion) CreatedBy() shared.AuthID   { return draft.createdBy }
 func (draft *DraftApplicationVersion) CreatedAt() time.Time       { return draft.createdAt }
 func (draft *DraftApplicationVersion) ReviewStatus() ReviewStatus { return ReviewStatusDraft }
@@ -109,6 +129,7 @@ type DraftApplicationVersionReplacement struct {
 	rpcAPIRange          RPCApiRange
 	requiredCapabilities CapabilitySet
 	scopeRequest         ScopeRequest
+	oauthRedirects       OAuthRedirectConfiguration
 }
 
 func NewDraftApplicationVersionReplacement(
@@ -118,8 +139,19 @@ func NewDraftApplicationVersionReplacement(
 	requiredCapabilities CapabilitySet,
 	scopeRequest ScopeRequest,
 ) (DraftApplicationVersionReplacement, error) {
+	return NewDraftApplicationVersionReplacementWithOAuth(versionLabel, launchURL, rpcAPIRange, requiredCapabilities, scopeRequest, EmptyOAuthRedirectConfiguration())
+}
+
+func NewDraftApplicationVersionReplacementWithOAuth(
+	versionLabel VersionLabel,
+	launchURL LaunchURL,
+	rpcAPIRange RPCApiRange,
+	requiredCapabilities CapabilitySet,
+	scopeRequest ScopeRequest,
+	oauthRedirects OAuthRedirectConfiguration,
+) (DraftApplicationVersionReplacement, error) {
 	if !versionLabel.valid() || !launchURL.valid() || !rpcAPIRange.valid() ||
-		!requiredCapabilities.valid() || !scopeRequest.valid() {
+		!requiredCapabilities.valid() || !scopeRequest.valid() || !oauthRedirects.valid() {
 		return DraftApplicationVersionReplacement{}, NewInternalError(nil)
 	}
 	return DraftApplicationVersionReplacement{
@@ -128,6 +160,7 @@ func NewDraftApplicationVersionReplacement(
 		rpcAPIRange:          rpcAPIRange,
 		requiredCapabilities: requiredCapabilities,
 		scopeRequest:         scopeRequest,
+		oauthRedirects:       oauthRedirects,
 	}, nil
 }
 
@@ -149,6 +182,9 @@ func (replacement DraftApplicationVersionReplacement) RequiredScopes() []ScopeNa
 func (replacement DraftApplicationVersionReplacement) OptionalScopes() []ScopeName {
 	return replacement.scopeRequest.Optional()
 }
+func (replacement DraftApplicationVersionReplacement) OAuthRedirects() OAuthRedirectConfiguration {
+	return replacement.oauthRedirects
+}
 
 type ApplicationVersion struct {
 	id                   ApplicationVersionID
@@ -159,6 +195,7 @@ type ApplicationVersion struct {
 	rpcAPIRange          RPCApiRange
 	requiredCapabilities CapabilitySet
 	scopeRequest         ScopeRequest
+	oauthRedirects       OAuthRedirectConfiguration
 	reviewStatus         ReviewStatus
 	createdBy            shared.AuthID
 	createdAt            time.Time
@@ -174,7 +211,7 @@ func NewApplicationVersion(draft *DraftApplicationVersion, sequence VersionSeque
 	return RestoreApplicationVersion(
 		draft.ID(), draft.ApplicationID(), sequence, draft.VersionLabel(), draft.LaunchURL(), draft.RPCApiRange(),
 		draft.requiredCapabilities, draft.scopeRequest, ReviewStatusDraft, draft.CreatedBy(), draft.CreatedAt(),
-		1, draft.UpdatedBy(), draft.UpdatedAt(),
+		1, draft.UpdatedBy(), draft.UpdatedAt(), draft.OAuthRedirects(),
 	)
 }
 
@@ -195,16 +232,24 @@ func RestoreApplicationVersion(
 	revision int64,
 	updatedBy shared.AuthID,
 	updatedAt time.Time,
+	oauthRedirects ...OAuthRedirectConfiguration,
 ) (*ApplicationVersion, error) {
+	redirects := EmptyOAuthRedirectConfiguration()
+	if len(oauthRedirects) == 1 {
+		redirects = oauthRedirects[0]
+	} else if len(oauthRedirects) > 1 {
+		return nil, NewInternalError(nil)
+	}
 	if !id.IsValid() || !applicationID.IsValid() || sequence < 1 || !versionLabel.valid() || !launchURL.valid() ||
 		!rpcAPIRange.valid() || !requiredCapabilities.valid() || !scopeRequest.valid() || !reviewStatus.valid() ||
-		!createdBy.IsValid() || createdAt.IsZero() || revision < 1 || !updatedBy.IsValid() || updatedAt.IsZero() {
+		!redirects.valid() || !createdBy.IsValid() || createdAt.IsZero() || revision < 1 || !updatedBy.IsValid() || updatedAt.IsZero() {
 		return nil, NewInternalError(nil)
 	}
 	return &ApplicationVersion{
 		id: id, applicationID: applicationID, sequence: sequence, versionLabel: versionLabel, launchURL: launchURL,
 		rpcAPIRange: rpcAPIRange, requiredCapabilities: requiredCapabilities, scopeRequest: scopeRequest,
-		reviewStatus: reviewStatus, createdBy: createdBy, createdAt: createdAt.UTC(), revision: revision,
+		oauthRedirects: redirects,
+		reviewStatus:   reviewStatus, createdBy: createdBy, createdAt: createdAt.UTC(), revision: revision,
 		updatedBy: updatedBy, updatedAt: updatedAt.UTC(),
 	}, nil
 }
@@ -229,6 +274,7 @@ func (version *ApplicationVersion) ReplaceDraft(
 	}
 	if !replacement.versionLabel.valid() || !replacement.launchURL.valid() || !replacement.rpcAPIRange.valid() ||
 		!replacement.requiredCapabilities.valid() || !replacement.scopeRequest.valid() ||
+		!replacement.oauthRedirects.valid() ||
 		!updatedBy.IsValid() || updatedAt.IsZero() {
 		return nil, NewInternalError(nil)
 	}
@@ -243,6 +289,7 @@ func (version *ApplicationVersion) ReplaceDraft(
 	copy.rpcAPIRange = replacement.rpcAPIRange
 	copy.requiredCapabilities = replacement.requiredCapabilities
 	copy.scopeRequest = replacement.scopeRequest
+	copy.oauthRedirects = replacement.oauthRedirects
 	copy.revision++
 	copy.updatedBy = updatedBy
 	copy.updatedAt = updatedAt.UTC()
@@ -283,7 +330,8 @@ func (version *ApplicationVersion) hasReplacement(replacement DraftApplicationVe
 		version.rpcAPIRange == replacement.rpcAPIRange &&
 		slices.Equal(version.requiredCapabilities.values, replacement.requiredCapabilities.values) &&
 		slices.Equal(version.scopeRequest.required, replacement.scopeRequest.required) &&
-		slices.Equal(version.scopeRequest.optional, replacement.scopeRequest.optional)
+		slices.Equal(version.scopeRequest.optional, replacement.scopeRequest.optional) &&
+		version.oauthRedirects.Equal(replacement.oauthRedirects)
 }
 
 func (version *ApplicationVersion) ID() ApplicationVersionID { return version.id }
@@ -302,6 +350,9 @@ func (version *ApplicationVersion) RequiredScopes() []ScopeName {
 }
 func (version *ApplicationVersion) OptionalScopes() []ScopeName {
 	return version.scopeRequest.Optional()
+}
+func (version *ApplicationVersion) OAuthRedirects() OAuthRedirectConfiguration {
+	return version.oauthRedirects
 }
 func (version *ApplicationVersion) ReviewStatus() ReviewStatus { return version.reviewStatus }
 func (version *ApplicationVersion) CreatedBy() shared.AuthID   { return version.createdBy }

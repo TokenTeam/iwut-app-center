@@ -25,6 +25,7 @@ const (
 	ErrorCodeInvalidRPCApiRange                   ErrorCode = "InvalidRpcApiRange"
 	ErrorCodeInvalidRequiredCapability            ErrorCode = "InvalidRequiredCapability"
 	ErrorCodeInvalidApplicationScope              ErrorCode = "InvalidApplicationScope"
+	ErrorCodeInvalidOAuthRedirectConfiguration    ErrorCode = "InvalidOAuthRedirectConfiguration"
 	ErrorCodeScopeCatalogUnavailable              ErrorCode = "ScopeCatalogUnavailable"
 	ErrorCodeApplicationNotFound                  ErrorCode = "ApplicationNotFound"
 	ErrorCodeApplicationAdminRequired             ErrorCode = "ApplicationAdminRequired"
@@ -94,6 +95,9 @@ var (
 	)
 	ErrInvalidApplicationScope = newError(
 		ErrorCategoryValidation, ErrorCodeInvalidApplicationScope, "application scope request is invalid", nil,
+	)
+	ErrInvalidOAuthRedirectConfiguration = newError(
+		ErrorCategoryValidation, ErrorCodeInvalidOAuthRedirectConfiguration, "OAuth redirect configuration is invalid", nil,
 	)
 	ErrScopeCatalogUnavailable = newError(
 		ErrorCategoryDependencyUnavailable, ErrorCodeScopeCatalogUnavailable, "scope catalog is unavailable", nil,

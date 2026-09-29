@@ -126,7 +126,7 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 
 	approve := func(label string) string {
 		version, review := createAndSubmit(label)
-		code, body := e2eHTTPDecideReview(t, httpAddress, reviewerToken, application.GetId(), version.GetVersionId(), review.GetReview().GetReviewId(), "APPROVE", "app-version-review-v1", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed"}, "")
+		code, body := e2eHTTPDecideReview(t, httpAddress, reviewerToken, application.GetId(), version.GetVersionId(), review.GetReview().GetReviewId(), "APPROVE", "app-version-review-v2", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed", "oauth-redirects-reviewed"}, "")
 		if code != http.StatusOK {
 			t.Fatalf("approve status=%d body=%s", code, body)
 		}

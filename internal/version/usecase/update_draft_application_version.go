@@ -18,20 +18,24 @@ type UpdateDraftApplicationVersionCommand struct {
 	RequiredCapabilities      []string
 	RequiredScopes            []string
 	OptionalScopes            []string
+	PKCERedirectURIs          []string
+	ConfidentialRedirectURIs  []string
 }
 
 type UpdateDraftApplicationVersionHandler struct {
 	scopeCatalog port.ScopeCatalog
+	oauthPolicy  port.OAuthRedirectPolicy
 	clock        port.Clock
 	repository   port.ApplicationVersionRepository
 }
 
 func NewUpdateDraftApplicationVersionHandler(
 	scopeCatalog port.ScopeCatalog,
+	oauthPolicy port.OAuthRedirectPolicy,
 	clock port.Clock,
 	repository port.ApplicationVersionRepository,
 ) *UpdateDraftApplicationVersionHandler {
-	return &UpdateDraftApplicationVersionHandler{scopeCatalog: scopeCatalog, clock: clock, repository: repository}
+	return &UpdateDraftApplicationVersionHandler{scopeCatalog: scopeCatalog, oauthPolicy: oauthPolicy, clock: clock, repository: repository}
 }
 
 func (handler *UpdateDraftApplicationVersionHandler) Handle(
@@ -77,14 +81,30 @@ func (handler *UpdateDraftApplicationVersionHandler) Handle(
 	if err != nil {
 		return nil, err
 	}
-	replacement, err := domain.NewDraftApplicationVersionReplacement(
-		versionLabel, launchURL, rpcAPIRange, requiredCapabilities, scopeRequest,
+	oauthRedirects, err := domain.NewOAuthRedirectConfiguration(
+		append([]string{}, command.PKCERedirectURIs...),
+		append([]string{}, command.ConfidentialRedirectURIs...),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if handler == nil || handler.oauthPolicy == nil {
+		return nil, domain.NewInternalError(nil)
+	}
+	if err := handler.oauthPolicy.EnsureCanonical(oauthRedirects.PKCERedirectURIs(), oauthRedirects.ConfidentialRedirectURIs()); err != nil {
+		if errors.Is(err, port.ErrInvalidOAuthRedirectConfiguration) {
+			return nil, domain.ErrInvalidOAuthRedirectConfiguration
+		}
+		return nil, domain.NewInternalError(err)
+	}
+	replacement, err := domain.NewDraftApplicationVersionReplacementWithOAuth(
+		versionLabel, launchURL, rpcAPIRange, requiredCapabilities, scopeRequest, oauthRedirects,
 	)
 	if err != nil {
 		return nil, domain.NewInternalError(err)
 	}
 
-	if handler == nil || handler.scopeCatalog == nil || handler.clock == nil || handler.repository == nil {
+	if handler.scopeCatalog == nil || handler.clock == nil || handler.repository == nil {
 		return nil, domain.NewInternalError(nil)
 	}
 	_, err = handler.scopeCatalog.EnsureAllRequestable(ctx, scopeRequest.All())

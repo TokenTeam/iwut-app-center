@@ -78,6 +78,8 @@ func (service *ApplicationVersionService) CreateApplicationVersion(
 			RequiredCapabilities:      request.GetRequiredCapabilities(),
 			RequiredScopes:            request.GetRequiredScopes(),
 			OptionalScopes:            request.GetOptionalScopes(),
+			PKCERedirectURIs:          request.GetOauthRedirects().GetPkceRedirectUris(),
+			ConfidentialRedirectURIs:  request.GetOauthRedirects().GetConfidentialRedirectUris(),
 		},
 	)
 	if err != nil {
@@ -133,6 +135,8 @@ func (service *ApplicationVersionService) UpdateApplicationVersion(
 			RequiredCapabilities:      replacement.GetRequiredCapabilities(),
 			RequiredScopes:            replacement.GetRequiredScopes(),
 			OptionalScopes:            replacement.GetOptionalScopes(),
+			PKCERedirectURIs:          replacement.GetOauthRedirects().GetPkceRedirectUris(),
+			ConfidentialRedirectURIs:  replacement.GetOauthRedirects().GetConfidentialRedirectUris(),
 		},
 	)
 	if err != nil {
@@ -187,6 +191,7 @@ func applicationVersionResponse(version *versiondomain.ApplicationVersion) *appl
 	for index, scope := range optionalValues {
 		optionalScopes[index] = string(scope)
 	}
+	redirects := version.OAuthRedirects()
 
 	return &applicationversionv1.CreateApplicationVersionResponse{
 		VersionId:                 version.ID().String(),
@@ -205,6 +210,10 @@ func applicationVersionResponse(version *versiondomain.ApplicationVersion) *appl
 		Revision:                  version.Revision(),
 		UpdatedBy:                 version.UpdatedBy().String(),
 		UpdatedAt:                 timestamppb.New(version.UpdatedAt()),
+		OauthRedirects: &applicationversionv1.OAuthRedirectConfiguration{
+			PkceRedirectUris:         redirects.PKCERedirectURIs(),
+			ConfidentialRedirectUris: redirects.ConfidentialRedirectURIs(),
+		},
 	}
 }
 
@@ -227,5 +236,6 @@ func updateApplicationVersionResponse(version *versiondomain.ApplicationVersion)
 		Revision:                  created.GetRevision(),
 		UpdatedBy:                 created.GetUpdatedBy(),
 		UpdatedAt:                 created.GetUpdatedAt(),
+		OauthRedirects:            created.GetOauthRedirects(),
 	}
 }
