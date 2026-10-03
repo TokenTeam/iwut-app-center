@@ -186,7 +186,9 @@ func oauthChannel(value oauthclientv1.OAuthChannel) (oauthclientdomain.Channel, 
 	switch value {
 	case oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST:
 		return oauthclientdomain.ChannelTest, nil
-	case oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY, oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE:
+	case oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE:
+		return oauthclientdomain.ChannelStable, nil
+	case oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY:
 		return "", oauthclientdomain.ErrOAuthChannelNotEnabled
 	default:
 		return "", oauthclientdomain.ErrInvalidOAuthChannel
@@ -221,13 +223,20 @@ func oauthRegistrationResource(registration *oauthclientdomain.Registration) *oa
 	}
 	return &oauthclientv1.ApplicationOAuthRegistrationResource{
 		ApplicationId:        registration.ApplicationID().String(),
-		Channel:              oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST,
+		Channel:              oauthChannelResource(registration.Channel()),
 		PublicClient:         oauthIdentityResource(registration.PublicClient()),
 		ConfidentialClient:   oauthIdentityResource(registration.ConfidentialClient()),
 		RegistrationRevision: registration.Revision(),
 		CreatedAt:            timestamppb.New(registration.CreatedAt()),
 		UpdatedAt:            timestamppb.New(registration.UpdatedAt()),
 	}
+}
+
+func oauthChannelResource(channel oauthclientdomain.Channel) oauthclientv1.OAuthChannel {
+	if channel == oauthclientdomain.ChannelStable {
+		return oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE
+	}
+	return oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST
 }
 
 func oauthIdentityResource(identity *oauthclientdomain.ClientIdentity) *oauthclientv1.OAuthClientIdentityResource {

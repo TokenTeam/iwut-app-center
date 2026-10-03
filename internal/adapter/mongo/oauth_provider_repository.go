@@ -147,6 +147,13 @@ func (r *OAuthProviderRepository) ResolveAuthorizationContext(ctx context.Contex
 		if !runtime.Version().Equal(expectedVersion) {
 			return nil, oauthport.ErrRuntimeVersionChanged
 		}
+		if channel == oauthdomain.ChannelStable {
+			context, createErr := oauthdomain.NewAuthorizationContext(runtime, authID, "")
+			if createErr != nil {
+				return nil, oauthport.ErrStateInconsistent
+			}
+			return context, nil
+		}
 		var membership applicationTesterMembershipDocument
 		err = r.database.Collection(applicationTesterMembershipsCollectionName).FindOne(tx, bson.M{"applicationId": runtime.ApplicationID.String(), "testerAuthId": authID.String(), "status": "ACTIVE"}).Decode(&membership)
 		if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -190,7 +197,7 @@ func (r *OAuthProviderRepository) resolveRuntimeSnapshot(ctx context.Context, cl
 	if restoreErr != nil || application.ID() != configuration.ApplicationID {
 		return nil, oauthport.ErrStateInconsistent
 	}
-	publication, snapshot, err := r.publishedVersion(ctx, configuration.ApplicationID, major)
+	publication, snapshot, err := r.publishedVersion(ctx, configuration.ApplicationID, major, channel)
 	if err != nil {
 		return nil, err
 	}
@@ -213,14 +220,18 @@ func (r *OAuthProviderRepository) resolveRuntimeSnapshot(ctx context.Context, cl
 	for index, value := range snapshot.OptionalScopes() {
 		optional[index] = string(value)
 	}
-	runtime, createErr := oauthdomain.NewRuntimeConfiguration(configuration, major, application.AdminID(), publication.TestVersionID, publication.Revision, redirects, required, optional, display, observedAt)
+	versionID := publicationVersionForChannel(publication, channel)
+	if versionID == nil {
+		return nil, oauthport.ErrRuntimeUnavailable
+	}
+	runtime, createErr := oauthdomain.NewRuntimeConfiguration(configuration, major, application.AdminID(), *versionID, publication.Revision, redirects, required, optional, display, observedAt)
 	if createErr != nil {
 		return nil, oauthport.ErrStateInconsistent
 	}
 	return runtime, nil
 }
 
-func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicationID shared.ApplicationID, major int32) (applicationPublicationDocument, *reviewdomain.ApplicationVersionReviewSnapshot, error) {
+func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicationID shared.ApplicationID, major int32, channel oauthdomain.Channel) (applicationPublicationDocument, *reviewdomain.ApplicationVersionReviewSnapshot, error) {
 	var publication applicationPublicationDocument
 	err := r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "rpcApiMajor": major}).Decode(&publication)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -232,21 +243,29 @@ func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicat
 	if _, err = applicationPublicationFromDocument(publication); err != nil {
 		return publication, nil, oauthport.ErrStateInconsistent
 	}
+	versionID := publicationVersionForChannel(publication, channel)
+	if versionID == nil {
+		return publication, nil, oauthport.ErrRuntimeUnavailable
+	}
+	action := "SET_TEST_VERSION"
+	if channel == oauthdomain.ChannelStable {
+		action = "SET_STABLE_VERSION"
+	}
 	var history applicationPublicationHistoryDocument
-	err = r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.M{"publicationId": publication.PublicationID, "publicationRevision": publication.Revision}).Decode(&history)
+	err = r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.M{"publicationId": publication.PublicationID, "publicationRevision": bson.M{"$lte": publication.Revision}, "action": action, "newVersionId": *versionID}, options.FindOne().SetSort(bson.D{{Key: "publicationRevision", Value: -1}})).Decode(&history)
 	if err != nil {
 		return publication, nil, missingOAuthProviderFact(err)
 	}
-	if history.ApplicationID != applicationID.String() || history.RPCAPIMajor != major || history.NewVersionID != publication.TestVersionID || history.Action != "SET_TEST_VERSION" {
+	if history.ApplicationID != applicationID.String() || history.RPCAPIMajor != major || history.NewVersionID == nil || *history.NewVersionID != *versionID || history.Action != action || history.ApprovedReviewID == nil {
 		return publication, nil, oauthport.ErrStateInconsistent
 	}
 	var version applicationVersionDocument
-	err = r.database.Collection(applicationVersionsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "versionId": publication.TestVersionID}).Decode(&version)
+	err = r.database.Collection(applicationVersionsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "versionId": *versionID}).Decode(&version)
 	if err != nil {
 		return publication, nil, missingOAuthProviderFact(err)
 	}
 	var config applicationVersionOAuthConfigDocument
-	err = r.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "applicationVersionId": publication.TestVersionID}).Decode(&config)
+	err = r.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "applicationVersionId": *versionID}).Decode(&config)
 	if err != nil {
 		return publication, nil, missingOAuthProviderFact(err)
 	}
@@ -254,12 +273,12 @@ func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicat
 		return publication, nil, oauthport.ErrStateInconsistent
 	}
 	var review applicationReviewDocument
-	err = r.database.Collection(applicationReviewsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "versionId": publication.TestVersionID}, options.FindOne().SetSort(bson.D{{Key: "attempt", Value: -1}})).Decode(&review)
+	err = r.database.Collection(applicationReviewsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "versionId": *versionID}, options.FindOne().SetSort(bson.D{{Key: "attempt", Value: -1}})).Decode(&review)
 	if err != nil {
 		return publication, nil, missingOAuthProviderFact(err)
 	}
 	approved, restoreErr := applicationReviewFromDocument(review)
-	if restoreErr != nil || review.ReviewID != history.ApprovedReviewID || review.Status != "APPROVED" || review.Decision == nil || review.Decision.Outcome != "APPROVED" || review.SourceVersionRevision > math.MaxInt64-2 || version.Revision != review.SourceVersionRevision+2 {
+	if restoreErr != nil || review.ReviewID != *history.ApprovedReviewID || review.Status != "APPROVED" || review.Decision == nil || review.Decision.Outcome != "APPROVED" || review.SourceVersionRevision > math.MaxInt64-2 || version.Revision != review.SourceVersionRevision+2 {
 		return publication, nil, oauthport.ErrStateInconsistent
 	}
 	_, _, currentSnapshot, restoreErr := applicationVersionDocumentToDecisionVersion(version, config)
@@ -268,6 +287,16 @@ func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicat
 	}
 	snapshot := approved.Snapshot()
 	return publication, &snapshot, nil
+}
+
+func publicationVersionForChannel(publication applicationPublicationDocument, channel oauthdomain.Channel) *string {
+	if channel == oauthdomain.ChannelStable {
+		return publication.StableVersionID
+	}
+	if channel == oauthdomain.ChannelTest {
+		return publication.TestVersionID
+	}
+	return nil
 }
 
 func (r *OAuthProviderRepository) currentDisplay(ctx context.Context, applicationID shared.ApplicationID) (oauthdomain.ApplicationDisplay, error) {
@@ -319,17 +348,22 @@ func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, app
 		} else if err != nil {
 			return nil, err
 		}
-		var registration applicationOAuthRegistrationDocument
-		registrationErr := r.database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "channel": "TEST"}).Decode(&registration)
-		var hasPublic, hasConfidential bool
-		if registrationErr == nil {
-			restored, restoreErr := registrationFromDocument(registration)
-			if restoreErr != nil {
+		type registrationTypes struct{ public, confidential bool }
+		registrations := map[oauthdomain.Channel]registrationTypes{}
+		for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelTest} {
+			var document applicationOAuthRegistrationDocument
+			registrationErr := r.database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "channel": string(channel)}).Decode(&document)
+			if errors.Is(registrationErr, drivermongo.ErrNoDocuments) {
+				continue
+			}
+			if registrationErr != nil {
+				return nil, registrationErr
+			}
+			restored, restoreErr := registrationFromDocument(document)
+			if restoreErr != nil || restored.Channel() != channel {
 				return nil, oauthport.ErrStateInconsistent
 			}
-			hasPublic, hasConfidential = restored.PublicClient() != nil, restored.ConfidentialClient() != nil
-		} else if !errors.Is(registrationErr, drivermongo.ErrNoDocuments) {
-			return nil, registrationErr
+			registrations[channel] = registrationTypes{restored.PublicClient() != nil, restored.ConfidentialClient() != nil}
 		}
 		cursor, err := r.database.Collection(applicationPublicationsCollectionName).Find(tx, bson.M{"applicationId": applicationID.String()}, options.Find().SetSort(bson.D{{Key: "rpcApiMajor", Value: 1}}))
 		if err != nil {
@@ -343,22 +377,29 @@ func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, app
 			if err := cursor.Decode(&publication); err != nil {
 				return nil, oauthport.ErrStateInconsistent
 			}
-			validated, snapshot, err := r.publishedVersion(tx, applicationID, publication.RPCAPIMajor)
-			if err != nil {
-				return nil, err
+			if _, restoreErr := applicationPublicationFromDocument(publication); restoreErr != nil {
+				return nil, oauthport.ErrStateInconsistent
 			}
-			entries = append(entries, oauthdomain.PublishedRedirectEntry{
-				Channel: oauthdomain.ChannelTest, RPCAPIMajor: validated.RPCAPIMajor,
-				VersionID: validated.TestVersionID, PublicationRevision: validated.Revision,
-			})
-			if hasPublic {
-				for _, uri := range snapshot.OAuthRedirects().PKCERedirectURIs() {
-					redirectSet[uri] = struct{}{}
+			for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelTest} {
+				versionID := publicationVersionForChannel(publication, channel)
+				if versionID == nil {
+					continue
 				}
-			}
-			if hasConfidential {
-				for _, uri := range snapshot.OAuthRedirects().ConfidentialRedirectURIs() {
-					redirectSet[uri] = struct{}{}
+				validated, snapshot, validateErr := r.publishedVersion(tx, applicationID, publication.RPCAPIMajor, channel)
+				if validateErr != nil {
+					return nil, validateErr
+				}
+				entries = append(entries, oauthdomain.PublishedRedirectEntry{Channel: channel, RPCAPIMajor: validated.RPCAPIMajor, VersionID: *versionID, PublicationRevision: validated.Revision})
+				types := registrations[channel]
+				if types.public {
+					for _, uri := range snapshot.OAuthRedirects().PKCERedirectURIs() {
+						redirectSet[uri] = struct{}{}
+					}
+				}
+				if types.confidential {
+					for _, uri := range snapshot.OAuthRedirects().ConfidentialRedirectURIs() {
+						redirectSet[uri] = struct{}{}
+					}
 				}
 			}
 		}
@@ -370,6 +411,12 @@ func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, app
 			redirects = append(redirects, uri)
 		}
 		sort.Strings(redirects)
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].Channel != entries[j].Channel {
+				return entries[i].Channel < entries[j].Channel
+			}
+			return entries[i].RPCAPIMajor < entries[j].RPCAPIMajor
+		})
 		return oauthdomain.NewPublishedRedirectSnapshot(applicationID, entries, redirects, observedAt)
 	})
 	if err != nil {

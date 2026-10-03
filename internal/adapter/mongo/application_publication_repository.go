@@ -35,7 +35,7 @@ func (r *ApplicationPublicationRepository) LoadTestPlacementCandidate(ctx contex
 	}
 	defer session.EndSession(ctx)
 	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
-		return r.loadTestPlacementCandidate(tx, applicationID, major, versionID, adminID, expectedRevision, false)
+		return r.loadTestPlacementCandidate(tx, applicationID, major, versionID, adminID, expectedRevision, "TEST", false)
 	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (r *ApplicationPublicationRepository) LoadTestPlacementCandidate(ctx contex
 	return result.(*publicationdomain.TestPlacementCandidate), nil
 }
 
-func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, adminID shared.AuthID, expectedRevision *int64, lock bool) (*publicationdomain.TestPlacementCandidate, error) {
+func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, adminID shared.AuthID, expectedRevision *int64, oauthChannel string, lock bool) (*publicationdomain.TestPlacementCandidate, error) {
 	var application applicationDocument
 	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
 	err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application)
@@ -116,7 +116,7 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 	if err != nil {
 		return nil, publicationport.ErrApplicationReviewStateInconsistent
 	}
-	if err := r.ensureTestOAuthRegistration(ctx, applicationID, len(publicationSnapshot.PKCERedirectURIs()) > 0, len(publicationSnapshot.ConfidentialRedirectURIs()) > 0); err != nil {
+	if err := r.ensureOAuthRegistration(ctx, applicationID, oauthChannel, len(publicationSnapshot.PKCERedirectURIs()) > 0, len(publicationSnapshot.ConfidentialRedirectURIs()) > 0); err != nil {
 		return nil, err
 	}
 	var document applicationPublicationDocument
@@ -125,7 +125,7 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 	if err == nil {
 		publication, err = applicationPublicationFromDocument(document)
 		if err != nil {
-			return nil, fmt.Errorf("read publication: %w", err)
+			return nil, publicationport.ErrApplicationPublicationStateInconsistent
 		}
 	} else if !errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, err
@@ -216,14 +216,14 @@ func (r *ApplicationPublicationRepository) ensureApprovedPublishedProfile(ctx co
 	return nil
 }
 
-func (r *ApplicationPublicationRepository) ensureTestOAuthRegistration(ctx context.Context, applicationID shared.ApplicationID, requirePublic, requireConfidential bool) error {
+func (r *ApplicationPublicationRepository) ensureOAuthRegistration(ctx context.Context, applicationID shared.ApplicationID, channel string, requirePublic, requireConfidential bool) error {
 	if !requirePublic && !requireConfidential {
 		return nil
 	}
 	var registration applicationOAuthRegistrationDocument
 	err := r.database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(
 		ctx,
-		bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "channel", Value: "TEST"}},
+		bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "channel", Value: channel}},
 	).Decode(&registration)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return publicationport.ErrOAuthClientRegistrationRequired
@@ -283,7 +283,7 @@ func (r *ApplicationPublicationRepository) PlaceInTest(ctx context.Context, cand
 }
 
 func (r *ApplicationPublicationRepository) placeInTestTransaction(ctx context.Context, candidate *publicationdomain.TestPlacementCandidate, publicationID *publicationdomain.ApplicationPublicationID, historyID publicationdomain.ApplicationPublicationHistoryID, adminID shared.AuthID, validation publicationdomain.PublicationValidation, changedAt time.Time) (*publicationdomain.PlaceInTestResult, error) {
-	current, err := r.loadTestPlacementCandidate(ctx, candidate.ApplicationID(), candidate.RPCAPIMajor(), candidate.VersionID(), adminID, candidate.ExpectedPublicationRevision(), true)
+	current, err := r.loadTestPlacementCandidate(ctx, candidate.ApplicationID(), candidate.RPCAPIMajor(), candidate.VersionID(), adminID, candidate.ExpectedPublicationRevision(), "TEST", true)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func (r *ApplicationPublicationRepository) placeInTestTransaction(ctx context.Co
 	}
 	if old := candidate.Publication(); old != nil {
 		actual := current.Publication()
-		if actual == nil || actual.PublicationID() != old.PublicationID() || actual.TestVersionID() != old.TestVersionID() {
+		if actual == nil || actual.PublicationID() != old.PublicationID() || actual.Revision() != old.Revision() {
 			return nil, publicationport.ErrApplicationPublicationRevisionConflict
 		}
 	}
@@ -323,7 +323,7 @@ func (r *ApplicationPublicationRepository) placeInTestTransaction(ctx context.Co
 		}
 	} else {
 		previous := current.Publication()
-		updateResult, updateErr := r.database.Collection(applicationPublicationsCollectionName).ReplaceOne(ctx, bson.D{{Key: "publicationId", Value: previous.PublicationID().String()}, {Key: "revision", Value: previous.Revision()}, {Key: "testVersionId", Value: previous.TestVersionID().String()}}, publication)
+		updateResult, updateErr := r.database.Collection(applicationPublicationsCollectionName).ReplaceOne(ctx, bson.D{{Key: "publicationId", Value: previous.PublicationID().String()}, {Key: "revision", Value: previous.Revision()}}, publication)
 		err = updateErr
 		if err == nil && updateResult.MatchedCount != 1 {
 			return nil, publicationport.ErrApplicationPublicationRevisionConflict
@@ -336,4 +336,210 @@ func (r *ApplicationPublicationRepository) placeInTestTransaction(ctx context.Co
 		return nil, err
 	}
 	return result, nil
+}
+
+func (r *ApplicationPublicationRepository) LoadStablePlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, adminID shared.AuthID, expectedRevision *int64) (*publicationdomain.StablePlacementCandidate, error) {
+	if r == nil || r.database == nil || !applicationID.IsValid() || !versionID.IsValid() || !adminID.IsValid() || major < 1 || (expectedRevision != nil && *expectedRevision < 1) {
+		return nil, fmt.Errorf("load stable publication candidate: invalid repository input")
+	}
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		base, loadErr := r.loadTestPlacementCandidate(tx, applicationID, major, versionID, adminID, expectedRevision, "STABLE", false)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		return publicationdomain.NewStablePlacementCandidate(base.ApplicationID(), base.RPCAPIMajor(), base.VersionID(), base.ReviewID(), base.VersionRevision(), base.Snapshot(), base.Publication(), base.ExpectedPublicationRevision())
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
+	if err != nil {
+		return nil, err
+	}
+	return result.(*publicationdomain.StablePlacementCandidate), nil
+}
+
+func (r *ApplicationPublicationRepository) SetStable(ctx context.Context, candidate *publicationdomain.StablePlacementCandidate, publicationID *publicationdomain.ApplicationPublicationID, historyID publicationdomain.ApplicationPublicationHistoryID, adminID shared.AuthID, validation publicationdomain.PublicationValidation, changedAt time.Time) (*publicationdomain.PlaceInTestResult, error) {
+	if r == nil || r.database == nil || candidate == nil || !adminID.IsValid() {
+		return nil, fmt.Errorf("set stable publication: invalid repository input")
+	}
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		base, loadErr := r.loadTestPlacementCandidate(tx, candidate.ApplicationID(), candidate.RPCAPIMajor(), candidate.VersionID(), adminID, candidate.ExpectedPublicationRevision(), "STABLE", true)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		current, createErr := publicationdomain.NewStablePlacementCandidate(base.ApplicationID(), base.RPCAPIMajor(), base.VersionID(), base.ReviewID(), base.VersionRevision(), base.Snapshot(), base.Publication(), base.ExpectedPublicationRevision())
+		if createErr != nil {
+			return nil, createErr
+		}
+		if current.ReviewID() != candidate.ReviewID() || current.VersionRevision() != candidate.VersionRevision() || !current.Snapshot().Equal(candidate.Snapshot()) {
+			return nil, publicationport.ErrApplicationReviewStateInconsistent
+		}
+		if old := candidate.Publication(); old != nil {
+			actual := current.Publication()
+			if actual == nil || actual.PublicationID() != old.PublicationID() || actual.Revision() != old.Revision() {
+				return nil, publicationport.ErrApplicationPublicationRevisionConflict
+			}
+		}
+		changed, changeErr := current.SetStable(publicationID, historyID, adminID, validation, changedAt.UTC().Truncate(time.Millisecond))
+		if changeErr != nil || !changed.Changed() {
+			return changed, changeErr
+		}
+		if persistErr := r.persistPublicationChange(tx, current.Publication(), changed); persistErr != nil {
+			return nil, persistErr
+		}
+		return changed, nil
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()))
+	if err != nil {
+		return nil, fmt.Errorf("set stable publication transaction: %w", err)
+	}
+	return result.(*publicationdomain.PlaceInTestResult), nil
+}
+
+func (r *ApplicationPublicationRepository) LoadStableClearCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, adminID shared.AuthID, expectedRevision int64) (*publicationdomain.StableClearCandidate, error) {
+	if r == nil || r.database == nil || !applicationID.IsValid() || !adminID.IsValid() || major < 1 || expectedRevision < 1 {
+		return nil, fmt.Errorf("load stable clear candidate: invalid repository input")
+	}
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		return r.loadStableClearCandidate(tx, applicationID, major, adminID, expectedRevision, false)
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
+	if err != nil {
+		return nil, err
+	}
+	return result.(*publicationdomain.StableClearCandidate), nil
+}
+
+func (r *ApplicationPublicationRepository) loadStableClearCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, adminID shared.AuthID, expectedRevision int64, lock bool) (*publicationdomain.StableClearCandidate, error) {
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	var application applicationDocument
+	if err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application); errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationVersionNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if application.AdminID != adminID.String() {
+		return nil, publicationport.ErrApplicationAdminRequired
+	}
+	var document applicationPublicationDocument
+	raw, findErr := r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "rpcApiMajor", Value: major}}).Raw()
+	if errors.Is(findErr, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationPublicationNotFound
+	} else if findErr != nil {
+		return nil, findErr
+	}
+	if err := bson.Unmarshal(raw, &document); err != nil {
+		return nil, publicationport.ErrApplicationPublicationStateInconsistent
+	}
+	if grey, greyErr := raw.LookupErr("greyRollout"); greyErr == nil && grey.Type != bson.TypeNull {
+		if document.StableVersionID == nil {
+			return nil, publicationport.ErrApplicationPublicationStateInconsistent
+		}
+		return nil, publicationport.ErrStablePublicationRequiredByGrey
+	}
+	publication, err := applicationPublicationFromDocument(document)
+	if err != nil {
+		return nil, publicationport.ErrApplicationPublicationStateInconsistent
+	}
+	candidate, err := publicationdomain.NewStableClearCandidate(publication, expectedRevision)
+	if errors.Is(err, publicationdomain.ErrApplicationPublicationRevisionConflict) {
+		return nil, publicationport.ErrApplicationPublicationRevisionConflict
+	}
+	if err != nil {
+		return nil, err
+	}
+	if lock {
+		if err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, appFilter, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err(); err != nil {
+			return nil, err
+		}
+	}
+	return candidate, nil
+}
+
+func (r *ApplicationPublicationRepository) ClearStable(ctx context.Context, candidate *publicationdomain.StableClearCandidate, historyID publicationdomain.ApplicationPublicationHistoryID, adminID shared.AuthID, changedAt time.Time) (*publicationdomain.PlaceInTestResult, error) {
+	if r == nil || r.database == nil || candidate == nil || candidate.Publication() == nil || !adminID.IsValid() {
+		return nil, fmt.Errorf("clear stable publication: invalid repository input")
+	}
+	previous := candidate.Publication()
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		current, loadErr := r.loadStableClearCandidate(tx, previous.ApplicationID(), previous.RPCAPIMajor(), adminID, previous.Revision(), true)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		actual := current.Publication()
+		if actual.PublicationID() != previous.PublicationID() || actual.Revision() != previous.Revision() {
+			return nil, publicationport.ErrApplicationPublicationRevisionConflict
+		}
+		changed, changeErr := current.Clear(historyID, adminID, changedAt.UTC().Truncate(time.Millisecond))
+		if changeErr != nil || !changed.Changed() {
+			return changed, changeErr
+		}
+		if persistErr := r.persistPublicationChange(tx, actual, changed); persistErr != nil {
+			return nil, persistErr
+		}
+		return changed, nil
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()))
+	if err != nil {
+		return nil, fmt.Errorf("clear stable publication transaction: %w", err)
+	}
+	return result.(*publicationdomain.PlaceInTestResult), nil
+}
+
+func (r *ApplicationPublicationRepository) persistPublicationChange(ctx context.Context, previous *publicationdomain.ApplicationPublication, result *publicationdomain.PlaceInTestResult) error {
+	document := applicationPublicationToDocument(result.Publication())
+	if previous == nil {
+		if _, err := r.database.Collection(applicationPublicationsCollectionName).InsertOne(ctx, document); err != nil {
+			if isPublicationPartitionDuplicate(err) {
+				return publicationport.ErrApplicationPublicationAlreadyExists
+			}
+			return err
+		}
+	} else {
+		updated, err := r.database.Collection(applicationPublicationsCollectionName).ReplaceOne(ctx, bson.D{{Key: "publicationId", Value: previous.PublicationID().String()}, {Key: "revision", Value: previous.Revision()}}, document)
+		if err != nil {
+			return err
+		}
+		if updated.MatchedCount != 1 {
+			return publicationport.ErrApplicationPublicationRevisionConflict
+		}
+	}
+	_, err := r.database.Collection(applicationPublicationHistoryCollectionName).InsertOne(ctx, applicationPublicationHistoryToDocument(result.History()))
+	return err
+}
+
+func isPublicationPartitionDuplicate(err error) bool {
+	if !drivermongo.IsDuplicateKeyError(err) {
+		return false
+	}
+	var writeException drivermongo.WriteException
+	if !errors.As(err, &writeException) {
+		return false
+	}
+	for _, failure := range writeException.WriteErrors {
+		if failure.Details.Lookup("keyPattern").Type != bson.TypeEmbeddedDocument {
+			continue
+		}
+		pattern := failure.Details.Lookup("keyPattern").Document()
+		if _, appErr := pattern.LookupErr("applicationId"); appErr == nil {
+			if _, majorErr := pattern.LookupErr("rpcApiMajor"); majorErr == nil {
+				return true
+			}
+		}
+	}
+	return false
 }

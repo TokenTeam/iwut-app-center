@@ -127,6 +127,9 @@ func mapRepositoryError(err error) error {
 	if errors.Is(err, port.ErrApplicationProfileStateInconsistent) || errors.Is(err, domain.ErrApplicationProfileStateInconsistent) {
 		return domain.NewApplicationProfileStateInconsistentError(err)
 	}
+	if errors.Is(err, port.ErrApplicationPublicationStateInconsistent) || errors.Is(err, domain.ErrApplicationPublicationStateInconsistent) {
+		return domain.NewApplicationPublicationStateInconsistentError(err)
+	}
 	for _, entry := range []struct {
 		port   error
 		domain error
@@ -141,6 +144,7 @@ func mapRepositoryError(err error) error {
 		{port.ErrApplicationPublicationRevisionConflict, domain.ErrApplicationPublicationRevisionConflict},
 		{port.ErrOAuthClientRegistrationRequired, domain.ErrOAuthClientRegistrationRequired},
 		{port.ErrApplicationProfileRequired, domain.ErrApplicationProfileRequired},
+		{port.ErrStablePublicationRequiredByGrey, domain.ErrStablePublicationRequiredByGrey},
 	} {
 		if errors.Is(err, entry.port) || errors.Is(err, entry.domain) {
 			return entry.domain

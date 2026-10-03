@@ -57,6 +57,12 @@ const (
 	PlaceApprovedVersionInTestSlotInternalPath = "/v1/applications/{application_id}/publications/{rpc_api_major}/test-slot"
 	PlaceApprovedVersionInTestSlotExternalPath = ServicePrefix + PlaceApprovedVersionInTestSlotInternalPath
 	PlaceApprovedVersionInTestSlotGRPCMethod   = publicationv1.OperationApplicationPublicationPlaceApprovedVersionInTestSlot
+	SetApprovedVersionInStableSlotInternalPath = "/v1/applications/{application_id}/publications/{rpc_api_major}/stable-slot"
+	SetApprovedVersionInStableSlotExternalPath = ServicePrefix + SetApprovedVersionInStableSlotInternalPath
+	SetApprovedVersionInStableSlotGRPCMethod   = publicationv1.OperationApplicationPublicationSetApprovedVersionInStableSlot
+	ClearStableSlotInternalPath                = SetApprovedVersionInStableSlotInternalPath
+	ClearStableSlotExternalPath                = SetApprovedVersionInStableSlotExternalPath
+	ClearStableSlotGRPCMethod                  = publicationv1.OperationApplicationPublicationClearStableSlot
 	// ServicePrefix is the Gateway-only service prefix. It is not part of the
 	// Proto HTTP annotation.
 	ServicePrefix = "/app-center"
@@ -269,6 +275,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
 	case *publicationv1.PlaceApprovedVersionInTestSlotResponse:
+		if response.GetChanged() && response.GetPublication().GetRevision() == 1 {
+			w.WriteHeader(http.StatusCreated)
+		}
+	case *publicationv1.SetApprovedVersionInStableSlotResponse:
 		if response.GetChanged() && response.GetPublication().GetRevision() == 1 {
 			w.WriteHeader(http.StatusCreated)
 		}

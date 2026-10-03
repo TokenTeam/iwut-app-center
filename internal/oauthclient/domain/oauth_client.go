@@ -19,9 +19,9 @@ const (
 func ParseChannel(value string) (Channel, error) {
 	channel := Channel(strings.ToUpper(strings.TrimSpace(value)))
 	switch channel {
-	case ChannelTest:
+	case ChannelTest, ChannelStable:
 		return channel, nil
-	case ChannelGrey, ChannelStable:
+	case ChannelGrey:
 		return "", ErrOAuthChannelNotEnabled
 	default:
 		return "", ErrInvalidOAuthChannel
@@ -118,11 +118,13 @@ type Registration struct {
 }
 
 func RestoreRegistration(appID shared.ApplicationID, channel Channel, public, confidential *ClientIdentity, revision int64, createdAt, updatedAt time.Time) (*Registration, error) {
-	if !appID.IsValid() || channel != ChannelTest || revision < 1 || createdAt.IsZero() || updatedAt.IsZero() || updatedAt.Before(createdAt) || public == nil && confidential == nil || public != nil && public.Type() != ClientTypePublicPKCE || confidential != nil && confidential.Type() != ClientTypeConfidentialSecret {
+	if !appID.IsValid() || !channel.Enabled() || revision < 1 || createdAt.IsZero() || updatedAt.IsZero() || updatedAt.Before(createdAt) || public == nil && confidential == nil || public != nil && public.Type() != ClientTypePublicPKCE || confidential != nil && confidential.Type() != ClientTypeConfidentialSecret {
 		return nil, ErrOAuthClientStateInconsistent
 	}
 	return &Registration{appID, channel, cloneIdentity(public), cloneIdentity(confidential), revision, createdAt.UTC(), updatedAt.UTC()}, nil
 }
+
+func (c Channel) Enabled() bool                             { return c == ChannelTest || c == ChannelStable }
 func (r *Registration) ApplicationID() shared.ApplicationID { return r.applicationID }
 func (r *Registration) Channel() Channel                    { return r.channel }
 func (r *Registration) PublicClient() *ClientIdentity       { return cloneIdentity(r.public) }

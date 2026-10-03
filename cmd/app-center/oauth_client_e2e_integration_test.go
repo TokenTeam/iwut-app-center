@@ -197,6 +197,47 @@ func TestE2E_UCAPP018_UCAPP019_ManageAndProvideOAuthClients(t *testing.T) {
 		}
 	}
 
+	stableRegisterPath := fmt.Sprintf("/v1/applications/%s/oauth-registrations/OAUTH_CHANNEL_STABLE/clients", application.GetId())
+	statusCode, headers, payload = doHTTP(http.MethodPost, stableRegisterPath, adminToken, []byte(`{"type":"OAUTH_CLIENT_TYPE_PUBLIC_PKCE"}`))
+	if statusCode != http.StatusCreated || headers.Get("Cache-Control") != "no-store" {
+		t.Fatalf("stable public status=%d body=%s", statusCode, payload)
+	}
+	var stablePublic oauthclientv1.RegisterOAuthClientResponse
+	if err := protojson.Unmarshal(payload, &stablePublic); err != nil {
+		t.Fatal(err)
+	}
+	stablePublicID := stablePublic.GetRegistration().GetPublicClient().GetClientId()
+	if stablePublic.GetRegistration().GetChannel() != oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE || stablePublicID == "" || stablePublicID == publicRegistration.GetRegistration().GetPublicClient().GetClientId() {
+		t.Fatalf("stable public registration=%v", &stablePublic)
+	}
+	expectedRegistrationRevision = 1
+	stableConfidential, err := client.RegisterOAuthClient(grpcCtx, &oauthclientv1.RegisterOAuthClientRequest{ApplicationId: application.GetId(), Channel: oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE, Command: &oauthclientv1.RegisterOAuthClientCommand{Type: oauthclientv1.OAuthClientType_OAUTH_CLIENT_TYPE_CONFIDENTIAL_SECRET, ExpectedRegistrationRevision: &expectedRegistrationRevision}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stableConfidentialID := stableConfidential.GetRegistration().GetConfidentialClient().GetClientId()
+	if stableConfidentialID == "" || stableConfidential.GetClientSecret() == "" || stableConfidential.GetRegistration().GetRegistrationRevision() != 2 {
+		t.Fatalf("stable confidential=%v", stableConfidential)
+	}
+	stableRegistrationPath := fmt.Sprintf("/v1/applications/%s/oauth-registrations/OAUTH_CHANNEL_STABLE", application.GetId())
+	statusCode, _, payload = doHTTP(http.MethodGet, stableRegistrationPath, adminToken, nil)
+	if statusCode != http.StatusOK || !bytes.Contains(payload, []byte(`"channel":"OAUTH_CHANNEL_STABLE"`)) {
+		t.Fatalf("stable registration status=%d body=%s", statusCode, payload)
+	}
+	stableCredential, err := client.GetOAuthClientCredentialMetadata(grpcCtx, &oauthclientv1.GetOAuthClientCredentialMetadataRequest{ClientId: stableConfidentialID})
+	if err != nil || stableCredential.GetCredential().GetCredentialRevision() != 1 {
+		t.Fatalf("stable credential=%v error=%v", stableCredential, err)
+	}
+	stableRotated, err := client.RotateOAuthClientSecret(grpcCtx, &oauthclientv1.RotateOAuthClientSecretRequest{ClientId: stableConfidentialID, Command: &oauthclientv1.RotateOAuthClientSecretCommand{ExpectedCredentialRevision: 1}})
+	if err != nil || stableRotated.GetCredential().GetCredentialRevision() != 2 || stableRotated.GetClientSecret() == "" {
+		t.Fatalf("stable rotation=%v error=%v", stableRotated, err)
+	}
+	stableStatusPath := fmt.Sprintf("/v1/oauth-clients/%s/status", stableConfidentialID)
+	statusCode, _, payload = doHTTP(http.MethodPut, stableStatusPath, adminToken, []byte(`{"expectedRegistrationRevision":"2","status":"OAUTH_CLIENT_STATUS_DISABLED"}`))
+	if statusCode != http.StatusOK || !bytes.Contains(payload, []byte(`"channel":"OAUTH_CHANNEL_STABLE"`)) {
+		t.Fatalf("stable status=%d body=%s", statusCode, payload)
+	}
+
 	provider := oauthclientv1.NewOAuthClientProviderServiceClient(connection)
 	serviceToken := e2eSignServiceIdentity(t, "iwut-auth-center", "iwut-app-center")
 	serviceCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.ServiceAuthorizationHeader, "Bearer "+serviceToken))

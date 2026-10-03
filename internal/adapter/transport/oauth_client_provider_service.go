@@ -83,7 +83,12 @@ func (service *OAuthClientProviderService) ResolveAuthorizationContext(ctx conte
 	if err != nil {
 		return nil, providerTransportError(ctx, err)
 	}
-	return &oauthclientv1.ResolveAuthorizationContextResponse{Context: &oauthclientv1.AuthorizationContext{Runtime: runtimeResource(result.Runtime), AuthId: result.AuthID.String(), TesterMembershipId: result.TesterMembershipID}}, nil
+	resource := &oauthclientv1.AuthorizationContext{Runtime: runtimeResource(result.Runtime), AuthId: result.AuthID.String()}
+	if result.TesterMembershipID != "" {
+		value := result.TesterMembershipID
+		resource.TesterMembershipId = &value
+	}
+	return &oauthclientv1.ResolveAuthorizationContextResponse{Context: resource}, nil
 }
 
 func (service *OAuthClientProviderService) GetApplicationPublishedRedirects(ctx context.Context, request *oauthclientv1.GetApplicationPublishedRedirectsRequest) (*oauthclientv1.GetApplicationPublishedRedirectsResponse, error) {
@@ -116,7 +121,7 @@ func clientConfigurationResource(configuration *domain.ClientConfiguration) *oau
 	if configuration == nil {
 		return nil
 	}
-	resource := &oauthclientv1.OAuthClientConfiguration{ClientId: configuration.ClientID.String(), ApplicationId: configuration.ApplicationID.String(), Type: clientTypeResource(configuration.Type), Channel: oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST, Status: clientStatusResource(configuration.Status), RegistrationRevision: configuration.RegistrationRevision, AuthorizationEpoch: configuration.AuthorizationEpoch}
+	resource := &oauthclientv1.OAuthClientConfiguration{ClientId: configuration.ClientID.String(), ApplicationId: configuration.ApplicationID.String(), Type: clientTypeResource(configuration.Type), Channel: oauthChannelResource(configuration.Channel), Status: clientStatusResource(configuration.Status), RegistrationRevision: configuration.RegistrationRevision, AuthorizationEpoch: configuration.AuthorizationEpoch}
 	if configuration.TokenEndpointAuth == domain.TokenEndpointAuthMethodClientSecretBasic {
 		resource.TokenEndpointAuthMethod = oauthclientv1.TokenEndpointAuthMethod_TOKEN_ENDPOINT_AUTH_METHOD_CLIENT_SECRET_BASIC
 	} else {
@@ -133,7 +138,7 @@ func runtimeResource(runtime *domain.RuntimeConfiguration) *oauthclientv1.Runtim
 	if runtime == nil {
 		return nil
 	}
-	return &oauthclientv1.RuntimeConfiguration{ClientId: runtime.ClientID.String(), ApplicationId: runtime.ApplicationID.String(), Type: clientTypeResource(runtime.Type), Channel: oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST, RpcApiMajor: runtime.RPCAPIMajor, RegistrationRevision: runtime.RegistrationRevision, AuthorizationEpoch: runtime.AuthorizationEpoch, AdminAuthId: runtime.AdminAuthID.String(), VersionId: runtime.VersionID, PublicationRevision: runtime.PublicationRevision, RedirectUris: append([]string(nil), runtime.RedirectURIs...), RequiredScopes: append([]string(nil), runtime.RequiredScopes...), OptionalScopes: append([]string(nil), runtime.OptionalScopes...), Display: displayResource(runtime.Display), ObservedAt: timestamppb.New(runtime.ObservedAt), ValidUntil: timestamppb.New(runtime.ValidUntil)}
+	return &oauthclientv1.RuntimeConfiguration{ClientId: runtime.ClientID.String(), ApplicationId: runtime.ApplicationID.String(), Type: clientTypeResource(runtime.Type), Channel: oauthChannelResource(runtime.Channel), RpcApiMajor: runtime.RPCAPIMajor, RegistrationRevision: runtime.RegistrationRevision, AuthorizationEpoch: runtime.AuthorizationEpoch, AdminAuthId: runtime.AdminAuthID.String(), VersionId: runtime.VersionID, PublicationRevision: runtime.PublicationRevision, RedirectUris: append([]string(nil), runtime.RedirectURIs...), RequiredScopes: append([]string(nil), runtime.RequiredScopes...), OptionalScopes: append([]string(nil), runtime.OptionalScopes...), Display: displayResource(runtime.Display), ObservedAt: timestamppb.New(runtime.ObservedAt), ValidUntil: timestamppb.New(runtime.ValidUntil)}
 }
 
 func displayResource(display domain.ApplicationDisplay) *oauthclientv1.ApplicationDisplay {
@@ -153,7 +158,7 @@ func publishedRedirectSnapshotResource(snapshot *domain.PublishedRedirectSnapsho
 	}
 	entries := make([]*oauthclientv1.PublishedRedirectEntry, len(snapshot.Entries))
 	for index, entry := range snapshot.Entries {
-		entries[index] = &oauthclientv1.PublishedRedirectEntry{Channel: oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST, RpcApiMajor: entry.RPCAPIMajor, VersionId: entry.VersionID, PublicationRevision: entry.PublicationRevision}
+		entries[index] = &oauthclientv1.PublishedRedirectEntry{Channel: oauthChannelResource(entry.Channel), RpcApiMajor: entry.RPCAPIMajor, VersionId: entry.VersionID, PublicationRevision: entry.PublicationRevision}
 	}
 	return &oauthclientv1.PublishedRedirectSnapshot{ApplicationId: snapshot.ApplicationID.String(), Entries: entries, RedirectUris: append([]string(nil), snapshot.RedirectURIs...), ObservedAt: timestamppb.New(snapshot.ObservedAt), ValidUntil: timestamppb.New(snapshot.ValidUntil)}
 }

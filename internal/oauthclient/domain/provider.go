@@ -110,7 +110,7 @@ func (runtime *RuntimeConfiguration) Version() RuntimeVersion {
 }
 
 func NewRuntimeConfiguration(configuration *ClientConfiguration, major int32, admin shared.AuthID, versionID string, publicationRevision int64, redirects, required, optional []string, display ApplicationDisplay, observedAt time.Time) (*RuntimeConfiguration, error) {
-	if configuration == nil || configuration.Status != ClientStatusActive || configuration.Channel != ChannelTest || major < 1 || !admin.IsValid() || !shared.IsUUIDv7(versionID) || publicationRevision < 1 || len(redirects) == 0 || observedAt.IsZero() || !strictlySortedUniqueStrings(redirects) || !strictlySortedUniqueStrings(required) || !strictlySortedUniqueStrings(optional) || !displayValid(display) {
+	if configuration == nil || configuration.Status != ClientStatusActive || !configuration.Channel.Enabled() || major < 1 || !admin.IsValid() || !shared.IsUUIDv7(versionID) || publicationRevision < 1 || len(redirects) == 0 || observedAt.IsZero() || !strictlySortedUniqueStrings(redirects) || !strictlySortedUniqueStrings(required) || !strictlySortedUniqueStrings(optional) || !displayValid(display) {
 		return nil, ErrOAuthClientStateInconsistent
 	}
 	return &RuntimeConfiguration{
@@ -129,7 +129,7 @@ type AuthorizationContext struct {
 }
 
 func NewAuthorizationContext(runtime *RuntimeConfiguration, authID shared.AuthID, membershipID string) (*AuthorizationContext, error) {
-	if runtime == nil || !authID.IsValid() || !shared.IsUUIDv7(membershipID) {
+	if runtime == nil || !authID.IsValid() || runtime.Channel == ChannelTest && !shared.IsUUIDv7(membershipID) || runtime.Channel == ChannelStable && membershipID != "" || !runtime.Channel.Enabled() {
 		return nil, ErrOAuthClientStateInconsistent
 	}
 	return &AuthorizationContext{runtime, authID, membershipID}, nil
@@ -155,10 +155,10 @@ func NewPublishedRedirectSnapshot(applicationID shared.ApplicationID, entries []
 		return nil, ErrOAuthClientStateInconsistent
 	}
 	for index, entry := range entries {
-		if entry.Channel != ChannelTest || entry.RPCAPIMajor < 1 || !shared.IsUUIDv7(entry.VersionID) || entry.PublicationRevision < 1 {
+		if !entry.Channel.Enabled() || entry.RPCAPIMajor < 1 || !shared.IsUUIDv7(entry.VersionID) || entry.PublicationRevision < 1 {
 			return nil, ErrOAuthClientStateInconsistent
 		}
-		if index > 0 && entries[index-1].RPCAPIMajor >= entry.RPCAPIMajor {
+		if index > 0 && (entries[index-1].Channel > entry.Channel || entries[index-1].Channel == entry.Channel && entries[index-1].RPCAPIMajor >= entry.RPCAPIMajor) {
 			return nil, ErrOAuthClientStateInconsistent
 		}
 	}

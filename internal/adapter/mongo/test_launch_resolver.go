@@ -62,7 +62,7 @@ func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.A
 	}
 	var publication applicationPublicationDocument
 	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: appID.String()}, {Key: "rpcApiMajor", Value: major}}), &publication)
-	if errors.Is(err, drivermongo.ErrNoDocuments) || (err == nil && publication.TestVersionID == "") {
+	if errors.Is(err, drivermongo.ErrNoDocuments) || (err == nil && publication.TestVersionID == nil) {
 		return nil, catalogport.ErrApplicationTestTargetUnavailable
 	}
 	if err != nil {
@@ -72,15 +72,15 @@ func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.A
 		return nil, catalogport.ErrApplicationTestPublicationInconsistent
 	}
 	var history applicationPublicationHistoryDocument
-	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.D{{Key: "publicationId", Value: publication.PublicationID}, {Key: "publicationRevision", Value: publication.Revision}}), &history)
+	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.D{{Key: "publicationId", Value: publication.PublicationID}, {Key: "publicationRevision", Value: bson.D{{Key: "$lte", Value: publication.Revision}}}, {Key: "action", Value: "SET_TEST_VERSION"}, {Key: "newVersionId", Value: *publication.TestVersionID}}, options.FindOne().SetSort(bson.D{{Key: "publicationRevision", Value: -1}})), &history)
 	if err != nil {
 		return nil, missingTestLaunchFact(err)
 	}
-	if history.ApplicationID != appID.String() || history.RPCAPIMajor != major || history.NewVersionID != publication.TestVersionID || history.Action != "SET_TEST_VERSION" || !shared.IsUUIDv7(history.ApprovedReviewID) {
+	if history.ApplicationID != appID.String() || history.RPCAPIMajor != major || history.NewVersionID == nil || *history.NewVersionID != *publication.TestVersionID || history.Action != "SET_TEST_VERSION" || history.ApprovedReviewID == nil || !shared.IsUUIDv7(*history.ApprovedReviewID) {
 		return nil, catalogport.ErrApplicationTestPublicationInconsistent
 	}
 	var version applicationVersionDocument
-	err = decodeTestLaunchDocument(r.database.Collection(applicationVersionsCollectionName).FindOne(ctx, bson.D{{Key: "versionId", Value: publication.TestVersionID}, {Key: "applicationId", Value: appID.String()}}), &version)
+	err = decodeTestLaunchDocument(r.database.Collection(applicationVersionsCollectionName).FindOne(ctx, bson.D{{Key: "versionId", Value: *publication.TestVersionID}, {Key: "applicationId", Value: appID.String()}}), &version)
 	if err != nil {
 		return nil, missingTestLaunchFact(err)
 	}
@@ -93,7 +93,7 @@ func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.A
 		return nil, missingTestLaunchFact(err)
 	}
 	approved, err := applicationReviewFromDocument(review)
-	if err != nil || review.ReviewID != history.ApprovedReviewID || review.Status != "APPROVED" || review.Decision == nil || review.Decision.Outcome != "APPROVED" || review.SourceVersionRevision > math.MaxInt64-2 || version.Revision != review.SourceVersionRevision+2 {
+	if err != nil || review.ReviewID != *history.ApprovedReviewID || review.Status != "APPROVED" || review.Decision == nil || review.Decision.Outcome != "APPROVED" || review.SourceVersionRevision > math.MaxInt64-2 || version.Revision != review.SourceVersionRevision+2 {
 		return nil, catalogport.ErrApplicationTestPublicationInconsistent
 	}
 	_, _, snapshot, err := applicationVersionDocumentToDecisionVersion(version)

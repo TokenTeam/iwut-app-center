@@ -58,7 +58,7 @@ func (h *ProviderHandlers) VerifyClientSecret(ctx context.Context, clientID doma
 }
 
 func (h *ProviderHandlers) ResolveRuntime(ctx context.Context, clientID domain.ClientID, channel domain.Channel, major int32, expected int64) (*domain.RuntimeConfiguration, error) {
-	if !clientID.IsValid() || channel != domain.ChannelTest || major < 1 || expected < 1 {
+	if !clientID.IsValid() || !channel.Enabled() || major < 1 || expected < 1 {
 		return nil, domain.ErrInvalidOAuthProviderRequest
 	}
 	at, err := h.observedAt()
@@ -76,7 +76,7 @@ func (h *ProviderHandlers) ResolveRuntime(ctx context.Context, clientID domain.C
 }
 
 func (h *ProviderHandlers) ResolveAuthorizationContext(ctx context.Context, clientID domain.ClientID, authID shared.AuthID, channel domain.Channel, major int32, expected int64, version domain.RuntimeVersion) (*domain.AuthorizationContext, error) {
-	if !clientID.IsValid() || !authID.IsValid() || channel != domain.ChannelTest || major < 1 || expected < 1 || !version.IsValid() {
+	if !clientID.IsValid() || !authID.IsValid() || !channel.Enabled() || major < 1 || expected < 1 || !version.IsValid() {
 		return nil, domain.ErrInvalidOAuthProviderRequest
 	}
 	at, err := h.observedAt()

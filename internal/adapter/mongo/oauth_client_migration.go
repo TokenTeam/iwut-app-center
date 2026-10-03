@@ -37,6 +37,10 @@ func oauthIdentitySchema(expectedType string) bson.D {
 }
 
 func oauthRegistrationValidator() bson.D {
+	return oauthRegistrationValidatorWithChannels(bson.A{"TEST"})
+}
+
+func oauthRegistrationValidatorWithChannels(channels bson.A) bson.D {
 	return bson.D{{Key: "$jsonSchema", Value: bson.D{
 		{Key: "bsonType", Value: "object"},
 		{Key: "required", Value: bson.A{"applicationId", "channel", "publicClient", "confidentialClient", "clientIds", "registrationRevision", "createdAt", "updatedAt"}},
@@ -44,7 +48,7 @@ func oauthRegistrationValidator() bson.D {
 		{Key: "properties", Value: bson.D{
 			{Key: "_id", Value: bson.D{}},
 			{Key: "applicationId", Value: bson.D{{Key: "bsonType", Value: "string"}}},
-			{Key: "channel", Value: bson.D{{Key: "enum", Value: bson.A{"TEST"}}}},
+			{Key: "channel", Value: bson.D{{Key: "enum", Value: channels}}},
 			{Key: "publicClient", Value: bson.D{{Key: "anyOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, oauthIdentitySchema("PUBLIC_PKCE")}}}},
 			{Key: "confidentialClient", Value: bson.D{{Key: "anyOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, oauthIdentitySchema("CONFIDENTIAL_SECRET")}}}},
 			{Key: "clientIds", Value: bson.D{

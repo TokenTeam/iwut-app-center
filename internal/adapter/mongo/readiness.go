@@ -13,7 +13,7 @@ import (
 // before it will serve traffic. It mirrors the last entry of Migrator.Migrate:
 // the composed service ships the UC-APP-018 OAuth client management schema, so an older
 // revision is not sufficient.
-const RequiredMigrationID = versionOAuthRedirectMigrationID
+const RequiredMigrationID = stablePublicationMigrationID
 
 // MigrationLedgerCollectionName is the read-only ledger written by Migrator.
 // Startup only reads it; it never creates the collection or an index.

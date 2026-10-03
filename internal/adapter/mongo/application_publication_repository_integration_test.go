@@ -413,6 +413,155 @@ func TestApplicationPublicationRepositoryIntegration_BR_PUB_003_008_009_OAuthReg
 	}
 }
 
+func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableSetClearAndSharedRevision(t *testing.T) {
+	client := integrationClient(t)
+	db := migratedIntegrationDatabase(t, client)
+	seed := createApprovedPublicationVersion(t, db, "stable-publication")
+	repository := NewApplicationPublicationRepository(db)
+
+	stable, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicationID := publicationdomain.ApplicationPublicationID(nextIntegrationApplicationReviewID(t))
+	created, err := repository.SetStable(t.Context(), stable, &publicationID, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, publicationTestValidation(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Publication().TestVersionIDPtr() != nil || created.Publication().StableVersionID() != publicationdomain.ApplicationVersionID(seed.versionID) || created.Publication().Revision() != 1 || created.History().Action() != publicationdomain.PublicationActionSetStableVersion {
+		t.Fatalf("stable-only publication=%#v history=%#v", created.Publication(), created.History())
+	}
+	publicationFilter := bson.M{"publicationId": created.Publication().PublicationID().String()}
+	if _, err := db.Collection(applicationPublicationsCollectionName).UpdateOne(t.Context(), publicationFilter, bson.M{"$set": bson.M{"greyRollout": bson.M{"versionId": seed.versionID.String()}}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+		t.Fatal(err)
+	}
+	if candidate, err := repository.LoadStableClearCandidate(t.Context(), seed.applicationID, 1, seed.adminID, 1); candidate != nil || !errors.Is(err, publicationport.ErrStablePublicationRequiredByGrey) {
+		t.Fatalf("grey clear guard candidate=%#v error=%v", candidate, err)
+	}
+	if _, err := db.Collection(applicationPublicationsCollectionName).UpdateOne(t.Context(), publicationFilter, bson.M{"$unset": bson.M{"greyRollout": ""}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+		t.Fatal(err)
+	}
+	stableOnly, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 2, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyPublicationID := publicationdomain.ApplicationPublicationID(nextIntegrationApplicationReviewID(t))
+	stableOnlyResult, err := repository.SetStable(t.Context(), stableOnly, &emptyPublicationID, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, publicationTestValidation(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyCandidate, err := repository.LoadStableClearCandidate(t.Context(), seed.applicationID, 2, seed.adminID, stableOnlyResult.Publication().Revision())
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyResult, err := repository.ClearStable(t.Context(), emptyCandidate, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, time.Now())
+	if err != nil || emptyResult.Publication().TestVersionIDPtr() != nil || emptyResult.Publication().StableVersionIDPtr() != nil || emptyResult.Publication().Revision() != 2 {
+		t.Fatalf("empty publication=%#v error=%v", emptyResult, err)
+	}
+
+	revision := int64(1)
+	testResult := placePublication(t, repository, loadPublicationCandidate(t, repository, seed, 1, &revision), seed)
+	if testResult.Publication().Revision() != 2 || testResult.Publication().StableVersionID() != publicationdomain.ApplicationVersionID(seed.versionID) || testResult.Publication().TestVersionID() != publicationdomain.ApplicationVersionID(seed.versionID) {
+		t.Fatalf("shared-slot publication=%#v", testResult.Publication())
+	}
+
+	clearCandidate, err := repository.LoadStableClearCandidate(t.Context(), seed.applicationID, 1, seed.adminID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := repository.ClearStable(t.Context(), clearCandidate, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Publication().Revision() != 3 || cleared.Publication().StableVersionIDPtr() != nil || cleared.Publication().TestVersionIDPtr() == nil || cleared.History().Action() != publicationdomain.PublicationActionClearStableVersion || cleared.History().NewVersionIDPtr() != nil || cleared.History().ApprovedReviewIDPtr() != nil || cleared.History().ScopeCatalogRevisionPtr() != nil || cleared.History().PreflightPolicyVersionPtr() != nil {
+		t.Fatalf("cleared publication=%#v history=%#v", cleared.Publication(), cleared.History())
+	}
+	if _, err := db.Collection(applicationPublicationsCollectionName).UpdateOne(t.Context(), publicationFilter, bson.M{"$set": bson.M{"greyRollout": bson.M{"versionId": seed.versionID.String()}}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+		t.Fatal(err)
+	}
+	if candidate, err := repository.LoadStableClearCandidate(t.Context(), seed.applicationID, 1, seed.adminID, 3); candidate != nil || !errors.Is(err, publicationport.ErrApplicationPublicationStateInconsistent) {
+		t.Fatalf("grey without stable candidate=%#v error=%v", candidate, err)
+	}
+	if _, err := db.Collection(applicationPublicationsCollectionName).UpdateOne(t.Context(), publicationFilter, bson.M{"$unset": bson.M{"greyRollout": ""}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+		t.Fatal(err)
+	}
+	noop, err := repository.LoadStableClearCandidate(t.Context(), seed.applicationID, 1, seed.adminID, 3)
+	if err != nil || !noop.IsNoOp() {
+		t.Fatalf("empty candidate=%#v error=%v", noop, err)
+	}
+	if _, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, &revision); !errors.Is(err, publicationport.ErrApplicationPublicationRevisionConflict) {
+		t.Fatalf("stale shared revision error=%v", err)
+	}
+	second := addApprovedPublicationVersion(t, db, seed, "stable-race-v2")
+	sharedRevision := int64(3)
+	stableCandidate, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, &sharedRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testCandidate := loadPublicationCandidate(t, repository, second, 1, &sharedRevision)
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	stableHistoryID := publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t))
+	testHistoryID := publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t))
+	go func() {
+		<-start
+		_, raceErr := repository.SetStable(t.Context(), stableCandidate, nil, stableHistoryID, seed.adminID, publicationTestValidation(), time.Now())
+		results <- raceErr
+	}()
+	go func() {
+		<-start
+		_, raceErr := repository.PlaceInTest(t.Context(), testCandidate, nil, testHistoryID, seed.adminID, publicationTestValidation(), time.Now())
+		results <- raceErr
+	}()
+	close(start)
+	success, conflict := 0, 0
+	for range 2 {
+		if raceErr := <-results; raceErr == nil {
+			success++
+		} else if errors.Is(raceErr, publicationport.ErrApplicationPublicationRevisionConflict) {
+			conflict++
+		} else {
+			t.Fatalf("race error=%v", raceErr)
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatalf("race success=%d conflict=%d", success, conflict)
+	}
+	assertPublicationCounts(t, db, 2, 6)
+}
+
+func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableOAuthRegistrationIsIsolated(t *testing.T) {
+	client := integrationClient(t)
+	db := migratedIntegrationDatabase(t, client)
+	seed := createApprovedPublicationVersion(t, db, "stable-oauth-isolation")
+	redirects := oauthRedirectConfigurationDocument{PKCERedirectURIs: []string{"https://stable.example.edu/callback"}, ConfidentialRedirectURIs: []string{}}
+	for _, change := range []struct {
+		collection     string
+		filter, update bson.D
+	}{
+		{applicationVersionOAuthConfigsCollectionName, bson.D{{Key: "applicationVersionId", Value: seed.versionID.String()}}, bson.D{{Key: "$set", Value: bson.D{{Key: "oauthRedirects", Value: redirects}}}}},
+		{applicationReviewsCollectionName, bson.D{{Key: "reviewId", Value: seed.reviewID.String()}}, bson.D{{Key: "$set", Value: bson.D{{Key: "snapshot.oauthRedirects", Value: redirects}}}}},
+	} {
+		if _, err := db.Collection(change.collection).UpdateOne(t.Context(), change.filter, change.update); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oauthRepository := NewOAuthClientRepository(db)
+	if _, err := oauthRepository.Register(t.Context(), seed.applicationID, oauthclientdomain.ChannelTest, oauthclientdomain.ClientTypePublicPKCE, nil, integrationOAuthClientID(t, 801), nil, seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	repository := NewApplicationPublicationRepository(db)
+	if candidate, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); candidate != nil || !errors.Is(err, publicationport.ErrOAuthClientRegistrationRequired) {
+		t.Fatalf("TEST registration satisfied STABLE: candidate=%#v error=%v", candidate, err)
+	}
+	if _, err := oauthRepository.Register(t.Context(), seed.applicationID, oauthclientdomain.ChannelStable, oauthclientdomain.ClientTypePublicPKCE, nil, integrationOAuthClientID(t, 802), nil, seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if candidate, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil); err != nil || candidate == nil {
+		t.Fatalf("STABLE registration rejected: candidate=%#v error=%v", candidate, err)
+	}
+}
+
 func TestApplicationPublicationEligibilityIntegration(t *testing.T) {
 	client := integrationClient(t)
 	for _, test := range []struct {
@@ -745,6 +894,39 @@ func TestApplicationPublicationMigrationIntegration(t *testing.T) {
 					t.Fatalf("error=%v want document validation failure", err)
 				}
 			})
+		}
+	})
+	t.Run("BR-PUB-014 BR-PUB-015 validator accepts stable-only empty and clear history", func(t *testing.T) {
+		stableOnly := base
+		stableOnly.PublicationID = nextIntegrationApplicationReviewID(t).String()
+		stableOnly.ApplicationID = nextIntegrationApplicationReviewID(t).String()
+		stableOnly.TestVersionID = nil
+		stableOnly.StableVersionID = base.TestVersionID
+		if _, err := db.Collection(applicationPublicationsCollectionName).InsertOne(t.Context(), stableOnly); err != nil {
+			t.Fatalf("stable-only: %v", err)
+		}
+		empty := base
+		empty.PublicationID = nextIntegrationApplicationReviewID(t).String()
+		empty.ApplicationID = nextIntegrationApplicationReviewID(t).String()
+		empty.TestVersionID = nil
+		empty.StableVersionID = nil
+		empty.Revision = 2
+		if _, err := db.Collection(applicationPublicationsCollectionName).InsertOne(t.Context(), empty); err != nil {
+			t.Fatalf("empty: %v", err)
+		}
+		clear := history
+		clear.HistoryID = nextIntegrationApplicationReviewID(t).String()
+		clear.PublicationID = stableOnly.PublicationID
+		clear.ApplicationID = stableOnly.ApplicationID
+		clear.PublicationRevision = 2
+		clear.Action = string(publicationdomain.PublicationActionClearStableVersion)
+		clear.PreviousVersionID = stableOnly.StableVersionID
+		clear.NewVersionID = nil
+		clear.ApprovedReviewID = nil
+		clear.ScopeCatalogRevision = nil
+		clear.PreflightPolicyVersion = nil
+		if _, err := db.Collection(applicationPublicationHistoryCollectionName).InsertOne(t.Context(), clear); err != nil {
+			t.Fatalf("clear history: %v", err)
 		}
 	})
 }

@@ -40,22 +40,19 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-019 — resolve OAuth client authorization context for Auth.** Design
-input is `../../docs/app-center/briefs/UC-APP-019.md` plus the engineering
-baseline and implements README. Deliver the Auth-only native gRPC provider with
-five exact methods: client metadata, confidential secret verification, TEST
-runtime resolution, user authorization context resolution and application
-published redirect facts. Add a strict local service-caller registry, fixed
-`iwut-app-center` audience, one-minute maximum TTL, thirty-second clock skew and
-method-level permissions. Compose each runtime response from one consistent
-Mongo snapshot of registration, exact-major Publication, approved Version/Review
-snapshot, Version OAuth config and current approved Profile; user context also
-requires the exact ACTIVE Tester episode and expected runtime tuple. Keep the
-five-second snapshot validity bound, secret/error/log redaction and fail-closed
-invariant handling. Do not expose HTTP, implement Auth grants/codes/tokens,
-sector/sub storage, Scope enabled filtering, frontend behavior or future
-channels. Required final tier: `make check-auth-app`. Commit API inputs and
-generated outputs before the service gitlink, and keep all commits local.
+**UC-APP-020 — manage the stable publication slot.** Design input is
+`../../docs/app-center/briefs/UC-APP-020.md` plus the engineering baseline and
+implements README. Deliver exact-major stable set/replace/clear, retained EMPTY
+Publication records, shared Publication OCC and append-only History, the 0016
+schema migration, STABLE OAuth registration management, and STABLE support in
+the five existing Auth-only provider methods. Preserve TEST behavior and use
+field presence for optional test/stable pointers, clear History facts, and the
+channel-specific tester membership. Reuse the UC007 approval/Profile/scope/URL
+checks and UC018/019 security boundaries. Do not implement Grey, test clear,
+Catalog, Filter, Application disable, Auth grants/codes/tokens, sector/sub
+storage, or frontend behavior. Required final tier: `make check-auth-app`.
+Commit API inputs and generated outputs before the service gitlink, and keep all
+commits local.
 
 ## Verification entry points
 

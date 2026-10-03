@@ -38,7 +38,7 @@ func (h *Handlers) Register(ctx context.Context, identity shared.DeveloperIdenti
 	if !appID.IsValid() {
 		return nil, "", domain.ErrInvalidApplicationID
 	}
-	if channel != domain.ChannelTest {
+	if !channel.Enabled() {
 		return nil, "", domain.ErrOAuthChannelNotEnabled
 	}
 	if typ != domain.ClientTypePublicPKCE && typ != domain.ClientTypeConfidentialSecret {
@@ -71,7 +71,7 @@ func (h *Handlers) Register(ctx context.Context, identity shared.DeveloperIdenti
 	if err != nil {
 		return nil, "", mapRepositoryError(err)
 	}
-	if result == nil || result.Registration == nil || result.Registration.Client(typ) == nil || result.Registration.Client(typ).ClientID() != id || (typ == domain.ClientTypeConfidentialSecret) != (result.Credential != nil) {
+	if result == nil || result.Registration == nil || result.Registration.ApplicationID() != appID || result.Registration.Channel() != channel || result.Registration.Client(typ) == nil || result.Registration.Client(typ).ClientID() != id || (typ == domain.ClientTypeConfidentialSecret) != (result.Credential != nil) {
 		return nil, "", domain.ErrOAuthClientStateInconsistent
 	}
 	return result, plain, nil
@@ -84,7 +84,7 @@ func (h *Handlers) GetRegistration(ctx context.Context, identity shared.Develope
 	if !appID.IsValid() {
 		return nil, domain.ErrInvalidApplicationID
 	}
-	if channel != domain.ChannelTest {
+	if !channel.Enabled() {
 		return nil, domain.ErrOAuthChannelNotEnabled
 	}
 	if h == nil || h.repository == nil {

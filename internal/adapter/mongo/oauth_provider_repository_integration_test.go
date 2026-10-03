@@ -16,6 +16,7 @@ import (
 	oauthport "iwut-app-center/internal/oauthclient/port"
 	profiledomain "iwut-app-center/internal/profile/domain"
 	profileport "iwut-app-center/internal/profile/port"
+	publicationdomain "iwut-app-center/internal/publication/domain"
 	reviewdomain "iwut-app-center/internal/review/domain"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	versiondomain "iwut-app-center/internal/version/domain"
@@ -196,6 +197,74 @@ func TestOAuthProviderRepositoryIntegration(t *testing.T) {
 			t.Fatalf("disabled identity changed sector redirects=%#v error=%v", afterDisable, err)
 		}
 	})
+}
+
+func TestOAuthProviderRepositoryIntegration_UCAPP020_StableRuntimeAndSharedRevision(t *testing.T) {
+	f := newOAuthProviderFixture(t)
+	clientRepository := NewOAuthClientRepository(f.db)
+	stablePublicID := integrationOAuthClientID(t, 903)
+	if _, err := clientRepository.Register(t.Context(), f.seed.applicationID, oauthdomain.ChannelStable, oauthdomain.ClientTypePublicPKCE, nil, stablePublicID, nil, f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stableConfidentialID := integrationOAuthClientID(t, 904)
+	digest := providerTestSecret(stableConfidentialID, "stable-secret")
+	expectedRegistrationRevision := int64(1)
+	if _, err := clientRepository.Register(t.Context(), f.seed.applicationID, oauthdomain.ChannelStable, oauthdomain.ClientTypeConfidentialSecret, &expectedRegistrationRevision, stableConfidentialID, &digest, f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	publicationRepository := NewApplicationPublicationRepository(f.db)
+	expectedPublicationRevision := int64(1)
+	candidate, err := publicationRepository.LoadStablePlacementCandidate(t.Context(), f.seed.applicationID, 1, publicationdomain.ApplicationVersionID(f.seed.versionID), f.seed.adminID, &expectedPublicationRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := publicationRepository.SetStable(t.Context(), candidate, nil, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), f.seed.adminID, publicationTestValidation(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Publication().Revision() != 2 {
+		t.Fatalf("publication revision=%d", set.Publication().Revision())
+	}
+
+	repository := NewOAuthProviderRepository(f.db, providerTestSecretVerifier{})
+	at := time.Date(2026, 10, 4, 1, 0, 0, 0, time.UTC)
+	stableRuntime, err := repository.ResolveRuntime(t.Context(), stablePublicID, oauthdomain.ChannelStable, 1, 2, at)
+	if err != nil || stableRuntime.Channel != oauthdomain.ChannelStable || stableRuntime.PublicationRevision != 2 || stableRuntime.VersionID != f.seed.versionID.String() {
+		t.Fatalf("stable runtime=%#v error=%v", stableRuntime, err)
+	}
+	authorization, err := repository.ResolveAuthorizationContext(t.Context(), stablePublicID, "ordinary-user", oauthdomain.ChannelStable, 1, 2, stableRuntime.Version(), at)
+	if err != nil || authorization.AuthID != "ordinary-user" || authorization.TesterMembershipID != "" {
+		t.Fatalf("stable authorization=%#v error=%v", authorization, err)
+	}
+	if runtime, err := repository.ResolveRuntime(t.Context(), stablePublicID, oauthdomain.ChannelTest, 1, 2, at); runtime != nil || !errors.Is(err, oauthport.ErrRuntimeUnavailable) {
+		t.Fatalf("stable client crossed into test: runtime=%#v error=%v", runtime, err)
+	}
+	// A stable write advances the shared publication revision without invalidating
+	// the older SET_TEST history that still owns the test slot.
+	testRuntime, err := repository.ResolveRuntime(t.Context(), f.publicID, oauthdomain.ChannelTest, 1, 2, at)
+	if err != nil || testRuntime.PublicationRevision != 2 || testRuntime.VersionID != f.seed.versionID.String() {
+		t.Fatalf("test runtime after stable set=%#v error=%v", testRuntime, err)
+	}
+	snapshot, err := repository.GetPublishedRedirects(t.Context(), f.seed.applicationID, at)
+	if err != nil || len(snapshot.Entries) != 3 || snapshot.Entries[0].Channel != oauthdomain.ChannelStable || snapshot.Entries[1].Channel != oauthdomain.ChannelTest || snapshot.Entries[2].RPCAPIMajor != 2 {
+		t.Fatalf("published snapshot=%#v error=%v", snapshot, err)
+	}
+
+	clearCandidate, err := publicationRepository.LoadStableClearCandidate(t.Context(), f.seed.applicationID, 1, f.seed.adminID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = publicationRepository.ClearStable(t.Context(), clearCandidate, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if runtime, err := repository.ResolveRuntime(t.Context(), stablePublicID, oauthdomain.ChannelStable, 1, 2, at); runtime != nil || !errors.Is(err, oauthport.ErrRuntimeUnavailable) {
+		t.Fatalf("cleared stable runtime=%#v error=%v", runtime, err)
+	}
+	testRuntime, err = repository.ResolveRuntime(t.Context(), f.publicID, oauthdomain.ChannelTest, 1, 2, at)
+	if err != nil || testRuntime.PublicationRevision != 3 {
+		t.Fatalf("test runtime after stable clear=%#v error=%v", testRuntime, err)
+	}
 }
 
 func TestOAuthProviderRepositoryFailsClosedOnEligibilityChanges(t *testing.T) {

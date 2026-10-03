@@ -149,6 +149,8 @@ func TestPublicationService_UCAPP007_ErrorMappings(t *testing.T) {
 		{publicationdomain.ErrScopeCatalogUnavailable, codes.Unavailable, ReasonScopeCatalogUnavailable},
 		{publicationdomain.ErrLaunchURLInspectionUnavailable, codes.Unavailable, ReasonLaunchURLInspectionUnavailable},
 		{publicationdomain.ErrOAuthClientRegistrationRequired, codes.FailedPrecondition, ReasonOAuthClientRegistrationRequired},
+		{publicationdomain.ErrStablePublicationRequiredByGrey, codes.FailedPrecondition, ReasonStablePublicationRequiredByGrey},
+		{publicationdomain.ErrApplicationPublicationStateInconsistent, codes.Internal, ReasonApplicationPublicationStateInconsistent},
 		{errors.New("secret database details"), codes.Internal, ReasonInternal},
 	}
 	for _, tc := range tests {

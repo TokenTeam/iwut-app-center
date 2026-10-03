@@ -3,10 +3,12 @@ package transport
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
 	kratoserrors "github.com/go-kratos/kratos/v2/errors"
+	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
@@ -18,67 +20,188 @@ import (
 type PlaceApprovedVersionInTestSlotHandler interface {
 	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.PlaceApprovedVersionInTestSlotCommand) (*publicationdomain.PlaceInTestResult, error)
 }
+type SetApprovedVersionInStableSlotHandler interface {
+	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.SetApprovedVersionInStableSlotCommand) (*publicationdomain.PlaceInTestResult, error)
+}
+type ClearStableSlotHandler interface {
+	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.ClearStableSlotCommand) (*publicationdomain.PlaceInTestResult, error)
+}
 
 type ApplicationPublicationService struct {
 	publicationv1.UnimplementedApplicationPublicationServer
-	handler PlaceApprovedVersionInTestSlotHandler
+	testHandler   PlaceApprovedVersionInTestSlotHandler
+	stableHandler SetApprovedVersionInStableSlotHandler
+	clearHandler  ClearStableSlotHandler
 }
 
 var _ publicationv1.ApplicationPublicationHTTPServer = (*ApplicationPublicationService)(nil)
 var _ publicationv1.ApplicationPublicationServer = (*ApplicationPublicationService)(nil)
 
 func NewApplicationPublicationService(handler PlaceApprovedVersionInTestSlotHandler) *ApplicationPublicationService {
-	return &ApplicationPublicationService{handler: handler}
+	return &ApplicationPublicationService{testHandler: handler}
+}
+func NewApplicationPublicationServiceWithStable(test PlaceApprovedVersionInTestSlotHandler, stable SetApprovedVersionInStableSlotHandler, clear ClearStableSlotHandler) *ApplicationPublicationService {
+	return &ApplicationPublicationService{testHandler: test, stableHandler: stable, clearHandler: clear}
 }
 
 func (service *ApplicationPublicationService) PlaceApprovedVersionInTestSlot(ctx context.Context, request *publicationv1.PlaceApprovedVersionInTestSlotRequest) (*publicationv1.PlaceApprovedVersionInTestSlotResponse, error) {
-	if service == nil || service.handler == nil || request == nil {
+	if service == nil || service.testHandler == nil || request == nil {
 		return nil, toTransportError(publicationdomain.NewInternalError(nil))
 	}
-	identity, ok := developerIdentityFromContext(ctx)
-	if !ok {
-		return nil, toTransportError(publicationdomain.ErrDeveloperIdentityRequired)
-	}
-	applicationID, valid := shared.ParseApplicationID(request.GetApplicationId())
-	if !valid {
-		return nil, toTransportError(publicationdomain.ErrApplicationVersionNotFound)
+	identity, applicationID, err := publicationRequestIdentity(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, err
 	}
 	command := publicationusecase.PlaceApprovedVersionInTestSlotCommand{}
 	if body := request.GetCommand(); body != nil {
 		command.VersionID = publicationdomain.ApplicationVersionID(body.GetVersionId())
 		if body.ExpectedPublicationRevision != nil {
-			revision := body.GetExpectedPublicationRevision()
-			command.ExpectedPublicationRevision = &revision
+			value := body.GetExpectedPublicationRevision()
+			command.ExpectedPublicationRevision = &value
 		}
 	}
-	result, err := service.handler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), command)
-	if err != nil {
-		if errors.Is(err, publicationdomain.ErrApplicationProfileStateInconsistent) {
-			slog.ErrorContext(ctx, "application profile state invariant failed", "reason", ReasonApplicationProfileStateInconsistent)
-		}
-		if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired)) {
-			var domainError *publicationdomain.Error
-			errors.As(err, &domainError)
-			spec := publicationDomainErrorSpecs[domainError.Code()]
-			return nil, kratoserrors.New(http.StatusUnprocessableEntity, spec.reason, spec.message)
-		}
-		return nil, toTransportError(err)
+	result, handleErr := service.testHandler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), command)
+	if handleErr != nil {
+		return nil, publicationTransportError(ctx, handleErr)
 	}
-	if result == nil || result.Publication() == nil || result.Changed() != (result.History() != nil) {
+	publication, history, changed, convertErr := publicationResources(result)
+	if convertErr != nil {
+		return nil, convertErr
+	}
+	return &publicationv1.PlaceApprovedVersionInTestSlotResponse{Changed: changed, Publication: publication, History: history}, nil
+}
+
+func (service *ApplicationPublicationService) SetApprovedVersionInStableSlot(ctx context.Context, request *publicationv1.SetApprovedVersionInStableSlotRequest) (*publicationv1.SetApprovedVersionInStableSlotResponse, error) {
+	if service == nil || service.stableHandler == nil || request == nil {
 		return nil, toTransportError(publicationdomain.NewInternalError(nil))
 	}
-	publication := result.Publication()
-	response := &publicationv1.PlaceApprovedVersionInTestSlotResponse{Changed: result.Changed(), Publication: &publicationv1.ApplicationPublicationResource{
-		PublicationId: publication.PublicationID().String(), ApplicationId: publication.ApplicationID().String(), RpcApiMajor: publication.RPCAPIMajor(), TestVersionId: publication.TestVersionID().String(), Revision: publication.Revision(), CreatedBy: publication.CreatedBy().String(), CreatedAt: timestamppb.New(publication.CreatedAt()), UpdatedBy: publication.UpdatedBy().String(), UpdatedAt: timestamppb.New(publication.UpdatedAt()),
-	}}
-	if history := result.History(); history != nil {
-		response.History = &publicationv1.ApplicationPublicationHistoryResource{
-			HistoryId: history.HistoryID().String(), PublicationId: history.PublicationID().String(), ApplicationId: history.ApplicationID().String(), RpcApiMajor: history.RPCAPIMajor(), PublicationRevision: history.PublicationRevision(), Action: string(history.Action()), NewVersionId: history.NewVersionID().String(), ApprovedReviewId: history.ApprovedReviewID().String(), ScopeCatalogRevision: history.ScopeCatalogRevision().Int64(), PreflightPolicyVersion: history.PreflightPolicyVersion().String(), ChangedBy: history.ChangedBy().String(), ChangedAt: timestamppb.New(history.ChangedAt()),
-		}
-		if previous := history.PreviousVersionID(); previous != nil {
-			value := previous.String()
-			response.History.PreviousVersionId = &value
+	identity, applicationID, err := publicationRequestIdentity(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, err
+	}
+	if httpRequest, ok := khttp.RequestFromServerContext(ctx); ok && (httpRequest.URL.RawQuery != "" || httpRequest.URL.ForceQuery) {
+		return nil, toTransportError(publicationdomain.ErrInvalidApplicationPublicationRevision)
+	}
+	command := publicationusecase.SetApprovedVersionInStableSlotCommand{}
+	if body := request.GetCommand(); body != nil {
+		command.VersionID = publicationdomain.ApplicationVersionID(body.GetVersionId())
+		if body.ExpectedPublicationRevision != nil {
+			value := body.GetExpectedPublicationRevision()
+			command.ExpectedPublicationRevision = &value
 		}
 	}
-	return response, nil
+	result, handleErr := service.stableHandler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), command)
+	if handleErr != nil {
+		return nil, publicationTransportError(ctx, handleErr)
+	}
+	publication, history, changed, convertErr := publicationResources(result)
+	if convertErr != nil {
+		return nil, convertErr
+	}
+	return &publicationv1.SetApprovedVersionInStableSlotResponse{Changed: changed, Publication: publication, History: history}, nil
+}
+
+func (service *ApplicationPublicationService) ClearStableSlot(ctx context.Context, request *publicationv1.ClearStableSlotRequest) (*publicationv1.ClearStableSlotResponse, error) {
+	if service == nil || service.clearHandler == nil || request == nil {
+		return nil, toTransportError(publicationdomain.NewInternalError(nil))
+	}
+	identity, applicationID, err := publicationRequestIdentity(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, err
+	}
+	if httpRequest, ok := khttp.RequestFromServerContext(ctx); ok && !validClearStableHTTPInput(httpRequest) {
+		return nil, toTransportError(publicationdomain.ErrInvalidApplicationPublicationRevision)
+	}
+	result, handleErr := service.clearHandler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), publicationusecase.ClearStableSlotCommand{ExpectedPublicationRevision: request.GetExpectedPublicationRevision()})
+	if handleErr != nil {
+		return nil, publicationTransportError(ctx, handleErr)
+	}
+	publication, history, changed, convertErr := publicationResources(result)
+	if convertErr != nil {
+		return nil, convertErr
+	}
+	return &publicationv1.ClearStableSlotResponse{Changed: changed, Publication: publication, History: history}, nil
+}
+
+func validClearStableHTTPInput(request *http.Request) bool {
+	query := request.URL.Query()
+	if len(query) != 1 || len(query["expected_publication_revision"]) != 1 {
+		return false
+	}
+	if request.Body == nil {
+		return true
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 1025))
+	return err == nil && len(body) <= 1024 && len(body) == 0
+}
+
+func publicationRequestIdentity(ctx context.Context, rawApplicationID string) (shared.DeveloperIdentity, shared.ApplicationID, error) {
+	identity, ok := developerIdentityFromContext(ctx)
+	if !ok {
+		return shared.DeveloperIdentity{}, "", toTransportError(publicationdomain.ErrDeveloperIdentityRequired)
+	}
+	applicationID, valid := shared.ParseApplicationID(rawApplicationID)
+	if !valid {
+		return shared.DeveloperIdentity{}, "", toTransportError(publicationdomain.ErrApplicationVersionNotFound)
+	}
+	return identity, applicationID, nil
+}
+
+func publicationTransportError(ctx context.Context, err error) error {
+	if errors.Is(err, publicationdomain.ErrApplicationProfileStateInconsistent) || errors.Is(err, publicationdomain.ErrApplicationPublicationStateInconsistent) {
+		reason := ReasonApplicationProfileStateInconsistent
+		if errors.Is(err, publicationdomain.ErrApplicationPublicationStateInconsistent) {
+			reason = ReasonApplicationPublicationStateInconsistent
+		}
+		slog.ErrorContext(ctx, "application publication invariant failed", "reason", reason)
+	}
+	if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired) || errors.Is(err, publicationdomain.ErrStablePublicationRequiredByGrey)) {
+		var domainError *publicationdomain.Error
+		if errors.As(err, &domainError) {
+			spec := publicationDomainErrorSpecs[domainError.Code()]
+			return kratoserrors.New(http.StatusUnprocessableEntity, spec.reason, spec.message)
+		}
+	}
+	return toTransportError(err)
+}
+
+func publicationResources(result *publicationdomain.PlaceInTestResult) (*publicationv1.ApplicationPublicationResource, *publicationv1.ApplicationPublicationHistoryResource, bool, error) {
+	if result == nil || result.Publication() == nil || result.Changed() != (result.History() != nil) {
+		return nil, nil, false, toTransportError(publicationdomain.NewInternalError(nil))
+	}
+	p := result.Publication()
+	resource := &publicationv1.ApplicationPublicationResource{PublicationId: p.PublicationID().String(), ApplicationId: p.ApplicationID().String(), RpcApiMajor: p.RPCAPIMajor(), Revision: p.Revision(), CreatedBy: p.CreatedBy().String(), CreatedAt: timestamppb.New(p.CreatedAt()), UpdatedBy: p.UpdatedBy().String(), UpdatedAt: timestamppb.New(p.UpdatedAt())}
+	if value := p.TestVersionIDPtr(); value != nil {
+		text := value.String()
+		resource.TestVersionId = &text
+	}
+	if value := p.StableVersionIDPtr(); value != nil {
+		text := value.String()
+		resource.StableVersionId = &text
+	}
+	var historyResource *publicationv1.ApplicationPublicationHistoryResource
+	if h := result.History(); h != nil {
+		historyResource = &publicationv1.ApplicationPublicationHistoryResource{HistoryId: h.HistoryID().String(), PublicationId: h.PublicationID().String(), ApplicationId: h.ApplicationID().String(), RpcApiMajor: h.RPCAPIMajor(), PublicationRevision: h.PublicationRevision(), Action: string(h.Action()), ChangedBy: h.ChangedBy().String(), ChangedAt: timestamppb.New(h.ChangedAt())}
+		if value := h.PreviousVersionID(); value != nil {
+			text := value.String()
+			historyResource.PreviousVersionId = &text
+		}
+		if value := h.NewVersionIDPtr(); value != nil {
+			text := value.String()
+			historyResource.NewVersionId = &text
+		}
+		if value := h.ApprovedReviewIDPtr(); value != nil {
+			text := value.String()
+			historyResource.ApprovedReviewId = &text
+		}
+		if value := h.ScopeCatalogRevisionPtr(); value != nil {
+			revision := value.Int64()
+			historyResource.ScopeCatalogRevision = &revision
+		}
+		if value := h.PreflightPolicyVersionPtr(); value != nil {
+			text := value.String()
+			historyResource.PreflightPolicyVersion = &text
+		}
+	}
+	return resource, historyResource, result.Changed(), nil
 }

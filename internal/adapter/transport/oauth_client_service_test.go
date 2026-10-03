@@ -190,7 +190,7 @@ func TestOAuthClientServiceErrorMappings(t *testing.T) {
 func TestOAuthClientServiceRejectsFutureEnums(t *testing.T) {
 	service := NewOAuthClientService(&fakeOAuthClientHandlers{})
 	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "admin", DeveloperStatus: shared.DeveloperStatusApproved})
-	for _, channel := range []oauthclientv1.OAuthChannel{oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY, oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE} {
+	for _, channel := range []oauthclientv1.OAuthChannel{oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY} {
 		_, err := service.GetApplicationOAuthRegistration(ctx, &oauthclientv1.GetApplicationOAuthRegistrationRequest{ApplicationId: testApplicationID, Channel: channel})
 		if mapped := status.Convert(err); mapped.Code() != codes.FailedPrecondition || errorReason(mapped) != ReasonOAuthChannelNotEnabled {
 			t.Fatalf("channel=%v error=%v", channel, err)
@@ -199,5 +199,26 @@ func TestOAuthClientServiceRejectsFutureEnums(t *testing.T) {
 	_, err := service.GetApplicationOAuthRegistration(ctx, &oauthclientv1.GetApplicationOAuthRegistrationRequest{ApplicationId: testApplicationID, Channel: 99})
 	if mapped := status.Convert(err); mapped.Code() != codes.InvalidArgument || errorReason(mapped) != ReasonInvalidOAuthChannel {
 		t.Fatalf("unknown enum error=%v", err)
+	}
+}
+
+func TestOAuthClientService_UCAPP020_StableChannelMapping(t *testing.T) {
+	channel, err := oauthChannel(oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE)
+	if err != nil || channel != oauthclientdomain.ChannelStable {
+		t.Fatalf("channel=%q error=%v", channel, err)
+	}
+	applicationID, _ := shared.ParseApplicationID(testApplicationID)
+	clientID, _ := oauthclientdomain.ParseClientID("123e4567-e89b-42d3-a456-426614174000")
+	at := fixedNow()
+	identity, err := oauthclientdomain.NewClientIdentity(clientID, oauthclientdomain.ClientTypePublicPKCE, "admin", at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration, err := oauthclientdomain.RestoreRegistration(applicationID, oauthclientdomain.ChannelStable, identity, nil, 1, at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource := oauthRegistrationResource(registration); resource.GetChannel() != oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE {
+		t.Fatalf("resource=%#v", resource)
 	}
 }

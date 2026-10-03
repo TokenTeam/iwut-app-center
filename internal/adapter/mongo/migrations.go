@@ -78,6 +78,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationProfileReviewDecisionMigrationID, apply: migrator.applyApplicationProfileReviewDecisionMigration},
 		{id: oauthClientManagementMigrationID, apply: migrator.applyOAuthClientManagementMigration},
 		{id: versionOAuthRedirectMigrationID, apply: migrator.applyVersionOAuthRedirectMigration},
+		{id: stablePublicationMigrationID, apply: migrator.applyStablePublicationMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {

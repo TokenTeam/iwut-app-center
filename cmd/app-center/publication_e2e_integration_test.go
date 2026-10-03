@@ -217,7 +217,55 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 	if code != http.StatusOK || !bytes.Contains(body, []byte(`"changed":false`)) {
 		t.Fatalf("HTTP noop status=%d body=%s", code, body)
 	}
-	for collection, want := range map[string]int64{"application_publications": 1, "application_publication_history": 2} {
+	stablePayload, _ := json.Marshal(map[string]any{"versionId": secondVersion, "expectedPublicationRevision": int64(2)})
+	stableURL := fmt.Sprintf("http://%s/v1/applications/%s/publications/3/stable-slot", httpAddress, application.GetId())
+	stableRequest, _ := http.NewRequestWithContext(ctx, http.MethodPut, stableURL, bytes.NewReader(stablePayload))
+	stableRequest.Header.Set("Content-Type", "application/json")
+	stableRequest.Header.Set(transport.IdentityHeader, adminToken)
+	stableHTTPResponse, err := (&http.Client{Timeout: 10 * time.Second}).Do(stableRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stableBody, _ := io.ReadAll(stableHTTPResponse.Body)
+	stableHTTPResponse.Body.Close()
+	if stableHTTPResponse.StatusCode != http.StatusOK {
+		t.Fatalf("stable set status=%d body=%s", stableHTTPResponse.StatusCode, stableBody)
+	}
+	var stableSet publicationv1.SetApprovedVersionInStableSlotResponse
+	if err := protojson.Unmarshal(stableBody, &stableSet); err != nil {
+		t.Fatal(err)
+	}
+	if !stableSet.GetChanged() || stableSet.GetPublication().GetRevision() != 3 || stableSet.GetPublication().GetStableVersionId() != secondVersion || stableSet.GetPublication().GetTestVersionId() != secondVersion {
+		t.Fatalf("stable set=%v", &stableSet)
+	}
+	cleared, err := client.ClearStableSlot(grpcCtx, &publicationv1.ClearStableSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, ExpectedPublicationRevision: 3})
+	if err != nil || !cleared.GetChanged() || cleared.GetPublication().GetRevision() != 4 || cleared.GetPublication().StableVersionId != nil || cleared.GetHistory().NewVersionId != nil {
+		t.Fatalf("gRPC clear=%v err=%v", cleared, err)
+	}
+	revision = 4
+	stableGRPC, err := client.SetApprovedVersionInStableSlot(grpcCtx, &publicationv1.SetApprovedVersionInStableSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, Command: &publicationv1.SetApprovedVersionInStableSlotCommand{VersionId: firstVersion, ExpectedPublicationRevision: &revision}})
+	if err != nil || !stableGRPC.GetChanged() || stableGRPC.GetPublication().GetRevision() != 5 || stableGRPC.GetPublication().GetStableVersionId() != firstVersion {
+		t.Fatalf("gRPC stable set=%v err=%v", stableGRPC, err)
+	}
+	clearRequest, _ := http.NewRequestWithContext(ctx, http.MethodDelete, stableURL+"?expected_publication_revision=5", nil)
+	clearRequest.Header.Set(transport.IdentityHeader, adminToken)
+	clearHTTPResponse, err := (&http.Client{Timeout: 10 * time.Second}).Do(clearRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearBody, _ := io.ReadAll(clearHTTPResponse.Body)
+	clearHTTPResponse.Body.Close()
+	if clearHTTPResponse.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP clear status=%d body=%s", clearHTTPResponse.StatusCode, clearBody)
+	}
+	var clearHTTP publicationv1.ClearStableSlotResponse
+	if err := protojson.Unmarshal(clearBody, &clearHTTP); err != nil {
+		t.Fatal(err)
+	}
+	if !clearHTTP.GetChanged() || clearHTTP.GetPublication().GetRevision() != 6 || clearHTTP.GetPublication().StableVersionId != nil || clearHTTP.GetPublication().GetTestVersionId() != secondVersion {
+		t.Fatalf("HTTP clear=%v", &clearHTTP)
+	}
+	for collection, want := range map[string]int64{"application_publications": 1, "application_publication_history": 6} {
 		count, err := database.Collection(collection).CountDocuments(ctx, bson.M{"applicationId": application.GetId()})
 		if err != nil || count != want {
 			t.Fatalf("%s count=%d err=%v", collection, count, err)

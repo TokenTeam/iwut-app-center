@@ -52,6 +52,47 @@ func TestRegistrationEnforcesTypedSlotsAndReturnsCopies(t *testing.T) {
 	if _, err := RestoreRegistration(applicationID, ChannelGrey, public, nil, 1, at, at); !IsCode(err, ErrorCodeOAuthClientStateInconsistent) {
 		t.Fatalf("disabled channel restore error=%v", err)
 	}
+	stable, err := RestoreRegistration(applicationID, ChannelStable, public, nil, 1, at, at)
+	if err != nil || stable.Channel() != ChannelStable {
+		t.Fatalf("stable registration=%#v error=%v", stable, err)
+	}
+}
+
+func TestStableProviderContextDoesNotRequireTesterMembership(t *testing.T) {
+	applicationID, _ := shared.ParseApplicationID("01890f47-0000-7000-8000-000000000018")
+	clientID, _ := ParseClientID("123e4567-e89b-42d3-a456-426614174000")
+	at := time.Date(2026, 10, 4, 1, 0, 0, 0, time.UTC)
+	identity, _ := NewClientIdentity(clientID, ClientTypePublicPKCE, "admin", at)
+	registration, err := RestoreRegistration(applicationID, ChannelStable, identity, nil, 1, at, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := NewClientConfiguration(registration, clientID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	display, err := NewApplicationDisplay("01890f47-0000-7000-8000-000000000019", "Stable App", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewRuntimeConfiguration(configuration, 1, "admin", "01890f47-0000-7000-8000-000000000020", 2, []string{"https://example.edu/callback"}, []string{}, []string{}, display, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, err := NewAuthorizationContext(runtime, "ordinary-user", "")
+	if err != nil || context.TesterMembershipID != "" {
+		t.Fatalf("context=%#v error=%v", context, err)
+	}
+	if _, err := NewAuthorizationContext(runtime, "ordinary-user", "01890f47-0000-7000-8000-000000000021"); !IsCode(err, ErrorCodeOAuthClientStateInconsistent) {
+		t.Fatalf("stable tester membership accepted: %v", err)
+	}
+	snapshot, err := NewPublishedRedirectSnapshot(applicationID, []PublishedRedirectEntry{
+		{Channel: ChannelStable, RPCAPIMajor: 1, VersionID: runtime.VersionID, PublicationRevision: 2},
+		{Channel: ChannelTest, RPCAPIMajor: 1, VersionID: runtime.VersionID, PublicationRevision: 2},
+	}, []string{"https://example.edu/callback"}, at)
+	if err != nil || len(snapshot.Entries) != 2 {
+		t.Fatalf("snapshot=%#v error=%v", snapshot, err)
+	}
 }
 
 func TestSecretDigestFormattingIsAlwaysRedacted(t *testing.T) {

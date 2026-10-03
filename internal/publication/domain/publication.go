@@ -57,37 +57,69 @@ func (v PublicationValidation) Valid() bool {
 }
 
 type ApplicationPublication struct {
-	publicationID ApplicationPublicationID
-	applicationID shared.ApplicationID
-	rpcAPIMajor   int32
-	testVersionID ApplicationVersionID
-	revision      int64
-	createdBy     shared.AuthID
-	createdAt     time.Time
-	updatedBy     shared.AuthID
-	updatedAt     time.Time
+	publicationID   ApplicationPublicationID
+	applicationID   shared.ApplicationID
+	rpcAPIMajor     int32
+	testVersionID   *ApplicationVersionID
+	stableVersionID *ApplicationVersionID
+	revision        int64
+	createdBy       shared.AuthID
+	createdAt       time.Time
+	updatedBy       shared.AuthID
+	updatedAt       time.Time
 }
 
 func RestoreApplicationPublication(id ApplicationPublicationID, app shared.ApplicationID, major int32, version ApplicationVersionID, revision int64, createdBy shared.AuthID, createdAt time.Time, updatedBy shared.AuthID, updatedAt time.Time) (*ApplicationPublication, error) {
-	if !id.IsValid() || !app.IsValid() || major < 1 || !version.IsValid() || revision < 1 || !createdBy.IsValid() || !updatedBy.IsValid() || createdAt.IsZero() || updatedAt.IsZero() {
+	return RestoreApplicationPublicationSlots(id, app, major, &version, nil, revision, createdBy, createdAt, updatedBy, updatedAt)
+}
+
+func RestoreApplicationPublicationSlots(id ApplicationPublicationID, app shared.ApplicationID, major int32, testVersionID, stableVersionID *ApplicationVersionID, revision int64, createdBy shared.AuthID, createdAt time.Time, updatedBy shared.AuthID, updatedAt time.Time) (*ApplicationPublication, error) {
+	if !id.IsValid() || !app.IsValid() || major < 1 || revision < 1 || !createdBy.IsValid() || !updatedBy.IsValid() || createdAt.IsZero() || updatedAt.IsZero() || (testVersionID != nil && !testVersionID.IsValid()) || (stableVersionID != nil && !stableVersionID.IsValid()) {
 		return nil, NewInternalError(nil)
 	}
-	return &ApplicationPublication{id, app, major, version, revision, createdBy, createdAt.UTC(), updatedBy, updatedAt.UTC()}, nil
+	return &ApplicationPublication{id, app, major, copyVersionID(testVersionID), copyVersionID(stableVersionID), revision, createdBy, createdAt.UTC(), updatedBy, updatedAt.UTC()}, nil
 }
 func (p *ApplicationPublication) PublicationID() ApplicationPublicationID { return p.publicationID }
 func (p *ApplicationPublication) ApplicationID() shared.ApplicationID     { return p.applicationID }
 func (p *ApplicationPublication) RPCAPIMajor() int32                      { return p.rpcAPIMajor }
-func (p *ApplicationPublication) TestVersionID() ApplicationVersionID     { return p.testVersionID }
-func (p *ApplicationPublication) Revision() int64                         { return p.revision }
-func (p *ApplicationPublication) CreatedBy() shared.AuthID                { return p.createdBy }
-func (p *ApplicationPublication) CreatedAt() time.Time                    { return p.createdAt }
-func (p *ApplicationPublication) UpdatedBy() shared.AuthID                { return p.updatedBy }
-func (p *ApplicationPublication) UpdatedAt() time.Time                    { return p.updatedAt }
+func (p *ApplicationPublication) TestVersionID() ApplicationVersionID {
+	if p.testVersionID == nil {
+		return ""
+	}
+	return *p.testVersionID
+}
+func (p *ApplicationPublication) TestVersionIDPtr() *ApplicationVersionID {
+	return copyVersionID(p.testVersionID)
+}
+func (p *ApplicationPublication) StableVersionID() ApplicationVersionID {
+	if p.stableVersionID == nil {
+		return ""
+	}
+	return *p.stableVersionID
+}
+func (p *ApplicationPublication) StableVersionIDPtr() *ApplicationVersionID {
+	return copyVersionID(p.stableVersionID)
+}
+func (p *ApplicationPublication) Revision() int64          { return p.revision }
+func (p *ApplicationPublication) CreatedBy() shared.AuthID { return p.createdBy }
+func (p *ApplicationPublication) CreatedAt() time.Time     { return p.createdAt }
+func (p *ApplicationPublication) UpdatedBy() shared.AuthID { return p.updatedBy }
+func (p *ApplicationPublication) UpdatedAt() time.Time     { return p.updatedAt }
 func copyPublication(p *ApplicationPublication) *ApplicationPublication {
 	if p == nil {
 		return nil
 	}
 	v := *p
+	v.testVersionID = copyVersionID(p.testVersionID)
+	v.stableVersionID = copyVersionID(p.stableVersionID)
+	return &v
+}
+
+func copyVersionID(id *ApplicationVersionID) *ApplicationVersionID {
+	if id == nil {
+		return nil
+	}
+	v := *id
 	return &v
 }
 
@@ -149,7 +181,7 @@ func (c *TestPlacementCandidate) ExpectedPublicationRevision() *int64 {
 	return &v
 }
 func (c *TestPlacementCandidate) IsNoOp() bool {
-	return c.publication != nil && c.publication.TestVersionID() == c.versionID
+	return c.publication != nil && c.publication.testVersionID != nil && *c.publication.testVersionID == c.versionID
 }
 func (c *TestPlacementCandidate) AllScopes() []ScopeName {
 	v := append(c.snapshot.RequiredScopes(), c.snapshot.OptionalScopes()...)
@@ -159,7 +191,11 @@ func (c *TestPlacementCandidate) AllScopes() []ScopeName {
 
 type PublicationAction string
 
-const PublicationActionSetTestVersion PublicationAction = "SET_TEST_VERSION"
+const (
+	PublicationActionSetTestVersion     PublicationAction = "SET_TEST_VERSION"
+	PublicationActionSetStableVersion   PublicationAction = "SET_STABLE_VERSION"
+	PublicationActionClearStableVersion PublicationAction = "CLEAR_STABLE_VERSION"
+)
 
 type ApplicationPublicationHistory struct {
 	historyID           ApplicationPublicationHistoryID
@@ -167,10 +203,11 @@ type ApplicationPublicationHistory struct {
 	applicationID       shared.ApplicationID
 	rpcAPIMajor         int32
 	publicationRevision int64
+	action              PublicationAction
 	previousVersionID   *ApplicationVersionID
-	newVersionID        ApplicationVersionID
-	approvedReviewID    ApplicationReviewID
-	validation          PublicationValidation
+	newVersionID        *ApplicationVersionID
+	approvedReviewID    *ApplicationReviewID
+	validation          *PublicationValidation
 	changedBy           shared.AuthID
 	changedAt           time.Time
 }
@@ -184,9 +221,7 @@ func (h *ApplicationPublicationHistory) PublicationID() ApplicationPublicationID
 func (h *ApplicationPublicationHistory) ApplicationID() shared.ApplicationID { return h.applicationID }
 func (h *ApplicationPublicationHistory) RPCAPIMajor() int32                  { return h.rpcAPIMajor }
 func (h *ApplicationPublicationHistory) PublicationRevision() int64          { return h.publicationRevision }
-func (h *ApplicationPublicationHistory) Action() PublicationAction {
-	return PublicationActionSetTestVersion
-}
+func (h *ApplicationPublicationHistory) Action() PublicationAction           { return h.action }
 func (h *ApplicationPublicationHistory) PreviousVersionID() *ApplicationVersionID {
 	if h.previousVersionID == nil {
 		return nil
@@ -194,15 +229,53 @@ func (h *ApplicationPublicationHistory) PreviousVersionID() *ApplicationVersionI
 	v := *h.previousVersionID
 	return &v
 }
-func (h *ApplicationPublicationHistory) NewVersionID() ApplicationVersionID { return h.newVersionID }
+func (h *ApplicationPublicationHistory) NewVersionID() ApplicationVersionID {
+	if h.newVersionID == nil {
+		return ""
+	}
+	return *h.newVersionID
+}
+func (h *ApplicationPublicationHistory) NewVersionIDPtr() *ApplicationVersionID {
+	return copyVersionID(h.newVersionID)
+}
 func (h *ApplicationPublicationHistory) ApprovedReviewID() ApplicationReviewID {
-	return h.approvedReviewID
+	if h.approvedReviewID == nil {
+		return ""
+	}
+	return *h.approvedReviewID
+}
+func (h *ApplicationPublicationHistory) ApprovedReviewIDPtr() *ApplicationReviewID {
+	if h.approvedReviewID == nil {
+		return nil
+	}
+	v := *h.approvedReviewID
+	return &v
 }
 func (h *ApplicationPublicationHistory) ScopeCatalogRevision() ScopeCatalogRevision {
+	if h.validation == nil {
+		return 0
+	}
 	return h.validation.ScopeCatalogRevision
 }
+func (h *ApplicationPublicationHistory) ScopeCatalogRevisionPtr() *ScopeCatalogRevision {
+	if h.validation == nil {
+		return nil
+	}
+	v := h.validation.ScopeCatalogRevision
+	return &v
+}
 func (h *ApplicationPublicationHistory) PreflightPolicyVersion() PreflightPolicyVersion {
+	if h.validation == nil {
+		return ""
+	}
 	return h.validation.PreflightPolicyVersion
+}
+func (h *ApplicationPublicationHistory) PreflightPolicyVersionPtr() *PreflightPolicyVersion {
+	if h.validation == nil {
+		return nil
+	}
+	v := h.validation.PreflightPolicyVersion
+	return &v
 }
 func (h *ApplicationPublicationHistory) ChangedBy() shared.AuthID { return h.changedBy }
 func (h *ApplicationPublicationHistory) ChangedAt() time.Time     { return h.changedAt }
@@ -221,6 +294,12 @@ func (r *PlaceInTestResult) History() *ApplicationPublicationHistory {
 	}
 	v := *r.history
 	v.previousVersionID = r.history.PreviousVersionID()
+	v.newVersionID = r.history.NewVersionIDPtr()
+	v.approvedReviewID = r.history.ApprovedReviewIDPtr()
+	if r.history.validation != nil {
+		validation := *r.history.validation
+		v.validation = &validation
+	}
 	return &v
 }
 func (r *PlaceInTestResult) Changed() bool { return r.history != nil }
@@ -249,19 +328,23 @@ func (c *TestPlacementCandidate) PlaceInTest(publicationID *ApplicationPublicati
 		if publicationID == nil || !publicationID.IsValid() {
 			return nil, NewInternalError(nil)
 		}
-		publication = &ApplicationPublication{*publicationID, c.applicationID, c.rpcAPIMajor, c.versionID, 1, admin, at.UTC(), admin, at.UTC()}
+		version := c.versionID
+		publication = &ApplicationPublication{*publicationID, c.applicationID, c.rpcAPIMajor, &version, nil, 1, admin, at.UTC(), admin, at.UTC()}
 	} else {
 		if publicationID != nil || c.publication.revision == math.MaxInt64 {
 			return nil, NewInternalError(nil)
 		}
 		publication = copyPublication(c.publication)
-		v := publication.testVersionID
-		previous = &v
-		publication.testVersionID = c.versionID
+		previous = copyVersionID(publication.testVersionID)
+		version := c.versionID
+		publication.testVersionID = &version
 		publication.revision++
 		publication.updatedBy = admin
 		publication.updatedAt = at.UTC()
 	}
-	history := &ApplicationPublicationHistory{historyID, publication.publicationID, c.applicationID, c.rpcAPIMajor, publication.revision, previous, c.versionID, c.reviewID, validation, admin, at.UTC()}
+	version := c.versionID
+	review := c.reviewID
+	validationCopy := validation
+	history := &ApplicationPublicationHistory{historyID, publication.publicationID, c.applicationID, c.rpcAPIMajor, publication.revision, PublicationActionSetTestVersion, previous, &version, &review, &validationCopy, admin, at.UTC()}
 	return &PlaceInTestResult{*publication, history}, nil
 }

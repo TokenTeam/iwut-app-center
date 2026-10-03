@@ -72,16 +72,18 @@ const (
 	ReasonApplicationTesterJoinLinkNotFound          = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_NOT_FOUND"
 	ReasonApplicationTesterJoinLinkChanged           = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_CHANGED"
 
-	ReasonInvalidRpcApiMajor                     = "ERROR_REASON_INVALID_RPC_API_MAJOR"
-	ReasonInvalidApplicationVersionId            = "ERROR_REASON_INVALID_APPLICATION_VERSION_ID"
-	ReasonInvalidApplicationPublicationRevision  = "ERROR_REASON_INVALID_APPLICATION_PUBLICATION_REVISION"
-	ReasonApplicationVersionNotApproved          = "ERROR_REASON_APPLICATION_VERSION_NOT_APPROVED"
-	ReasonApplicationVersionRpcApiIncompatible   = "ERROR_REASON_APPLICATION_VERSION_RPC_API_INCOMPATIBLE"
-	ReasonApplicationPublicationAlreadyExists    = "ERROR_REASON_APPLICATION_PUBLICATION_ALREADY_EXISTS"
-	ReasonApplicationPublicationNotFound         = "ERROR_REASON_APPLICATION_PUBLICATION_NOT_FOUND"
-	ReasonApplicationPublicationRevisionConflict = "ERROR_REASON_APPLICATION_PUBLICATION_REVISION_CONFLICT"
-	ReasonOAuthClientRegistrationRequired        = "ERROR_REASON_OAUTH_CLIENT_REGISTRATION_REQUIRED"
-	ReasonApplicationProfileRequired             = "ERROR_REASON_APPLICATION_PROFILE_REQUIRED"
+	ReasonInvalidRpcApiMajor                      = "ERROR_REASON_INVALID_RPC_API_MAJOR"
+	ReasonInvalidApplicationVersionId             = "ERROR_REASON_INVALID_APPLICATION_VERSION_ID"
+	ReasonInvalidApplicationPublicationRevision   = "ERROR_REASON_INVALID_APPLICATION_PUBLICATION_REVISION"
+	ReasonApplicationVersionNotApproved           = "ERROR_REASON_APPLICATION_VERSION_NOT_APPROVED"
+	ReasonApplicationVersionRpcApiIncompatible    = "ERROR_REASON_APPLICATION_VERSION_RPC_API_INCOMPATIBLE"
+	ReasonApplicationPublicationAlreadyExists     = "ERROR_REASON_APPLICATION_PUBLICATION_ALREADY_EXISTS"
+	ReasonApplicationPublicationNotFound          = "ERROR_REASON_APPLICATION_PUBLICATION_NOT_FOUND"
+	ReasonApplicationPublicationRevisionConflict  = "ERROR_REASON_APPLICATION_PUBLICATION_REVISION_CONFLICT"
+	ReasonOAuthClientRegistrationRequired         = "ERROR_REASON_OAUTH_CLIENT_REGISTRATION_REQUIRED"
+	ReasonApplicationProfileRequired              = "ERROR_REASON_APPLICATION_PROFILE_REQUIRED"
+	ReasonStablePublicationRequiredByGrey         = "ERROR_REASON_STABLE_PUBLICATION_REQUIRED_BY_GREY"
+	ReasonApplicationPublicationStateInconsistent = "ERROR_REASON_APPLICATION_PUBLICATION_STATE_INCONSISTENT"
 
 	ReasonInvalidApplicationName                = "ERROR_REASON_INVALID_APPLICATION_NAME"
 	ReasonDeveloperIdentityRequired             = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
@@ -289,27 +291,29 @@ var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
 }
 
 var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
-	publicationdomain.ErrorCodeInvalidRpcApiMajor:                     {code: codes.InvalidArgument, reason: ReasonInvalidRpcApiMajor, message: "RPC API major is invalid"},
-	publicationdomain.ErrorCodeInvalidApplicationVersionId:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionId, message: "application version ID is invalid"},
-	publicationdomain.ErrorCodeInvalidApplicationPublicationRevision:  {code: codes.InvalidArgument, reason: ReasonInvalidApplicationPublicationRevision, message: "publication revision is invalid"},
-	publicationdomain.ErrorCodeApplicationVersionNotApproved:          {code: codes.FailedPrecondition, reason: ReasonApplicationVersionNotApproved, message: "application version is not approved"},
-	publicationdomain.ErrorCodeApplicationVersionRpcApiIncompatible:   {code: codes.InvalidArgument, reason: ReasonApplicationVersionRpcApiIncompatible, message: "application version RPC API range is incompatible"},
-	publicationdomain.ErrorCodeApplicationPublicationAlreadyExists:    {code: codes.AlreadyExists, reason: ReasonApplicationPublicationAlreadyExists, message: "application publication already exists"},
-	publicationdomain.ErrorCodeApplicationPublicationNotFound:         {code: codes.NotFound, reason: ReasonApplicationPublicationNotFound, message: "application publication not found"},
-	publicationdomain.ErrorCodeApplicationPublicationRevisionConflict: {code: codes.Aborted, reason: ReasonApplicationPublicationRevisionConflict, message: "publication revision conflicts"},
-	publicationdomain.ErrorCodeOAuthClientRegistrationRequired:        {code: codes.FailedPrecondition, reason: ReasonOAuthClientRegistrationRequired, message: "OAuth client registration is required"},
-	publicationdomain.ErrorCodeApplicationProfileRequired:             {code: codes.FailedPrecondition, reason: ReasonApplicationProfileRequired, message: "application profile is required"},
-	publicationdomain.ErrorCodeApplicationProfileStateInconsistent:    {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
-	publicationdomain.ErrorCodeDeveloperIdentityRequired:              {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
-	publicationdomain.ErrorCodeDeveloperApprovalRequired:              {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
-	publicationdomain.ErrorCodeApplicationVersionNotFound:             {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
-	publicationdomain.ErrorCodeApplicationAdminRequired:               {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
-	publicationdomain.ErrorCodeApplicationReviewStateInconsistent:     {code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent, message: "application review state is inconsistent"},
-	publicationdomain.ErrorCodeInvalidApplicationScope:                {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
-	publicationdomain.ErrorCodeScopeCatalogUnavailable:                {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
-	publicationdomain.ErrorCodeApplicationLaunchURLNotReviewable:      {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
-	publicationdomain.ErrorCodeLaunchURLInspectionUnavailable:         {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
-	publicationdomain.ErrorCodeInternal:                               internalSpec,
+	publicationdomain.ErrorCodeInvalidRpcApiMajor:                      {code: codes.InvalidArgument, reason: ReasonInvalidRpcApiMajor, message: "RPC API major is invalid"},
+	publicationdomain.ErrorCodeInvalidApplicationVersionId:             {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionId, message: "application version ID is invalid"},
+	publicationdomain.ErrorCodeInvalidApplicationPublicationRevision:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationPublicationRevision, message: "publication revision is invalid"},
+	publicationdomain.ErrorCodeApplicationVersionNotApproved:           {code: codes.FailedPrecondition, reason: ReasonApplicationVersionNotApproved, message: "application version is not approved"},
+	publicationdomain.ErrorCodeApplicationVersionRpcApiIncompatible:    {code: codes.InvalidArgument, reason: ReasonApplicationVersionRpcApiIncompatible, message: "application version RPC API range is incompatible"},
+	publicationdomain.ErrorCodeApplicationPublicationAlreadyExists:     {code: codes.AlreadyExists, reason: ReasonApplicationPublicationAlreadyExists, message: "application publication already exists"},
+	publicationdomain.ErrorCodeApplicationPublicationNotFound:          {code: codes.NotFound, reason: ReasonApplicationPublicationNotFound, message: "application publication not found"},
+	publicationdomain.ErrorCodeApplicationPublicationRevisionConflict:  {code: codes.Aborted, reason: ReasonApplicationPublicationRevisionConflict, message: "publication revision conflicts"},
+	publicationdomain.ErrorCodeOAuthClientRegistrationRequired:         {code: codes.FailedPrecondition, reason: ReasonOAuthClientRegistrationRequired, message: "OAuth client registration is required"},
+	publicationdomain.ErrorCodeApplicationProfileRequired:              {code: codes.FailedPrecondition, reason: ReasonApplicationProfileRequired, message: "application profile is required"},
+	publicationdomain.ErrorCodeApplicationProfileStateInconsistent:     {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
+	publicationdomain.ErrorCodeStablePublicationRequiredByGrey:         {code: codes.FailedPrecondition, reason: ReasonStablePublicationRequiredByGrey, message: "stable publication is required by grey rollout"},
+	publicationdomain.ErrorCodeApplicationPublicationStateInconsistent: {code: codes.Internal, reason: ReasonApplicationPublicationStateInconsistent, message: "application publication state is inconsistent"},
+	publicationdomain.ErrorCodeDeveloperIdentityRequired:               {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	publicationdomain.ErrorCodeDeveloperApprovalRequired:               {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	publicationdomain.ErrorCodeApplicationVersionNotFound:              {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
+	publicationdomain.ErrorCodeApplicationAdminRequired:                {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	publicationdomain.ErrorCodeApplicationReviewStateInconsistent:      {code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent, message: "application review state is inconsistent"},
+	publicationdomain.ErrorCodeInvalidApplicationScope:                 {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
+	publicationdomain.ErrorCodeScopeCatalogUnavailable:                 {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	publicationdomain.ErrorCodeApplicationLaunchURLNotReviewable:       {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
+	publicationdomain.ErrorCodeLaunchURLInspectionUnavailable:          {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
+	publicationdomain.ErrorCodeInternal:                                internalSpec,
 }
 
 var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{

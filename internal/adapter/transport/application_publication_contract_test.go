@@ -65,3 +65,29 @@ func TestAPIContract_UCAPP007_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
 		t.Fatal("missing invalid identity reason")
 	}
 }
+
+func TestAPIContract_UCAPP020_StableRoutesPresenceAndClearQuery(t *testing.T) {
+	service := publicationv1.File_app_center_v1_application_publication_application_publication_proto.Services().ByName("ApplicationPublication")
+	setDescriptor := service.Methods().ByName("SetApprovedVersionInStableSlot")
+	setRule := proto.GetExtension(setDescriptor.Options(), annotations.E_Http).(*annotations.HttpRule)
+	if setRule.GetPut() != SetApprovedVersionInStableSlotInternalPath || setRule.GetBody() != "command" || SetApprovedVersionInStableSlotGRPCMethod != publicationv1.ApplicationPublication_SetApprovedVersionInStableSlot_FullMethodName || strings.TrimPrefix(SetApprovedVersionInStableSlotExternalPath, ServicePrefix) != setRule.GetPut() {
+		t.Fatalf("stable set contract=%v", setRule)
+	}
+	clearDescriptor := service.Methods().ByName("ClearStableSlot")
+	clearRule := proto.GetExtension(clearDescriptor.Options(), annotations.E_Http).(*annotations.HttpRule)
+	if clearRule.GetDelete() != ClearStableSlotInternalPath || clearRule.GetBody() != "" || ClearStableSlotGRPCMethod != publicationv1.ApplicationPublication_ClearStableSlot_FullMethodName || strings.TrimPrefix(ClearStableSlotExternalPath, ServicePrefix) != clearRule.GetDelete() {
+		t.Fatalf("stable clear contract=%v", clearRule)
+	}
+	if fields := messageFieldNames(t, &publicationv1.ClearStableSlotRequest{}); strings.Join(fields, ",") != "application_id,expected_publication_revision,rpc_api_major" {
+		t.Fatalf("clear fields=%v", fields)
+	}
+	resource := &publicationv1.ApplicationPublicationResource{}
+	if resource.TestVersionId != nil || resource.StableVersionId != nil {
+		t.Fatal("empty slot presence was lost")
+	}
+	value := "01890f47-0000-7000-8000-000000000020"
+	resource.StableVersionId = &value
+	if resource.GetStableVersionId() != value || resource.TestVersionId != nil {
+		t.Fatalf("stable-only resource=%#v", resource)
+	}
+}
