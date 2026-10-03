@@ -165,7 +165,7 @@ func TestRegisterValidatesAuthorizationAndOCCBeforeGeneratingCredentials(t *test
 	}{
 		{"identity required", shared.DeveloperIdentity{}, domain.ChannelTest, domain.ClientTypePublicPKCE, nil, domain.ErrorCodeDeveloperIdentityRequired},
 		{"approval required", shared.DeveloperIdentity{AuthID: "admin", DeveloperStatus: shared.DeveloperStatusPending}, domain.ChannelTest, domain.ClientTypePublicPKCE, nil, domain.ErrorCodeDeveloperApprovalRequired},
-		{"channel disabled", approvedIdentity(), domain.ChannelGrey, domain.ClientTypePublicPKCE, nil, domain.ErrorCodeOAuthChannelNotEnabled},
+		{"channel disabled", approvedIdentity(), domain.Channel("OTHER"), domain.ClientTypePublicPKCE, nil, domain.ErrorCodeOAuthChannelNotEnabled},
 		{"type invalid", approvedIdentity(), domain.ChannelTest, "OTHER", nil, domain.ErrorCodeInvalidOAuthClientType},
 		{"revision invalid", approvedIdentity(), domain.ChannelTest, domain.ClientTypePublicPKCE, &zero, domain.ErrorCodeInvalidRegistrationRevision},
 	} {

@@ -129,7 +129,7 @@ type AuthorizationContext struct {
 }
 
 func NewAuthorizationContext(runtime *RuntimeConfiguration, authID shared.AuthID, membershipID string) (*AuthorizationContext, error) {
-	if runtime == nil || !authID.IsValid() || runtime.Channel == ChannelTest && !shared.IsUUIDv7(membershipID) || runtime.Channel == ChannelStable && membershipID != "" || !runtime.Channel.Enabled() {
+	if runtime == nil || !authID.IsValid() || runtime.Channel == ChannelTest && !shared.IsUUIDv7(membershipID) || runtime.Channel != ChannelTest && membershipID != "" || !runtime.Channel.Enabled() {
 		return nil, ErrOAuthClientStateInconsistent
 	}
 	return &AuthorizationContext{runtime, authID, membershipID}, nil

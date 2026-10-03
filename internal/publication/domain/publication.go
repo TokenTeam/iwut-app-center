@@ -62,6 +62,7 @@ type ApplicationPublication struct {
 	rpcAPIMajor     int32
 	testVersionID   *ApplicationVersionID
 	stableVersionID *ApplicationVersionID
+	greyRollout     *GreyRollout
 	revision        int64
 	createdBy       shared.AuthID
 	createdAt       time.Time
@@ -74,10 +75,17 @@ func RestoreApplicationPublication(id ApplicationPublicationID, app shared.Appli
 }
 
 func RestoreApplicationPublicationSlots(id ApplicationPublicationID, app shared.ApplicationID, major int32, testVersionID, stableVersionID *ApplicationVersionID, revision int64, createdBy shared.AuthID, createdAt time.Time, updatedBy shared.AuthID, updatedAt time.Time) (*ApplicationPublication, error) {
+	return RestoreApplicationPublicationSlotsWithGrey(id, app, major, testVersionID, stableVersionID, nil, revision, createdBy, createdAt, updatedBy, updatedAt)
+}
+
+func RestoreApplicationPublicationSlotsWithGrey(id ApplicationPublicationID, app shared.ApplicationID, major int32, testVersionID, stableVersionID *ApplicationVersionID, greyRollout *GreyRollout, revision int64, createdBy shared.AuthID, createdAt time.Time, updatedBy shared.AuthID, updatedAt time.Time) (*ApplicationPublication, error) {
 	if !id.IsValid() || !app.IsValid() || major < 1 || revision < 1 || !createdBy.IsValid() || !updatedBy.IsValid() || createdAt.IsZero() || updatedAt.IsZero() || (testVersionID != nil && !testVersionID.IsValid()) || (stableVersionID != nil && !stableVersionID.IsValid()) {
 		return nil, NewInternalError(nil)
 	}
-	return &ApplicationPublication{id, app, major, copyVersionID(testVersionID), copyVersionID(stableVersionID), revision, createdBy, createdAt.UTC(), updatedBy, updatedAt.UTC()}, nil
+	if greyRollout != nil && stableVersionID == nil {
+		return nil, ErrApplicationPublicationStateInconsistent
+	}
+	return &ApplicationPublication{publicationID: id, applicationID: app, rpcAPIMajor: major, testVersionID: copyVersionID(testVersionID), stableVersionID: copyVersionID(stableVersionID), greyRollout: copyGreyRollout(greyRollout), revision: revision, createdBy: createdBy, createdAt: createdAt.UTC(), updatedBy: updatedBy, updatedAt: updatedAt.UTC()}, nil
 }
 func (p *ApplicationPublication) PublicationID() ApplicationPublicationID { return p.publicationID }
 func (p *ApplicationPublication) ApplicationID() shared.ApplicationID     { return p.applicationID }
@@ -100,11 +108,12 @@ func (p *ApplicationPublication) StableVersionID() ApplicationVersionID {
 func (p *ApplicationPublication) StableVersionIDPtr() *ApplicationVersionID {
 	return copyVersionID(p.stableVersionID)
 }
-func (p *ApplicationPublication) Revision() int64          { return p.revision }
-func (p *ApplicationPublication) CreatedBy() shared.AuthID { return p.createdBy }
-func (p *ApplicationPublication) CreatedAt() time.Time     { return p.createdAt }
-func (p *ApplicationPublication) UpdatedBy() shared.AuthID { return p.updatedBy }
-func (p *ApplicationPublication) UpdatedAt() time.Time     { return p.updatedAt }
+func (p *ApplicationPublication) GreyRollout() *GreyRollout { return copyGreyRollout(p.greyRollout) }
+func (p *ApplicationPublication) Revision() int64           { return p.revision }
+func (p *ApplicationPublication) CreatedBy() shared.AuthID  { return p.createdBy }
+func (p *ApplicationPublication) CreatedAt() time.Time      { return p.createdAt }
+func (p *ApplicationPublication) UpdatedBy() shared.AuthID  { return p.updatedBy }
+func (p *ApplicationPublication) UpdatedAt() time.Time      { return p.updatedAt }
 func copyPublication(p *ApplicationPublication) *ApplicationPublication {
 	if p == nil {
 		return nil
@@ -112,6 +121,7 @@ func copyPublication(p *ApplicationPublication) *ApplicationPublication {
 	v := *p
 	v.testVersionID = copyVersionID(p.testVersionID)
 	v.stableVersionID = copyVersionID(p.stableVersionID)
+	v.greyRollout = copyGreyRollout(p.greyRollout)
 	return &v
 }
 
@@ -195,6 +205,11 @@ const (
 	PublicationActionSetTestVersion     PublicationAction = "SET_TEST_VERSION"
 	PublicationActionSetStableVersion   PublicationAction = "SET_STABLE_VERSION"
 	PublicationActionClearStableVersion PublicationAction = "CLEAR_STABLE_VERSION"
+	PublicationActionSetGreyRollout     PublicationAction = "SET_GREY_ROLLOUT"
+	PublicationActionIncreaseGrey       PublicationAction = "INCREASE_GREY_EXPOSURE"
+	PublicationActionDecreaseGrey       PublicationAction = "DECREASE_GREY_EXPOSURE"
+	PublicationActionReplaceGreyVersion PublicationAction = "REPLACE_GREY_VERSION"
+	PublicationActionClearGreyRollout   PublicationAction = "CLEAR_GREY_ROLLOUT"
 )
 
 type ApplicationPublicationHistory struct {
@@ -208,6 +223,10 @@ type ApplicationPublicationHistory struct {
 	newVersionID        *ApplicationVersionID
 	approvedReviewID    *ApplicationReviewID
 	validation          *PublicationValidation
+	greyRolloutID       *GreyRolloutID
+	previousExposure    *ExposureBasisPoints
+	newExposure         *ExposureBasisPoints
+	cohortSeed          *CohortSeed
 	changedBy           shared.AuthID
 	changedAt           time.Time
 }
@@ -277,6 +296,34 @@ func (h *ApplicationPublicationHistory) PreflightPolicyVersionPtr() *PreflightPo
 	v := h.validation.PreflightPolicyVersion
 	return &v
 }
+func (h *ApplicationPublicationHistory) GreyRolloutIDPtr() *GreyRolloutID {
+	if h.greyRolloutID == nil {
+		return nil
+	}
+	v := *h.greyRolloutID
+	return &v
+}
+func (h *ApplicationPublicationHistory) PreviousExposureBasisPointsPtr() *ExposureBasisPoints {
+	if h.previousExposure == nil {
+		return nil
+	}
+	v := *h.previousExposure
+	return &v
+}
+func (h *ApplicationPublicationHistory) NewExposureBasisPointsPtr() *ExposureBasisPoints {
+	if h.newExposure == nil {
+		return nil
+	}
+	v := *h.newExposure
+	return &v
+}
+func (h *ApplicationPublicationHistory) CohortSeedPtr() *CohortSeed {
+	if h.cohortSeed == nil {
+		return nil
+	}
+	v := *h.cohortSeed
+	return &v
+}
 func (h *ApplicationPublicationHistory) ChangedBy() shared.AuthID { return h.changedBy }
 func (h *ApplicationPublicationHistory) ChangedAt() time.Time     { return h.changedAt }
 
@@ -300,6 +347,10 @@ func (r *PlaceInTestResult) History() *ApplicationPublicationHistory {
 		validation := *r.history.validation
 		v.validation = &validation
 	}
+	v.greyRolloutID = r.history.GreyRolloutIDPtr()
+	v.previousExposure = r.history.PreviousExposureBasisPointsPtr()
+	v.newExposure = r.history.NewExposureBasisPointsPtr()
+	v.cohortSeed = r.history.CohortSeedPtr()
 	return &v
 }
 func (r *PlaceInTestResult) Changed() bool { return r.history != nil }
@@ -329,7 +380,7 @@ func (c *TestPlacementCandidate) PlaceInTest(publicationID *ApplicationPublicati
 			return nil, NewInternalError(nil)
 		}
 		version := c.versionID
-		publication = &ApplicationPublication{*publicationID, c.applicationID, c.rpcAPIMajor, &version, nil, 1, admin, at.UTC(), admin, at.UTC()}
+		publication = &ApplicationPublication{publicationID: *publicationID, applicationID: c.applicationID, rpcAPIMajor: c.rpcAPIMajor, testVersionID: &version, revision: 1, createdBy: admin, createdAt: at.UTC(), updatedBy: admin, updatedAt: at.UTC()}
 	} else {
 		if publicationID != nil || c.publication.revision == math.MaxInt64 {
 			return nil, NewInternalError(nil)
@@ -345,6 +396,6 @@ func (c *TestPlacementCandidate) PlaceInTest(publicationID *ApplicationPublicati
 	version := c.versionID
 	review := c.reviewID
 	validationCopy := validation
-	history := &ApplicationPublicationHistory{historyID, publication.publicationID, c.applicationID, c.rpcAPIMajor, publication.revision, PublicationActionSetTestVersion, previous, &version, &review, &validationCopy, admin, at.UTC()}
+	history := &ApplicationPublicationHistory{historyID: historyID, publicationID: publication.publicationID, applicationID: c.applicationID, rpcAPIMajor: c.rpcAPIMajor, publicationRevision: publication.revision, action: PublicationActionSetTestVersion, previousVersionID: previous, newVersionID: &version, approvedReviewID: &review, validation: &validationCopy, changedBy: admin, changedAt: at.UTC()}
 	return &PlaceInTestResult{*publication, history}, nil
 }

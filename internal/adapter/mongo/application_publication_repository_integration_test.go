@@ -562,6 +562,92 @@ func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableOAuthRegistr
 	}
 }
 
+func TestApplicationPublicationRepositoryIntegration_UCAPP021_GreyLifecycle(t *testing.T) {
+	client := integrationClient(t)
+	db := migratedIntegrationDatabase(t, client)
+	seed := createApprovedPublicationVersion(t, db, "grey-publication")
+	repository := NewApplicationPublicationRepository(db)
+	stable, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicationID := publicationdomain.ApplicationPublicationID(nextIntegrationApplicationReviewID(t))
+	stableResult, err := repository.SetStable(t.Context(), stable, &publicationID, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, publicationTestValidation(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exposure, _ := publicationdomain.NewExposureBasisPoints(500)
+	candidate, err := repository.LoadGreyPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), exposure, seed.adminID, stableResult.Publication().Revision())
+	if err != nil || candidate.ChangeKind() != publicationdomain.GreyChangeStart {
+		t.Fatalf("start candidate=%#v error=%v", candidate, err)
+	}
+	cohort, _ := publicationdomain.NewCohortSeed(make([]byte, 32))
+	rolloutID := publicationdomain.GreyRolloutID(nextIntegrationApplicationReviewID(t))
+	validation := publicationTestValidation()
+	started, err := repository.SetGrey(t.Context(), candidate, &rolloutID, &cohort, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, &validation, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Publication().GreyRollout() == nil || started.Publication().Revision() != 2 || started.History().Action() != publicationdomain.PublicationActionSetGreyRollout || started.History().CohortSeedPtr() == nil {
+		t.Fatalf("started=%#v history=%#v", started.Publication(), started.History())
+	}
+	var persisted applicationPublicationHistoryDocument
+	if err := db.Collection(applicationPublicationHistoryCollectionName).FindOne(t.Context(), bson.M{"historyId": started.History().HistoryID().String()}).Decode(&persisted); err != nil || len(persisted.CohortSeed) != 32 {
+		t.Fatalf("persisted seed=%d error=%v", len(persisted.CohortSeed), err)
+	}
+
+	noop, err := repository.LoadGreyPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), exposure, seed.adminID, 2)
+	if err != nil || !noop.IsNoOp() {
+		t.Fatalf("noop=%#v error=%v", noop, err)
+	}
+
+	exposure, _ = publicationdomain.NewExposureBasisPoints(2500)
+	increase, err := repository.LoadGreyPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), exposure, seed.adminID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation = publicationTestValidation()
+	increased, err := repository.SetGrey(t.Context(), increase, nil, nil, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, &validation, time.Now())
+	if err != nil || increased.History().Action() != publicationdomain.PublicationActionIncreaseGrey || increased.Publication().GreyRollout().RolloutID() != rolloutID {
+		t.Fatalf("increased=%#v error=%v", increased, err)
+	}
+
+	second := addApprovedPublicationVersion(t, db, seed, "grey-v2")
+	replace, err := repository.LoadGreyPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(second.versionID), exposure, seed.adminID, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation = publicationTestValidation()
+	replaced, err := repository.SetGrey(t.Context(), replace, nil, nil, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, &validation, time.Now())
+	if err != nil || replaced.History().Action() != publicationdomain.PublicationActionReplaceGreyVersion || replaced.Publication().GreyRollout().RolloutID() != rolloutID {
+		t.Fatalf("replaced=%#v error=%v", replaced, err)
+	}
+
+	if _, err := db.Collection(applicationProfilesCollectionName).DeleteOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}); err != nil {
+		t.Fatal(err)
+	}
+	exposure, _ = publicationdomain.NewExposureBasisPoints(100)
+	decrease, err := repository.LoadGreyPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(second.versionID), exposure, seed.adminID, 4)
+	if err != nil || decrease.RequiresValidation() {
+		t.Fatalf("decrease=%#v error=%v", decrease, err)
+	}
+	decreased, err := repository.SetGrey(t.Context(), decrease, nil, nil, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, nil, time.Now())
+	if err != nil || decreased.History().Action() != publicationdomain.PublicationActionDecreaseGrey || decreased.History().ApprovedReviewIDPtr() != nil {
+		t.Fatalf("decreased=%#v error=%v", decreased, err)
+	}
+
+	clear, err := repository.LoadGreyClearCandidate(t.Context(), seed.applicationID, 1, seed.adminID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := repository.ClearGrey(t.Context(), clear, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, time.Now())
+	if err != nil || cleared.Publication().GreyRollout() != nil || cleared.Publication().StableVersionIDPtr() == nil || cleared.History().Action() != publicationdomain.PublicationActionClearGreyRollout {
+		t.Fatalf("cleared=%#v error=%v", cleared, err)
+	}
+	assertPublicationCounts(t, db, 1, 6)
+}
+
 func TestApplicationPublicationEligibilityIntegration(t *testing.T) {
 	client := integrationClient(t)
 	for _, test := range []struct {

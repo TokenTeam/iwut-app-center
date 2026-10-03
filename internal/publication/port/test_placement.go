@@ -25,11 +25,13 @@ var (
 	ErrApplicationProfileRequired              = errors.New("application profile required")
 	ErrApplicationProfileStateInconsistent     = errors.New("application profile state inconsistent")
 	ErrStablePublicationRequiredByGrey         = errors.New("stable publication required by grey")
+	ErrGreyStableBaselineRequired              = errors.New("grey stable baseline required")
 	ErrApplicationPublicationStateInconsistent = errors.New("application publication state inconsistent")
 )
 
 type UUIDv7Generator interface{ NewUUIDv7() (string, error) }
 type Clock interface{ Now() time.Time }
+type RandomBytes interface{ Read([]byte) (int, error) }
 type ScopeCatalog interface {
 	EnsureAllRequestable(context.Context, []domain.ScopeName) (domain.ScopeCatalogRevision, error)
 }
@@ -45,4 +47,10 @@ type StablePublicationRepository interface {
 	SetStable(context.Context, *domain.StablePlacementCandidate, *domain.ApplicationPublicationID, domain.ApplicationPublicationHistoryID, shared.AuthID, domain.PublicationValidation, time.Time) (*domain.PlaceInTestResult, error)
 	LoadStableClearCandidate(context.Context, shared.ApplicationID, int32, shared.AuthID, int64) (*domain.StableClearCandidate, error)
 	ClearStable(context.Context, *domain.StableClearCandidate, domain.ApplicationPublicationHistoryID, shared.AuthID, time.Time) (*domain.PlaceInTestResult, error)
+}
+type GreyPublicationRepository interface {
+	LoadGreyPlacementCandidate(context.Context, shared.ApplicationID, int32, domain.ApplicationVersionID, domain.ExposureBasisPoints, shared.AuthID, int64) (*domain.GreyPlacementCandidate, error)
+	SetGrey(context.Context, *domain.GreyPlacementCandidate, *domain.GreyRolloutID, *domain.CohortSeed, domain.ApplicationPublicationHistoryID, shared.AuthID, *domain.PublicationValidation, time.Time) (*domain.PlaceInTestResult, error)
+	LoadGreyClearCandidate(context.Context, shared.ApplicationID, int32, shared.AuthID, int64) (*domain.GreyClearCandidate, error)
+	ClearGrey(context.Context, *domain.GreyClearCandidate, domain.ApplicationPublicationHistoryID, shared.AuthID, time.Time) (*domain.PlaceInTestResult, error)
 }

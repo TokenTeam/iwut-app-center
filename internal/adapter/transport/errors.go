@@ -84,6 +84,7 @@ const (
 	ReasonApplicationProfileRequired              = "ERROR_REASON_APPLICATION_PROFILE_REQUIRED"
 	ReasonStablePublicationRequiredByGrey         = "ERROR_REASON_STABLE_PUBLICATION_REQUIRED_BY_GREY"
 	ReasonApplicationPublicationStateInconsistent = "ERROR_REASON_APPLICATION_PUBLICATION_STATE_INCONSISTENT"
+	ReasonGreyStableBaselineRequired              = "ERROR_REASON_GREY_STABLE_BASELINE_REQUIRED"
 
 	ReasonInvalidApplicationName                = "ERROR_REASON_INVALID_APPLICATION_NAME"
 	ReasonDeveloperIdentityRequired             = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
@@ -294,6 +295,7 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 	publicationdomain.ErrorCodeInvalidRpcApiMajor:                      {code: codes.InvalidArgument, reason: ReasonInvalidRpcApiMajor, message: "RPC API major is invalid"},
 	publicationdomain.ErrorCodeInvalidApplicationVersionId:             {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionId, message: "application version ID is invalid"},
 	publicationdomain.ErrorCodeInvalidApplicationPublicationRevision:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationPublicationRevision, message: "publication revision is invalid"},
+	publicationdomain.ErrorCodeInvalidGreyExposureBasisPoints:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationPublicationRevision, message: "grey exposure basis points are invalid"},
 	publicationdomain.ErrorCodeApplicationVersionNotApproved:           {code: codes.FailedPrecondition, reason: ReasonApplicationVersionNotApproved, message: "application version is not approved"},
 	publicationdomain.ErrorCodeApplicationVersionRpcApiIncompatible:    {code: codes.InvalidArgument, reason: ReasonApplicationVersionRpcApiIncompatible, message: "application version RPC API range is incompatible"},
 	publicationdomain.ErrorCodeApplicationPublicationAlreadyExists:     {code: codes.AlreadyExists, reason: ReasonApplicationPublicationAlreadyExists, message: "application publication already exists"},
@@ -303,6 +305,7 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 	publicationdomain.ErrorCodeApplicationProfileRequired:              {code: codes.FailedPrecondition, reason: ReasonApplicationProfileRequired, message: "application profile is required"},
 	publicationdomain.ErrorCodeApplicationProfileStateInconsistent:     {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
 	publicationdomain.ErrorCodeStablePublicationRequiredByGrey:         {code: codes.FailedPrecondition, reason: ReasonStablePublicationRequiredByGrey, message: "stable publication is required by grey rollout"},
+	publicationdomain.ErrorCodeGreyStableBaselineRequired:              {code: codes.FailedPrecondition, reason: ReasonGreyStableBaselineRequired, message: "grey rollout requires a stable baseline"},
 	publicationdomain.ErrorCodeApplicationPublicationStateInconsistent: {code: codes.Internal, reason: ReasonApplicationPublicationStateInconsistent, message: "application publication state is inconsistent"},
 	publicationdomain.ErrorCodeDeveloperIdentityRequired:               {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
 	publicationdomain.ErrorCodeDeveloperApprovalRequired:               {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},

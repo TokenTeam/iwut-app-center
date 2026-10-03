@@ -154,6 +154,20 @@ func (r *OAuthProviderRepository) ResolveAuthorizationContext(ctx context.Contex
 			}
 			return context, nil
 		}
+		if channel == oauthdomain.ChannelGrey {
+			matched, matchErr := r.greyCohortMatches(tx, runtime.ApplicationID, major, runtime.VersionID, authID)
+			if matchErr != nil {
+				return nil, matchErr
+			}
+			if !matched {
+				return nil, oauthport.ErrRuntimeUnavailable
+			}
+			context, createErr := oauthdomain.NewAuthorizationContext(runtime, authID, "")
+			if createErr != nil {
+				return nil, oauthport.ErrStateInconsistent
+			}
+			return context, nil
+		}
 		var membership applicationTesterMembershipDocument
 		err = r.database.Collection(applicationTesterMembershipsCollectionName).FindOne(tx, bson.M{"applicationId": runtime.ApplicationID.String(), "testerAuthId": authID.String(), "status": "ACTIVE"}).Decode(&membership)
 		if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -247,16 +261,19 @@ func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicat
 	if versionID == nil {
 		return publication, nil, oauthport.ErrRuntimeUnavailable
 	}
-	action := "SET_TEST_VERSION"
+	actions := bson.A{"SET_TEST_VERSION"}
 	if channel == oauthdomain.ChannelStable {
-		action = "SET_STABLE_VERSION"
+		actions = bson.A{"SET_STABLE_VERSION"}
+	}
+	if channel == oauthdomain.ChannelGrey {
+		actions = bson.A{"SET_GREY_ROLLOUT", "INCREASE_GREY_EXPOSURE", "REPLACE_GREY_VERSION"}
 	}
 	var history applicationPublicationHistoryDocument
-	err = r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.M{"publicationId": publication.PublicationID, "publicationRevision": bson.M{"$lte": publication.Revision}, "action": action, "newVersionId": *versionID}, options.FindOne().SetSort(bson.D{{Key: "publicationRevision", Value: -1}})).Decode(&history)
+	err = r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.M{"publicationId": publication.PublicationID, "publicationRevision": bson.M{"$lte": publication.Revision}, "action": bson.M{"$in": actions}, "newVersionId": *versionID}, options.FindOne().SetSort(bson.D{{Key: "publicationRevision", Value: -1}})).Decode(&history)
 	if err != nil {
 		return publication, nil, missingOAuthProviderFact(err)
 	}
-	if history.ApplicationID != applicationID.String() || history.RPCAPIMajor != major || history.NewVersionID == nil || *history.NewVersionID != *versionID || history.Action != action || history.ApprovedReviewID == nil {
+	if history.ApplicationID != applicationID.String() || history.RPCAPIMajor != major || history.NewVersionID == nil || *history.NewVersionID != *versionID || history.ApprovedReviewID == nil {
 		return publication, nil, oauthport.ErrStateInconsistent
 	}
 	var version applicationVersionDocument
@@ -296,7 +313,30 @@ func publicationVersionForChannel(publication applicationPublicationDocument, ch
 	if channel == oauthdomain.ChannelTest {
 		return publication.TestVersionID
 	}
+	if channel == oauthdomain.ChannelGrey && publication.GreyRollout != nil {
+		return &publication.GreyRollout.VersionID
+	}
 	return nil
+}
+
+func (r *OAuthProviderRepository) greyCohortMatches(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID string, authID shared.AuthID) (bool, error) {
+	var document applicationPublicationDocument
+	err := r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.M{"applicationId": applicationID.String(), "rpcApiMajor": major}).Decode(&document)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return false, oauthport.ErrRuntimeUnavailable
+	}
+	if err != nil {
+		return false, err
+	}
+	publication, restoreErr := applicationPublicationFromDocument(document)
+	if restoreErr != nil {
+		return false, oauthport.ErrStateInconsistent
+	}
+	rollout := publication.GreyRollout()
+	if rollout == nil || rollout.VersionID().String() != versionID {
+		return false, oauthport.ErrRuntimeVersionChanged
+	}
+	return rollout.Matches(authID), nil
 }
 
 func (r *OAuthProviderRepository) currentDisplay(ctx context.Context, applicationID shared.ApplicationID) (oauthdomain.ApplicationDisplay, error) {
@@ -350,7 +390,7 @@ func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, app
 		}
 		type registrationTypes struct{ public, confidential bool }
 		registrations := map[oauthdomain.Channel]registrationTypes{}
-		for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelTest} {
+		for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelGrey, oauthdomain.ChannelTest} {
 			var document applicationOAuthRegistrationDocument
 			registrationErr := r.database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "channel": string(channel)}).Decode(&document)
 			if errors.Is(registrationErr, drivermongo.ErrNoDocuments) {
@@ -380,7 +420,7 @@ func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, app
 			if _, restoreErr := applicationPublicationFromDocument(publication); restoreErr != nil {
 				return nil, oauthport.ErrStateInconsistent
 			}
-			for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelTest} {
+			for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelGrey, oauthdomain.ChannelTest} {
 				versionID := publicationVersionForChannel(publication, channel)
 				if versionID == nil {
 					continue

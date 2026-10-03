@@ -27,6 +27,8 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(testerport.Clock), new(*SystemClock)),
 	NewPublicationUUIDv7Generator,
 	wire.Bind(new(publicationport.UUIDv7Generator), new(*PublicationUUIDv7Generator)),
+	NewGreyCohortSeedGenerator,
+	wire.Bind(new(publicationport.RandomBytes), new(*GreyCohortSeedGenerator)),
 	wire.Bind(new(publicationport.Clock), new(*SystemClock)),
 	NewUUIDv7Generator,
 	NewApplicationVersionUUIDv7Generator,

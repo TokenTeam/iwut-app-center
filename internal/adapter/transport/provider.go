@@ -9,7 +9,7 @@ var ProviderSet = wire.NewSet(
 	NewApplicationService,
 	NewApplicationVersionService,
 	NewApplicationReviewService,
-	NewApplicationPublicationServiceWithStable,
+	NewApplicationPublicationServiceWithGrey,
 	NewTesterJoinLinkService,
 	NewTesterMembershipService,
 	NewCatalogService,

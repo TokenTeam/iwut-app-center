@@ -40,19 +40,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-020 — manage the stable publication slot.** Design input is
-`../../docs/app-center/briefs/UC-APP-020.md` plus the engineering baseline and
-implements README. Deliver exact-major stable set/replace/clear, retained EMPTY
-Publication records, shared Publication OCC and append-only History, the 0016
-schema migration, STABLE OAuth registration management, and STABLE support in
-the five existing Auth-only provider methods. Preserve TEST behavior and use
-field presence for optional test/stable pointers, clear History facts, and the
-channel-specific tester membership. Reuse the UC007 approval/Profile/scope/URL
-checks and UC018/019 security boundaries. Do not implement Grey, test clear,
-Catalog, Filter, Application disable, Auth grants/codes/tokens, sector/sub
-storage, or frontend behavior. Required final tier: `make check-auth-app`.
-Commit API inputs and generated outputs before the service gitlink, and keep all
-commits local.
+**UC-APP-021 — manage Grey rollout.** Design input is
+`../../docs/app-center/briefs/UC-APP-021.md` plus the engineering baseline and
+implements README. Deliver Stable-backed exact-major Grey set, proportional
+adjustment, Version replacement and clear; deterministic authenticated-user
+cohorts using the fixed grey-bucket-v1 HMAC algorithm; shared Publication OCC
+and append-only History; the 0017 schema migration; GREY OAuth registration
+management; and GREY support in the five existing Auth-only provider methods.
+Preserve cohort identity through one continuous rollout, distinguish risk
+increases from reductions for external revalidation, and never expose the
+cohort seed. Do not implement unified test/grey/stable routing, Catalog, Filter,
+test clear, Application disable, Auth grants/codes/tokens, analytics, atomic
+promotion, sector/sub storage, or frontend behavior. Required final tier:
+`make check-auth-app`. Commit API inputs and generated outputs before the
+service gitlink, and keep all commits local.
 
 ## Verification entry points
 

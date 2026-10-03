@@ -105,7 +105,7 @@ func TestProviderHandlersRejectUntrustedInputBeforeRepository(t *testing.T) {
 	if _, _, err := handler.VerifyClientSecret(t.Context(), clientID, "secret", 0); !errors.Is(err, domain.ErrInvalidOAuthProviderRequest) {
 		t.Fatalf("invalid verify error = %v", err)
 	}
-	if _, err := handler.ResolveRuntime(t.Context(), clientID, domain.ChannelGrey, 1, 1); !errors.Is(err, domain.ErrInvalidOAuthProviderRequest) {
+	if _, err := handler.ResolveRuntime(t.Context(), clientID, domain.Channel("OTHER"), 1, 1); !errors.Is(err, domain.ErrInvalidOAuthProviderRequest) {
 		t.Fatalf("invalid runtime error = %v", err)
 	}
 	if _, err := handler.ResolveAuthorizationContext(t.Context(), clientID, "", domain.ChannelTest, 1, 1, version); !errors.Is(err, domain.ErrInvalidOAuthProviderRequest) {

@@ -40,7 +40,7 @@ func (c *StablePlacementCandidate) SetStable(publicationID *ApplicationPublicati
 			return nil, NewInternalError(nil)
 		}
 		version := c.versionID
-		publication = &ApplicationPublication{*publicationID, c.applicationID, c.rpcAPIMajor, nil, &version, 1, admin, at.UTC(), admin, at.UTC()}
+		publication = &ApplicationPublication{publicationID: *publicationID, applicationID: c.applicationID, rpcAPIMajor: c.rpcAPIMajor, stableVersionID: &version, revision: 1, createdBy: admin, createdAt: at.UTC(), updatedBy: admin, updatedAt: at.UTC()}
 	} else {
 		if publicationID != nil || c.publication.revision == math.MaxInt64 {
 			return nil, NewInternalError(nil)
@@ -56,7 +56,7 @@ func (c *StablePlacementCandidate) SetStable(publicationID *ApplicationPublicati
 	version := c.versionID
 	review := c.reviewID
 	validationCopy := validation
-	history := &ApplicationPublicationHistory{historyID, publication.publicationID, c.applicationID, c.rpcAPIMajor, publication.revision, PublicationActionSetStableVersion, previous, &version, &review, &validationCopy, admin, at.UTC()}
+	history := &ApplicationPublicationHistory{historyID: historyID, publicationID: publication.publicationID, applicationID: c.applicationID, rpcAPIMajor: c.rpcAPIMajor, publicationRevision: publication.revision, action: PublicationActionSetStableVersion, previousVersionID: previous, newVersionID: &version, approvedReviewID: &review, validation: &validationCopy, changedBy: admin, changedAt: at.UTC()}
 	return &PlaceInTestResult{*publication, history}, nil
 }
 
@@ -70,6 +70,9 @@ func NewStableClearCandidate(publication *ApplicationPublication, expectedRevisi
 	}
 	if publication == nil {
 		return nil, ErrApplicationPublicationNotFound
+	}
+	if publication.greyRollout != nil {
+		return nil, ErrStablePublicationRequiredByGrey
 	}
 	if publication.Revision() != expectedRevision {
 		return nil, ErrApplicationPublicationRevisionConflict
@@ -104,6 +107,6 @@ func (c *StableClearCandidate) Clear(historyID ApplicationPublicationHistoryID, 
 	publication.revision++
 	publication.updatedBy = admin
 	publication.updatedAt = at.UTC()
-	history := &ApplicationPublicationHistory{historyID, publication.publicationID, publication.applicationID, publication.rpcAPIMajor, publication.revision, PublicationActionClearStableVersion, previous, nil, nil, nil, admin, at.UTC()}
+	history := &ApplicationPublicationHistory{historyID: historyID, publicationID: publication.publicationID, applicationID: publication.applicationID, rpcAPIMajor: publication.rpcAPIMajor, publicationRevision: publication.revision, action: PublicationActionClearStableVersion, previousVersionID: previous, changedBy: admin, changedAt: at.UTC()}
 	return &PlaceInTestResult{*publication, history}, nil
 }

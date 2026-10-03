@@ -145,6 +145,7 @@ func mapRepositoryError(err error) error {
 		{port.ErrOAuthClientRegistrationRequired, domain.ErrOAuthClientRegistrationRequired},
 		{port.ErrApplicationProfileRequired, domain.ErrApplicationProfileRequired},
 		{port.ErrStablePublicationRequiredByGrey, domain.ErrStablePublicationRequiredByGrey},
+		{port.ErrGreyStableBaselineRequired, domain.ErrGreyStableBaselineRequired},
 	} {
 		if errors.Is(err, entry.port) || errors.Is(err, entry.domain) {
 			return entry.domain

@@ -91,3 +91,27 @@ func TestAPIContract_UCAPP020_StableRoutesPresenceAndClearQuery(t *testing.T) {
 		t.Fatalf("stable-only resource=%#v", resource)
 	}
 }
+
+func TestAPIContract_UCAPP021_GreyRoutesAndResources(t *testing.T) {
+	service := publicationv1.File_app_center_v1_application_publication_application_publication_proto.Services().ByName("ApplicationPublication")
+	setDescriptor := service.Methods().ByName("SetGreyRollout")
+	setRule := proto.GetExtension(setDescriptor.Options(), annotations.E_Http).(*annotations.HttpRule)
+	if setRule.GetPut() != SetGreyRolloutInternalPath || setRule.GetBody() != "command" || SetGreyRolloutGRPCMethod != publicationv1.ApplicationPublication_SetGreyRollout_FullMethodName || strings.TrimPrefix(SetGreyRolloutExternalPath, ServicePrefix) != setRule.GetPut() {
+		t.Fatalf("grey set contract=%v", setRule)
+	}
+	clearDescriptor := service.Methods().ByName("ClearGreyRollout")
+	clearRule := proto.GetExtension(clearDescriptor.Options(), annotations.E_Http).(*annotations.HttpRule)
+	if clearRule.GetDelete() != ClearGreyRolloutInternalPath || clearRule.GetBody() != "" || ClearGreyRolloutGRPCMethod != publicationv1.ApplicationPublication_ClearGreyRollout_FullMethodName || strings.TrimPrefix(ClearGreyRolloutExternalPath, ServicePrefix) != clearRule.GetDelete() {
+		t.Fatalf("grey clear contract=%v", clearRule)
+	}
+	if fields := messageFieldNames(t, &publicationv1.SetGreyRolloutCommand{}); strings.Join(fields, ",") != "expected_publication_revision,exposure_basis_points,version_id" {
+		t.Fatalf("set fields=%v", fields)
+	}
+	if fields := messageFieldNames(t, &publicationv1.ClearGreyRolloutRequest{}); strings.Join(fields, ",") != "application_id,expected_publication_revision,rpc_api_major" {
+		t.Fatalf("clear fields=%v", fields)
+	}
+	resource := &publicationv1.ApplicationPublicationResource{GreyRollout: &publicationv1.GreyRolloutResource{RolloutId: "r", VersionId: "v", ExposureBasisPoints: 500}}
+	if resource.GetGreyRollout().GetExposureBasisPoints() != 500 {
+		t.Fatalf("resource=%#v", resource)
+	}
+}

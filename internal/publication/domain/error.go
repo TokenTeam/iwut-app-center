@@ -22,6 +22,7 @@ const (
 	ErrorCodeInvalidRpcApiMajor                      ErrorCode = "InvalidRpcApiMajor"
 	ErrorCodeInvalidApplicationVersionId             ErrorCode = "InvalidApplicationVersionId"
 	ErrorCodeInvalidApplicationPublicationRevision   ErrorCode = "InvalidApplicationPublicationRevision"
+	ErrorCodeInvalidGreyExposureBasisPoints          ErrorCode = "InvalidGreyExposureBasisPoints"
 	ErrorCodeApplicationVersionNotFound              ErrorCode = "ApplicationVersionNotFound"
 	ErrorCodeApplicationAdminRequired                ErrorCode = "ApplicationAdminRequired"
 	ErrorCodeApplicationVersionNotApproved           ErrorCode = "ApplicationVersionNotApproved"
@@ -38,6 +39,7 @@ const (
 	ErrorCodeApplicationProfileRequired              ErrorCode = "ApplicationProfileRequired"
 	ErrorCodeApplicationProfileStateInconsistent     ErrorCode = "ApplicationProfileStateInconsistent"
 	ErrorCodeStablePublicationRequiredByGrey         ErrorCode = "StablePublicationRequiredByGrey"
+	ErrorCodeGreyStableBaselineRequired              ErrorCode = "GreyStableBaselineRequired"
 	ErrorCodeApplicationPublicationStateInconsistent ErrorCode = "ApplicationPublicationStateInconsistent"
 	ErrorCodeInternal                                ErrorCode = "Internal"
 )
@@ -88,6 +90,7 @@ var (
 	ErrInvalidRpcApiMajor                      = newError(ErrorCategoryValidation, ErrorCodeInvalidRpcApiMajor, "RPC API major is invalid", nil)
 	ErrInvalidApplicationVersionId             = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionId, "application version ID is invalid", nil)
 	ErrInvalidApplicationPublicationRevision   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationPublicationRevision, "publication revision is invalid", nil)
+	ErrInvalidGreyExposureBasisPoints          = newError(ErrorCategoryValidation, ErrorCodeInvalidGreyExposureBasisPoints, "grey exposure basis points are invalid", nil)
 	ErrApplicationVersionNotFound              = newError(ErrorCategoryNotFound, ErrorCodeApplicationVersionNotFound, "application version not found", nil)
 	ErrApplicationAdminRequired                = newError(ErrorCategoryAuthorization, ErrorCodeApplicationAdminRequired, "application administrator is required", nil)
 	ErrApplicationVersionNotApproved           = newError(ErrorCategoryConflict, ErrorCodeApplicationVersionNotApproved, "application version is not approved", nil)
@@ -104,6 +107,7 @@ var (
 	ErrApplicationProfileRequired              = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileRequired, "application profile is required", nil)
 	ErrApplicationProfileStateInconsistent     = newError(ErrorCategoryInternal, ErrorCodeApplicationProfileStateInconsistent, "application profile state is inconsistent", nil)
 	ErrStablePublicationRequiredByGrey         = newError(ErrorCategoryConflict, ErrorCodeStablePublicationRequiredByGrey, "stable publication is required by grey rollout", nil)
+	ErrGreyStableBaselineRequired              = newError(ErrorCategoryConflict, ErrorCodeGreyStableBaselineRequired, "grey rollout requires a stable baseline", nil)
 	ErrApplicationPublicationStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationPublicationStateInconsistent, "application publication state is inconsistent", nil)
 	ErrInternal                                = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

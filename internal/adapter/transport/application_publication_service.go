@@ -26,12 +26,20 @@ type SetApprovedVersionInStableSlotHandler interface {
 type ClearStableSlotHandler interface {
 	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.ClearStableSlotCommand) (*publicationdomain.PlaceInTestResult, error)
 }
+type SetGreyRolloutHandler interface {
+	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.SetGreyRolloutCommand) (*publicationdomain.PlaceInTestResult, error)
+}
+type ClearGreyRolloutHandler interface {
+	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.ClearGreyRolloutCommand) (*publicationdomain.PlaceInTestResult, error)
+}
 
 type ApplicationPublicationService struct {
 	publicationv1.UnimplementedApplicationPublicationServer
-	testHandler   PlaceApprovedVersionInTestSlotHandler
-	stableHandler SetApprovedVersionInStableSlotHandler
-	clearHandler  ClearStableSlotHandler
+	testHandler      PlaceApprovedVersionInTestSlotHandler
+	stableHandler    SetApprovedVersionInStableSlotHandler
+	clearHandler     ClearStableSlotHandler
+	setGreyHandler   SetGreyRolloutHandler
+	clearGreyHandler ClearGreyRolloutHandler
 }
 
 var _ publicationv1.ApplicationPublicationHTTPServer = (*ApplicationPublicationService)(nil)
@@ -42,6 +50,9 @@ func NewApplicationPublicationService(handler PlaceApprovedVersionInTestSlotHand
 }
 func NewApplicationPublicationServiceWithStable(test PlaceApprovedVersionInTestSlotHandler, stable SetApprovedVersionInStableSlotHandler, clear ClearStableSlotHandler) *ApplicationPublicationService {
 	return &ApplicationPublicationService{testHandler: test, stableHandler: stable, clearHandler: clear}
+}
+func NewApplicationPublicationServiceWithGrey(test PlaceApprovedVersionInTestSlotHandler, stable SetApprovedVersionInStableSlotHandler, clearStable ClearStableSlotHandler, setGrey SetGreyRolloutHandler, clearGrey ClearGreyRolloutHandler) *ApplicationPublicationService {
+	return &ApplicationPublicationService{testHandler: test, stableHandler: stable, clearHandler: clearStable, setGreyHandler: setGrey, clearGreyHandler: clearGrey}
 }
 
 func (service *ApplicationPublicationService) PlaceApprovedVersionInTestSlot(ctx context.Context, request *publicationv1.PlaceApprovedVersionInTestSlotRequest) (*publicationv1.PlaceApprovedVersionInTestSlotResponse, error) {
@@ -123,7 +134,60 @@ func (service *ApplicationPublicationService) ClearStableSlot(ctx context.Contex
 	return &publicationv1.ClearStableSlotResponse{Changed: changed, Publication: publication, History: history}, nil
 }
 
+func (service *ApplicationPublicationService) SetGreyRollout(ctx context.Context, request *publicationv1.SetGreyRolloutRequest) (*publicationv1.SetGreyRolloutResponse, error) {
+	if service == nil || service.setGreyHandler == nil || request == nil {
+		return nil, toTransportError(publicationdomain.NewInternalError(nil))
+	}
+	identity, applicationID, err := publicationRequestIdentity(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, err
+	}
+	if httpRequest, ok := khttp.RequestFromServerContext(ctx); ok && (httpRequest.URL.RawQuery != "" || httpRequest.URL.ForceQuery) {
+		return nil, toTransportError(publicationdomain.ErrInvalidApplicationPublicationRevision)
+	}
+	command := publicationusecase.SetGreyRolloutCommand{}
+	if body := request.GetCommand(); body != nil {
+		command.VersionID = publicationdomain.ApplicationVersionID(body.GetVersionId())
+		command.ExposureBasisPoints = body.GetExposureBasisPoints()
+		command.ExpectedPublicationRevision = body.GetExpectedPublicationRevision()
+	}
+	result, handleErr := service.setGreyHandler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), command)
+	if handleErr != nil {
+		return nil, publicationTransportError(ctx, handleErr)
+	}
+	publication, history, changed, convertErr := publicationResources(result)
+	if convertErr != nil {
+		return nil, convertErr
+	}
+	return &publicationv1.SetGreyRolloutResponse{Changed: changed, Publication: publication, History: history}, nil
+}
+
+func (service *ApplicationPublicationService) ClearGreyRollout(ctx context.Context, request *publicationv1.ClearGreyRolloutRequest) (*publicationv1.ClearGreyRolloutResponse, error) {
+	if service == nil || service.clearGreyHandler == nil || request == nil {
+		return nil, toTransportError(publicationdomain.NewInternalError(nil))
+	}
+	identity, applicationID, err := publicationRequestIdentity(ctx, request.GetApplicationId())
+	if err != nil {
+		return nil, err
+	}
+	if httpRequest, ok := khttp.RequestFromServerContext(ctx); ok && !validPublicationClearHTTPInput(httpRequest) {
+		return nil, toTransportError(publicationdomain.ErrInvalidApplicationPublicationRevision)
+	}
+	result, handleErr := service.clearGreyHandler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), publicationusecase.ClearGreyRolloutCommand{ExpectedPublicationRevision: request.GetExpectedPublicationRevision()})
+	if handleErr != nil {
+		return nil, publicationTransportError(ctx, handleErr)
+	}
+	publication, history, changed, convertErr := publicationResources(result)
+	if convertErr != nil {
+		return nil, convertErr
+	}
+	return &publicationv1.ClearGreyRolloutResponse{Changed: changed, Publication: publication, History: history}, nil
+}
+
 func validClearStableHTTPInput(request *http.Request) bool {
+	return validPublicationClearHTTPInput(request)
+}
+func validPublicationClearHTTPInput(request *http.Request) bool {
 	query := request.URL.Query()
 	if len(query) != 1 || len(query["expected_publication_revision"]) != 1 {
 		return false
@@ -155,7 +219,7 @@ func publicationTransportError(ctx context.Context, err error) error {
 		}
 		slog.ErrorContext(ctx, "application publication invariant failed", "reason", reason)
 	}
-	if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired) || errors.Is(err, publicationdomain.ErrStablePublicationRequiredByGrey)) {
+	if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired) || errors.Is(err, publicationdomain.ErrStablePublicationRequiredByGrey) || errors.Is(err, publicationdomain.ErrGreyStableBaselineRequired)) {
 		var domainError *publicationdomain.Error
 		if errors.As(err, &domainError) {
 			spec := publicationDomainErrorSpecs[domainError.Code()]
@@ -179,6 +243,9 @@ func publicationResources(result *publicationdomain.PlaceInTestResult) (*publica
 		text := value.String()
 		resource.StableVersionId = &text
 	}
+	if value := p.GreyRollout(); value != nil {
+		resource.GreyRollout = &publicationv1.GreyRolloutResource{RolloutId: value.RolloutID().String(), VersionId: value.VersionID().String(), ExposureBasisPoints: value.ExposureBasisPoints().Int32()}
+	}
 	var historyResource *publicationv1.ApplicationPublicationHistoryResource
 	if h := result.History(); h != nil {
 		historyResource = &publicationv1.ApplicationPublicationHistoryResource{HistoryId: h.HistoryID().String(), PublicationId: h.PublicationID().String(), ApplicationId: h.ApplicationID().String(), RpcApiMajor: h.RPCAPIMajor(), PublicationRevision: h.PublicationRevision(), Action: string(h.Action()), ChangedBy: h.ChangedBy().String(), ChangedAt: timestamppb.New(h.ChangedAt())}
@@ -201,6 +268,18 @@ func publicationResources(result *publicationdomain.PlaceInTestResult) (*publica
 		if value := h.PreflightPolicyVersionPtr(); value != nil {
 			text := value.String()
 			historyResource.PreflightPolicyVersion = &text
+		}
+		if value := h.GreyRolloutIDPtr(); value != nil {
+			text := value.String()
+			historyResource.GreyRolloutId = &text
+		}
+		if value := h.PreviousExposureBasisPointsPtr(); value != nil {
+			points := value.Int32()
+			historyResource.PreviousExposureBasisPoints = &points
+		}
+		if value := h.NewExposureBasisPointsPtr(); value != nil {
+			points := value.Int32()
+			historyResource.NewExposureBasisPoints = &points
 		}
 	}
 	return resource, historyResource, result.Changed(), nil

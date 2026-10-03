@@ -49,8 +49,9 @@ func TestRegistrationEnforcesTypedSlotsAndReturnsCopies(t *testing.T) {
 	if _, err := RestoreRegistration(applicationID, ChannelTest, nil, public, 1, at, at); !IsCode(err, ErrorCodeOAuthClientStateInconsistent) {
 		t.Fatalf("wrong slot error=%v", err)
 	}
-	if _, err := RestoreRegistration(applicationID, ChannelGrey, public, nil, 1, at, at); !IsCode(err, ErrorCodeOAuthClientStateInconsistent) {
-		t.Fatalf("disabled channel restore error=%v", err)
+	grey, err := RestoreRegistration(applicationID, ChannelGrey, public, nil, 1, at, at)
+	if err != nil || grey.Channel() != ChannelGrey {
+		t.Fatalf("grey registration=%#v error=%v", grey, err)
 	}
 	stable, err := RestoreRegistration(applicationID, ChannelStable, public, nil, 1, at, at)
 	if err != nil || stable.Channel() != ChannelStable {

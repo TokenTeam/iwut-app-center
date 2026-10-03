@@ -189,7 +189,7 @@ func oauthChannel(value oauthclientv1.OAuthChannel) (oauthclientdomain.Channel, 
 	case oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE:
 		return oauthclientdomain.ChannelStable, nil
 	case oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY:
-		return "", oauthclientdomain.ErrOAuthChannelNotEnabled
+		return oauthclientdomain.ChannelGrey, nil
 	default:
 		return "", oauthclientdomain.ErrInvalidOAuthChannel
 	}
@@ -235,6 +235,9 @@ func oauthRegistrationResource(registration *oauthclientdomain.Registration) *oa
 func oauthChannelResource(channel oauthclientdomain.Channel) oauthclientv1.OAuthChannel {
 	if channel == oauthclientdomain.ChannelStable {
 		return oauthclientv1.OAuthChannel_OAUTH_CHANNEL_STABLE
+	}
+	if channel == oauthclientdomain.ChannelGrey {
+		return oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY
 	}
 	return oauthclientv1.OAuthChannel_OAUTH_CHANNEL_TEST
 }

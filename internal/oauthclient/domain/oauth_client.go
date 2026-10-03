@@ -19,10 +19,8 @@ const (
 func ParseChannel(value string) (Channel, error) {
 	channel := Channel(strings.ToUpper(strings.TrimSpace(value)))
 	switch channel {
-	case ChannelTest, ChannelStable:
+	case ChannelTest, ChannelGrey, ChannelStable:
 		return channel, nil
-	case ChannelGrey:
-		return "", ErrOAuthChannelNotEnabled
 	default:
 		return "", ErrInvalidOAuthChannel
 	}
@@ -124,7 +122,7 @@ func RestoreRegistration(appID shared.ApplicationID, channel Channel, public, co
 	return &Registration{appID, channel, cloneIdentity(public), cloneIdentity(confidential), revision, createdAt.UTC(), updatedAt.UTC()}, nil
 }
 
-func (c Channel) Enabled() bool                             { return c == ChannelTest || c == ChannelStable }
+func (c Channel) Enabled() bool                             { return c == ChannelTest || c == ChannelGrey || c == ChannelStable }
 func (r *Registration) ApplicationID() shared.ApplicationID { return r.applicationID }
 func (r *Registration) Channel() Channel                    { return r.channel }
 func (r *Registration) PublicClient() *ClientIdentity       { return cloneIdentity(r.public) }

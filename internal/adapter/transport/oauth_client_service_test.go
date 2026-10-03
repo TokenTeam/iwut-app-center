@@ -187,18 +187,19 @@ func TestOAuthClientServiceErrorMappings(t *testing.T) {
 	}
 }
 
-func TestOAuthClientServiceRejectsFutureEnums(t *testing.T) {
+func TestOAuthClientServiceRejectsUnknownEnums(t *testing.T) {
 	service := NewOAuthClientService(&fakeOAuthClientHandlers{})
 	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "admin", DeveloperStatus: shared.DeveloperStatusApproved})
-	for _, channel := range []oauthclientv1.OAuthChannel{oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY} {
-		_, err := service.GetApplicationOAuthRegistration(ctx, &oauthclientv1.GetApplicationOAuthRegistrationRequest{ApplicationId: testApplicationID, Channel: channel})
-		if mapped := status.Convert(err); mapped.Code() != codes.FailedPrecondition || errorReason(mapped) != ReasonOAuthChannelNotEnabled {
-			t.Fatalf("channel=%v error=%v", channel, err)
-		}
-	}
 	_, err := service.GetApplicationOAuthRegistration(ctx, &oauthclientv1.GetApplicationOAuthRegistrationRequest{ApplicationId: testApplicationID, Channel: 99})
 	if mapped := status.Convert(err); mapped.Code() != codes.InvalidArgument || errorReason(mapped) != ReasonInvalidOAuthChannel {
 		t.Fatalf("unknown enum error=%v", err)
+	}
+}
+
+func TestOAuthClientService_UCAPP021_GreyChannelMapping(t *testing.T) {
+	channel, err := oauthChannel(oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY)
+	if err != nil || channel != oauthclientdomain.ChannelGrey || oauthChannelResource(channel) != oauthclientv1.OAuthChannel_OAUTH_CHANNEL_GREY {
+		t.Fatalf("channel=%q error=%v", channel, err)
 	}
 }
 

@@ -500,6 +500,216 @@ func (r *ApplicationPublicationRepository) ClearStable(ctx context.Context, cand
 	return result.(*publicationdomain.PlaceInTestResult), nil
 }
 
+func (r *ApplicationPublicationRepository) LoadGreyPlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, exposure publicationdomain.ExposureBasisPoints, adminID shared.AuthID, expectedRevision int64) (*publicationdomain.GreyPlacementCandidate, error) {
+	if r == nil || r.database == nil || !applicationID.IsValid() || !versionID.IsValid() || !exposure.IsValid() || !adminID.IsValid() || major < 1 || expectedRevision < 1 {
+		return nil, fmt.Errorf("load grey publication candidate: invalid repository input")
+	}
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		return r.loadGreyPlacementCandidate(tx, applicationID, major, versionID, exposure, adminID, expectedRevision, false)
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
+	if err != nil {
+		return nil, err
+	}
+	return result.(*publicationdomain.GreyPlacementCandidate), nil
+}
+
+func (r *ApplicationPublicationRepository) loadGreyPlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, exposure publicationdomain.ExposureBasisPoints, adminID shared.AuthID, expectedRevision int64, lock bool) (*publicationdomain.GreyPlacementCandidate, error) {
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	var application applicationDocument
+	if err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application); errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationVersionNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if application.AdminID != adminID.String() {
+		return nil, publicationport.ErrApplicationAdminRequired
+	}
+	var document applicationPublicationDocument
+	err := r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "rpcApiMajor", Value: major}}).Decode(&document)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationPublicationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	publication, err := applicationPublicationFromDocument(document)
+	if err != nil {
+		return nil, publicationport.ErrApplicationPublicationStateInconsistent
+	}
+	change, err := publicationdomain.ClassifyGreyChange(publication, versionID, exposure, expectedRevision)
+	if err != nil {
+		return nil, mapGreyDomainError(err)
+	}
+	if change == publicationdomain.GreyChangeNoOp || change == publicationdomain.GreyChangeDecrease {
+		candidate, createErr := publicationdomain.NewGreyReductionCandidate(applicationID, major, versionID, exposure, publication, expectedRevision)
+		if createErr != nil {
+			return nil, mapGreyDomainError(createErr)
+		}
+		if lock {
+			if err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, appFilter, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err(); err != nil {
+				return nil, err
+			}
+		}
+		return candidate, nil
+	}
+	expected := expectedRevision
+	base, err := r.loadTestPlacementCandidate(ctx, applicationID, major, versionID, adminID, &expected, "GREY", lock)
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := publicationdomain.NewGreyPlacementCandidate(base, exposure)
+	if err != nil {
+		return nil, mapGreyDomainError(err)
+	}
+	return candidate, nil
+}
+
+func mapGreyDomainError(err error) error {
+	switch {
+	case errors.Is(err, publicationdomain.ErrApplicationPublicationNotFound):
+		return publicationport.ErrApplicationPublicationNotFound
+	case errors.Is(err, publicationdomain.ErrApplicationPublicationRevisionConflict):
+		return publicationport.ErrApplicationPublicationRevisionConflict
+	case errors.Is(err, publicationdomain.ErrGreyStableBaselineRequired):
+		return publicationport.ErrGreyStableBaselineRequired
+	case errors.Is(err, publicationdomain.ErrApplicationPublicationStateInconsistent):
+		return publicationport.ErrApplicationPublicationStateInconsistent
+	default:
+		return err
+	}
+}
+
+func (r *ApplicationPublicationRepository) SetGrey(ctx context.Context, candidate *publicationdomain.GreyPlacementCandidate, rolloutID *publicationdomain.GreyRolloutID, seed *publicationdomain.CohortSeed, historyID publicationdomain.ApplicationPublicationHistoryID, adminID shared.AuthID, validation *publicationdomain.PublicationValidation, changedAt time.Time) (*publicationdomain.PlaceInTestResult, error) {
+	if r == nil || r.database == nil || candidate == nil || !adminID.IsValid() {
+		return nil, fmt.Errorf("set grey publication: invalid repository input")
+	}
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		current, loadErr := r.loadGreyPlacementCandidate(tx, candidate.ApplicationID(), candidate.RPCAPIMajor(), candidate.VersionID(), candidate.ExposureBasisPoints(), adminID, candidate.ExpectedPublicationRevision(), true)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		old, actual := candidate.Publication(), current.Publication()
+		if old == nil || actual == nil || actual.PublicationID() != old.PublicationID() || actual.Revision() != old.Revision() || current.ChangeKind() != candidate.ChangeKind() {
+			return nil, publicationport.ErrApplicationPublicationRevisionConflict
+		}
+		if candidate.RequiresValidation() {
+			before, after := candidate.ApprovedCandidate(), current.ApprovedCandidate()
+			if before == nil || after == nil || after.ReviewID() != before.ReviewID() || after.VersionRevision() != before.VersionRevision() || !after.Snapshot().Equal(before.Snapshot()) {
+				return nil, publicationport.ErrApplicationReviewStateInconsistent
+			}
+		}
+		changed, changeErr := current.SetGrey(rolloutID, seed, historyID, adminID, validation, changedAt.UTC().Truncate(time.Millisecond))
+		if changeErr != nil || !changed.Changed() {
+			return changed, changeErr
+		}
+		if persistErr := r.persistPublicationChange(tx, actual, changed); persistErr != nil {
+			return nil, persistErr
+		}
+		return changed, nil
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()))
+	if err != nil {
+		return nil, fmt.Errorf("set grey publication transaction: %w", err)
+	}
+	return result.(*publicationdomain.PlaceInTestResult), nil
+}
+
+func (r *ApplicationPublicationRepository) LoadGreyClearCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, adminID shared.AuthID, expectedRevision int64) (*publicationdomain.GreyClearCandidate, error) {
+	if r == nil || r.database == nil || !applicationID.IsValid() || !adminID.IsValid() || major < 1 || expectedRevision < 1 {
+		return nil, fmt.Errorf("load grey clear candidate: invalid repository input")
+	}
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		return r.loadGreyClearCandidate(tx, applicationID, major, adminID, expectedRevision, false)
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
+	if err != nil {
+		return nil, err
+	}
+	return result.(*publicationdomain.GreyClearCandidate), nil
+}
+
+func (r *ApplicationPublicationRepository) loadGreyClearCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, adminID shared.AuthID, expectedRevision int64, lock bool) (*publicationdomain.GreyClearCandidate, error) {
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	var application applicationDocument
+	if err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application); errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationVersionNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if application.AdminID != adminID.String() {
+		return nil, publicationport.ErrApplicationAdminRequired
+	}
+	var document applicationPublicationDocument
+	err := r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "rpcApiMajor", Value: major}}).Decode(&document)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, publicationport.ErrApplicationPublicationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	publication, err := applicationPublicationFromDocument(document)
+	if err != nil {
+		return nil, publicationport.ErrApplicationPublicationStateInconsistent
+	}
+	candidate, err := publicationdomain.NewGreyClearCandidate(publication, expectedRevision)
+	if err != nil {
+		return nil, mapGreyDomainError(err)
+	}
+	if lock {
+		if err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, appFilter, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err(); err != nil {
+			return nil, err
+		}
+	}
+	return candidate, nil
+}
+
+func (r *ApplicationPublicationRepository) ClearGrey(ctx context.Context, candidate *publicationdomain.GreyClearCandidate, historyID publicationdomain.ApplicationPublicationHistoryID, adminID shared.AuthID, changedAt time.Time) (*publicationdomain.PlaceInTestResult, error) {
+	if r == nil || r.database == nil || candidate == nil || candidate.Publication() == nil || !adminID.IsValid() {
+		return nil, fmt.Errorf("clear grey publication: invalid repository input")
+	}
+	previous := candidate.Publication()
+	session, err := r.database.Client().StartSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.EndSession(ctx)
+	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
+		current, loadErr := r.loadGreyClearCandidate(tx, previous.ApplicationID(), previous.RPCAPIMajor(), adminID, previous.Revision(), true)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		actual := current.Publication()
+		if actual.PublicationID() != previous.PublicationID() || actual.Revision() != previous.Revision() {
+			return nil, publicationport.ErrApplicationPublicationRevisionConflict
+		}
+		changed, changeErr := current.Clear(historyID, adminID, changedAt.UTC().Truncate(time.Millisecond))
+		if changeErr != nil || !changed.Changed() {
+			return changed, changeErr
+		}
+		if persistErr := r.persistPublicationChange(tx, actual, changed); persistErr != nil {
+			return nil, persistErr
+		}
+		return changed, nil
+	}, options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()))
+	if err != nil {
+		return nil, fmt.Errorf("clear grey publication transaction: %w", err)
+	}
+	return result.(*publicationdomain.PlaceInTestResult), nil
+}
+
 func (r *ApplicationPublicationRepository) persistPublicationChange(ctx context.Context, previous *publicationdomain.ApplicationPublication, result *publicationdomain.PlaceInTestResult) error {
 	document := applicationPublicationToDocument(result.Publication())
 	if previous == nil {

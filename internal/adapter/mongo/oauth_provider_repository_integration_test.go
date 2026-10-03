@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	profileport "iwut-app-center/internal/profile/port"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	reviewdomain "iwut-app-center/internal/review/domain"
+	"iwut-app-center/internal/shared"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	versiondomain "iwut-app-center/internal/version/domain"
 )
@@ -264,6 +266,81 @@ func TestOAuthProviderRepositoryIntegration_UCAPP020_StableRuntimeAndSharedRevis
 	testRuntime, err = repository.ResolveRuntime(t.Context(), f.publicID, oauthdomain.ChannelTest, 1, 2, at)
 	if err != nil || testRuntime.PublicationRevision != 3 {
 		t.Fatalf("test runtime after stable clear=%#v error=%v", testRuntime, err)
+	}
+}
+
+func TestOAuthProviderRepositoryIntegration_UCAPP021_GreyCohort(t *testing.T) {
+	f := newOAuthProviderFixture(t)
+	clientRepository := NewOAuthClientRepository(f.db)
+	greyPublicID := integrationOAuthClientID(t, 905)
+	if _, err := clientRepository.Register(t.Context(), f.seed.applicationID, oauthdomain.ChannelGrey, oauthdomain.ClientTypePublicPKCE, nil, greyPublicID, nil, f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	greyConfidentialID := integrationOAuthClientID(t, 906)
+	registrationRevision := int64(1)
+	greyDigest := providerTestSecret(greyConfidentialID, "grey-secret")
+	if _, err := clientRepository.Register(t.Context(), f.seed.applicationID, oauthdomain.ChannelGrey, oauthdomain.ClientTypeConfidentialSecret, &registrationRevision, greyConfidentialID, &greyDigest, f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stablePublicID := integrationOAuthClientID(t, 907)
+	if _, err := clientRepository.Register(t.Context(), f.seed.applicationID, oauthdomain.ChannelStable, oauthdomain.ClientTypePublicPKCE, nil, stablePublicID, nil, f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stableConfidentialID := integrationOAuthClientID(t, 908)
+	stableDigest := providerTestSecret(stableConfidentialID, "stable-secret")
+	registrationRevision = 1
+	if _, err := clientRepository.Register(t.Context(), f.seed.applicationID, oauthdomain.ChannelStable, oauthdomain.ClientTypeConfidentialSecret, &registrationRevision, stableConfidentialID, &stableDigest, f.seed.adminID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	publicationRepository := NewApplicationPublicationRepository(f.db)
+	expected := int64(1)
+	stable, err := publicationRepository.LoadStablePlacementCandidate(t.Context(), f.seed.applicationID, 1, publicationdomain.ApplicationVersionID(f.seed.versionID), f.seed.adminID, &expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stableResult, err := publicationRepository.SetStable(t.Context(), stable, nil, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), f.seed.adminID, publicationTestValidation(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exposure, _ := publicationdomain.NewExposureBasisPoints(5000)
+	grey, err := publicationRepository.LoadGreyPlacementCandidate(t.Context(), f.seed.applicationID, 1, publicationdomain.ApplicationVersionID(f.seed.versionID), exposure, f.seed.adminID, stableResult.Publication().Revision())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedBytes := make([]byte, 32)
+	for index := range seedBytes {
+		seedBytes[index] = byte(index)
+	}
+	cohortSeed, _ := publicationdomain.NewCohortSeed(seedBytes)
+	rolloutID := publicationdomain.GreyRolloutID(nextIntegrationApplicationReviewID(t))
+	validation := publicationTestValidation()
+	set, err := publicationRepository.SetGrey(t.Context(), grey, &rolloutID, &cohortSeed, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), f.seed.adminID, &validation, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	repository := NewOAuthProviderRepository(f.db, providerTestSecretVerifier{})
+	at := time.Date(2026, 10, 4, 2, 0, 0, 0, time.UTC)
+	runtime, err := repository.ResolveRuntime(t.Context(), greyPublicID, oauthdomain.ChannelGrey, 1, 2, at)
+	if err != nil || runtime.Channel != oauthdomain.ChannelGrey || runtime.PublicationRevision != set.Publication().Revision() || runtime.VersionID != f.seed.versionID.String() {
+		t.Fatalf("runtime=%#v error=%v", runtime, err)
+	}
+	rollout := set.Publication().GreyRollout()
+	var matched, missed string
+	for index := 0; matched == "" || missed == ""; index++ {
+		candidate := shared.AuthID(fmt.Sprintf("grey-user-%d", index))
+		if rollout.Matches(candidate) {
+			matched = candidate.String()
+		} else {
+			missed = candidate.String()
+		}
+	}
+	context, err := repository.ResolveAuthorizationContext(t.Context(), greyPublicID, shared.AuthID(matched), oauthdomain.ChannelGrey, 1, 2, runtime.Version(), at)
+	if err != nil || context.TesterMembershipID != "" || context.AuthID.String() != matched {
+		t.Fatalf("matched context=%#v error=%v", context, err)
+	}
+	if context, err := repository.ResolveAuthorizationContext(t.Context(), greyPublicID, shared.AuthID(missed), oauthdomain.ChannelGrey, 1, 2, runtime.Version(), at); context != nil || !errors.Is(err, oauthport.ErrRuntimeUnavailable) {
+		t.Fatalf("missed context=%#v error=%v", context, err)
 	}
 }
 

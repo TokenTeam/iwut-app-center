@@ -63,6 +63,12 @@ const (
 	ClearStableSlotInternalPath                = SetApprovedVersionInStableSlotInternalPath
 	ClearStableSlotExternalPath                = SetApprovedVersionInStableSlotExternalPath
 	ClearStableSlotGRPCMethod                  = publicationv1.OperationApplicationPublicationClearStableSlot
+	SetGreyRolloutInternalPath                 = "/v1/applications/{application_id}/publications/{rpc_api_major}/grey-rollout"
+	SetGreyRolloutExternalPath                 = ServicePrefix + SetGreyRolloutInternalPath
+	SetGreyRolloutGRPCMethod                   = publicationv1.OperationApplicationPublicationSetGreyRollout
+	ClearGreyRolloutInternalPath               = SetGreyRolloutInternalPath
+	ClearGreyRolloutExternalPath               = SetGreyRolloutExternalPath
+	ClearGreyRolloutGRPCMethod                 = publicationv1.OperationApplicationPublicationClearGreyRollout
 	// ServicePrefix is the Gateway-only service prefix. It is not part of the
 	// Proto HTTP annotation.
 	ServicePrefix = "/app-center"

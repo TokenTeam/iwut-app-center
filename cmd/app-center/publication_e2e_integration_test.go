@@ -247,7 +247,34 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 	if err != nil || !stableGRPC.GetChanged() || stableGRPC.GetPublication().GetRevision() != 5 || stableGRPC.GetPublication().GetStableVersionId() != firstVersion {
 		t.Fatalf("gRPC stable set=%v err=%v", stableGRPC, err)
 	}
-	clearRequest, _ := http.NewRequestWithContext(ctx, http.MethodDelete, stableURL+"?expected_publication_revision=5", nil)
+	greySet, err := client.SetGreyRollout(grpcCtx, &publicationv1.SetGreyRolloutRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, Command: &publicationv1.SetGreyRolloutCommand{VersionId: secondVersion, ExposureBasisPoints: 5000, ExpectedPublicationRevision: 5}})
+	if err != nil || !greySet.GetChanged() || greySet.GetPublication().GetRevision() != 6 || greySet.GetPublication().GetGreyRollout().GetVersionId() != secondVersion || greySet.GetHistory().GetAction() != "SET_GREY_ROLLOUT" {
+		t.Fatalf("gRPC grey set=%v err=%v", greySet, err)
+	}
+	if _, err = client.ClearStableSlot(grpcCtx, &publicationv1.ClearStableSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, ExpectedPublicationRevision: 6}); status.Code(err) != codes.FailedPrecondition || e2eErrorReason(status.Convert(err)) != transport.ReasonStablePublicationRequiredByGrey {
+		t.Fatalf("stable clear with grey error=%v", err)
+	}
+	greyURL := fmt.Sprintf("http://%s/v1/applications/%s/publications/3/grey-rollout", httpAddress, application.GetId())
+	clearGreyRequest, _ := http.NewRequestWithContext(ctx, http.MethodDelete, greyURL+"?expected_publication_revision=6", nil)
+	clearGreyRequest.Header.Set(transport.IdentityHeader, adminToken)
+	clearGreyResponse, err := (&http.Client{Timeout: 10 * time.Second}).Do(clearGreyRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearGreyBody, _ := io.ReadAll(clearGreyResponse.Body)
+	clearGreyResponse.Body.Close()
+	if clearGreyResponse.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP grey clear status=%d body=%s", clearGreyResponse.StatusCode, clearGreyBody)
+	}
+	var clearGrey publicationv1.ClearGreyRolloutResponse
+	if err := protojson.Unmarshal(clearGreyBody, &clearGrey); err != nil {
+		t.Fatal(err)
+	}
+	if !clearGrey.GetChanged() || clearGrey.GetPublication().GetRevision() != 7 || clearGrey.GetPublication().GreyRollout != nil || clearGrey.GetHistory().GetAction() != "CLEAR_GREY_ROLLOUT" {
+		t.Fatalf("HTTP grey clear=%v", &clearGrey)
+	}
+
+	clearRequest, _ := http.NewRequestWithContext(ctx, http.MethodDelete, stableURL+"?expected_publication_revision=7", nil)
 	clearRequest.Header.Set(transport.IdentityHeader, adminToken)
 	clearHTTPResponse, err := (&http.Client{Timeout: 10 * time.Second}).Do(clearRequest)
 	if err != nil {
@@ -262,10 +289,10 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 	if err := protojson.Unmarshal(clearBody, &clearHTTP); err != nil {
 		t.Fatal(err)
 	}
-	if !clearHTTP.GetChanged() || clearHTTP.GetPublication().GetRevision() != 6 || clearHTTP.GetPublication().StableVersionId != nil || clearHTTP.GetPublication().GetTestVersionId() != secondVersion {
+	if !clearHTTP.GetChanged() || clearHTTP.GetPublication().GetRevision() != 8 || clearHTTP.GetPublication().StableVersionId != nil || clearHTTP.GetPublication().GetTestVersionId() != secondVersion {
 		t.Fatalf("HTTP clear=%v", &clearHTTP)
 	}
-	for collection, want := range map[string]int64{"application_publications": 1, "application_publication_history": 6} {
+	for collection, want := range map[string]int64{"application_publications": 1, "application_publication_history": 8} {
 		count, err := database.Collection(collection).CountDocuments(ctx, bson.M{"applicationId": application.GetId()})
 		if err != nil || count != want {
 			t.Fatalf("%s count=%d err=%v", collection, count, err)
