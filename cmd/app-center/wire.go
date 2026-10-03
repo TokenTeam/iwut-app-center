@@ -36,6 +36,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		oauthcredential.ProviderSet,
 		oauthclientusecase.NewHandlers,
 		wire.Bind(new(transport.OAuthClientHandlers), new(*oauthclientusecase.Handlers)),
+		oauthclientusecase.NewProviderHandlers,
+		wire.Bind(new(transport.OAuthClientProviderHandlers), new(*oauthclientusecase.ProviderHandlers)),
 		profileusecase.NewCreateApplicationProfileRevisionHandler,
 		profileusecase.NewDecideApplicationProfileRevisionReviewHandler,
 		wire.Bind(new(transport.DecideApplicationProfileRevisionReviewHandler), new(*profileusecase.DecideApplicationProfileRevisionReviewHandler)),
@@ -81,6 +83,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		provideServiceIdentitySigner,
 		provideAuthScopeCatalogConnection,
 		provideIdentityConfig,
+		provideServiceIdentityConfig,
+		provideServiceIdentityVerifier,
 		provideServerConfig,
 		provideApp,
 	))

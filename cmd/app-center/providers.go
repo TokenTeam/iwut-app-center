@@ -106,6 +106,27 @@ func provideIdentityConfig(configuration config.Config, clock port.Clock) (trans
 	}, nil
 }
 
+func provideServiceIdentityConfig(configuration config.Config) transport.ServiceIdentityConfig {
+	callers := make([]transport.ServiceCallerConfig, len(configuration.ServiceCallers))
+	for index, caller := range configuration.ServiceCallers {
+		callers[index] = transport.ServiceCallerConfig{
+			ServiceID:         caller.ServiceID,
+			Status:            caller.Status,
+			PublicKeyPEMByKID: caller.PublicKeyPEMByKID,
+			Permissions:       caller.Permissions,
+		}
+	}
+	return transport.ServiceIdentityConfig{
+		Callers:   callers,
+		MaxTTL:    configuration.ServiceIdentityMaxTTL,
+		ClockSkew: configuration.ServiceIdentityClockSkew,
+	}
+}
+
+func provideServiceIdentityVerifier(configuration transport.ServiceIdentityConfig, clock port.Clock) (*transport.ServiceIdentityVerifier, error) {
+	return transport.NewServiceIdentityVerifier(configuration, clock)
+}
+
 func provideServerConfig(configuration config.Config) transport.ServerConfig {
 	return transport.ServerConfig{
 		HTTPAddr: configuration.HTTPAddr,

@@ -3,6 +3,7 @@ package oauthcredential
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 
 	"iwut-app-center/internal/oauthclient/domain"
@@ -22,4 +23,10 @@ func (*SecretFactory) NewSecret(clientID domain.ClientID) (string, domain.Secret
 	plain := base64.RawURLEncoding.EncodeToString(raw[:])
 	digest := sha256.Sum256([]byte(secretDomain + clientID.String() + "\x00" + plain))
 	return plain, domain.NewSecretDigest(digest), nil
+}
+
+func (*SecretFactory) Verify(clientID domain.ClientID, plain string, digest domain.SecretDigest) bool {
+	want := sha256.Sum256([]byte(secretDomain + clientID.String() + "\x00" + plain))
+	got := digest.Bytes()
+	return subtle.ConstantTimeCompare(want[:], got[:]) == 1
 }

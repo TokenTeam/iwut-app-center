@@ -2,8 +2,10 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strconv"
@@ -33,6 +35,9 @@ const (
 	ServiceIdentityAudienceEnv   = "APP_CENTER_SERVICE_IDENTITY_AUDIENCE"
 	ServiceIdentityPrivateKeyEnv = "APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64"
 	ServiceIdentityTTLEnv        = "APP_CENTER_SERVICE_IDENTITY_TTL"
+	ServiceCallersEnv            = "APP_CENTER_SERVICE_CALLERS_B64"
+	ServiceMaxTTLEnv             = "APP_CENTER_SERVICE_IDENTITY_MAX_TTL"
+	ServiceClockSkewEnv          = "APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW"
 
 	DefaultTesterJoinURLPrefix     = "https://app.example/tester/join"
 	DefaultScopeCatalogCacheTTL    = 5 * time.Minute
@@ -44,6 +49,8 @@ const (
 	DefaultIdentityClockSkew       = 30 * time.Second
 	DefaultServiceIdentityAudience = "iwut-auth-center"
 	DefaultServiceIdentityTTL      = time.Minute
+	DefaultServiceMaxTTL           = time.Minute
+	DefaultServiceClockSkew        = 30 * time.Second
 )
 
 var ErrInvalidConfiguration = errors.New("invalid application configuration")
@@ -76,6 +83,28 @@ type Config struct {
 	ServiceIdentityAudience      string
 	ServiceIdentityPrivateKeyPEM []byte
 	ServiceIdentityTTL           time.Duration
+	ServiceCallers               []ServiceCallerRegistration
+	ServiceIdentityMaxTTL        time.Duration
+	ServiceIdentityClockSkew     time.Duration
+}
+
+type ServiceCallerRegistration struct {
+	ServiceID         string
+	Status            string
+	PublicKeyPEMByKID map[string][]byte
+	Permissions       []string
+}
+
+type serviceCallerJSON struct {
+	IdentityAudiences       []string           `json:"identityAudiences"`
+	Status                  string             `json:"status"`
+	Keys                    map[string]keyJSON `json:"keys"`
+	Permissions             []string           `json:"permissions"`
+	SystemPrincipalPurposes []string           `json:"systemPrincipalPurposes"`
+}
+
+type keyJSON struct {
+	PublicKeyPEMB64 string `json:"publicKeyPemB64"`
 }
 
 func LoadFromEnvironment() (Config, error) {
@@ -116,17 +145,19 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 
 	configuration := Config{
-		TesterJoinURLPrefix:     DefaultTesterJoinURLPrefix,
-		InitialApplicationQuota: domain.InitialDeveloperApplicationQuotaLimit,
-		ScopeCatalogCacheTTL:    DefaultScopeCatalogCacheTTL,
-		HTTPAddr:                DefaultHTTPAddr,
-		GRPCAddr:                DefaultGRPCAddr,
-		MongoDatabase:           DefaultMongoDatabase,
-		IdentityAudience:        DefaultIdentityAudience,
-		IdentityMaxTTL:          DefaultIdentityMaxTTL,
-		IdentityClockSkew:       DefaultIdentityClockSkew,
-		ServiceIdentityAudience: DefaultServiceIdentityAudience,
-		ServiceIdentityTTL:      DefaultServiceIdentityTTL,
+		TesterJoinURLPrefix:      DefaultTesterJoinURLPrefix,
+		InitialApplicationQuota:  domain.InitialDeveloperApplicationQuotaLimit,
+		ScopeCatalogCacheTTL:     DefaultScopeCatalogCacheTTL,
+		HTTPAddr:                 DefaultHTTPAddr,
+		GRPCAddr:                 DefaultGRPCAddr,
+		MongoDatabase:            DefaultMongoDatabase,
+		IdentityAudience:         DefaultIdentityAudience,
+		IdentityMaxTTL:           DefaultIdentityMaxTTL,
+		IdentityClockSkew:        DefaultIdentityClockSkew,
+		ServiceIdentityAudience:  DefaultServiceIdentityAudience,
+		ServiceIdentityTTL:       DefaultServiceIdentityTTL,
+		ServiceIdentityMaxTTL:    DefaultServiceMaxTTL,
+		ServiceIdentityClockSkew: DefaultServiceClockSkew,
 	}
 
 	if raw, found := lookup(TesterJoinURLPrefixEnv); found {
@@ -197,6 +228,26 @@ func Load(lookup LookupEnv) (Config, error) {
 			return Config{}, fmt.Errorf("%w: %s must be a positive Go duration", ErrInvalidConfiguration, ServiceIdentityTTLEnv)
 		}
 	}
+	rawCallers, err := requiredValue(lookup, ServiceCallersEnv)
+	if err != nil {
+		return Config{}, err
+	}
+	configuration.ServiceCallers, err = parseServiceCallers(rawCallers)
+	if err != nil {
+		return Config{}, err
+	}
+	if raw, found := lookup(ServiceMaxTTLEnv); found {
+		configuration.ServiceIdentityMaxTTL, err = time.ParseDuration(strings.TrimSpace(raw))
+		if err != nil || configuration.ServiceIdentityMaxTTL <= 0 {
+			return Config{}, fmt.Errorf("%w: %s must be a positive Go duration", ErrInvalidConfiguration, ServiceMaxTTLEnv)
+		}
+	}
+	if raw, found := lookup(ServiceClockSkewEnv); found {
+		configuration.ServiceIdentityClockSkew, err = time.ParseDuration(strings.TrimSpace(raw))
+		if err != nil || configuration.ServiceIdentityClockSkew < 0 {
+			return Config{}, fmt.Errorf("%w: %s must be a non-negative Go duration", ErrInvalidConfiguration, ServiceClockSkewEnv)
+		}
+	}
 
 	if raw, found := lookup(IdentityMaxTTLEnv); found {
 		parsed, err := time.ParseDuration(raw)
@@ -225,6 +276,64 @@ func Load(lookup LookupEnv) (Config, error) {
 	configuration.IdentityPublicKeyFiles = publicKeyFiles
 
 	return configuration, nil
+}
+
+func parseServiceCallers(raw string) ([]ServiceCallerRegistration, error) {
+	decoded, err := base64.StdEncoding.Strict().DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s must be strict standard Base64", ErrInvalidConfiguration, ServiceCallersEnv)
+	}
+	var encoded map[string]serviceCallerJSON
+	decoder := json.NewDecoder(strings.NewReader(string(decoded)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&encoded); err != nil {
+		return nil, fmt.Errorf("%w: %s must decode to caller registry JSON: %v", ErrInvalidConfiguration, ServiceCallersEnv, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: %s must contain exactly one JSON value", ErrInvalidConfiguration, ServiceCallersEnv)
+	}
+	if len(encoded) == 0 {
+		return nil, fmt.Errorf("%w: %s must declare at least one caller", ErrInvalidConfiguration, ServiceCallersEnv)
+	}
+	result := make([]ServiceCallerRegistration, 0, len(encoded))
+	for serviceID, caller := range encoded {
+		if serviceID == "" || strings.TrimSpace(serviceID) != serviceID || (caller.Status != "ACTIVE" && caller.Status != "DISABLED") || len(caller.Keys) == 0 || len(caller.IdentityAudiences) != 0 || len(caller.SystemPrincipalPurposes) != 0 {
+			return nil, fmt.Errorf("%w: invalid caller %q", ErrInvalidConfiguration, serviceID)
+		}
+		keys := make(map[string][]byte, len(caller.Keys))
+		for kid, value := range caller.Keys {
+			if kid == "" || strings.TrimSpace(kid) != kid || value.PublicKeyPEMB64 == "" {
+				return nil, fmt.Errorf("%w: caller %q has invalid key", ErrInvalidConfiguration, serviceID)
+			}
+			pem, err := base64.StdEncoding.Strict().DecodeString(value.PublicKeyPEMB64)
+			if err != nil || len(pem) == 0 {
+				return nil, fmt.Errorf("%w: caller %q key %q is not Base64 PEM", ErrInvalidConfiguration, serviceID, kid)
+			}
+			keys[kid] = pem
+		}
+		permissions, err := uniqueServicePermissions(caller.Permissions)
+		if err != nil {
+			return nil, fmt.Errorf("%w: caller %q permissions: %v", ErrInvalidConfiguration, serviceID, err)
+		}
+		result = append(result, ServiceCallerRegistration{serviceID, caller.Status, keys, permissions})
+	}
+	return result, nil
+}
+
+func uniqueServicePermissions(values []string) ([]string, error) {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || strings.TrimSpace(value) != value {
+			return nil, errors.New("contains empty or whitespace-padded value")
+		}
+		if _, exists := seen[value]; exists {
+			return nil, fmt.Errorf("contains duplicate %q", value)
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 func requiredValue(lookup LookupEnv, key string) (string, error) {

@@ -94,6 +94,57 @@ func e2eServicePrivateKeyB64() string {
 	return e2eServiceKeyB64
 }
 
+func e2eServiceCallerRegistryB64() string {
+	privateKey := e2eServicePrivateKey()
+	publicDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		panic(err)
+	}
+	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})
+	publicB64 := base64.StdEncoding.EncodeToString(publicPEM)
+	registry := `{"iwut-auth-center":{"status":"ACTIVE","keys":{"auth-center-e2e":{"publicKeyPemB64":"` + publicB64 + `"}},"permissions":["app.oauth.client.read","app.oauth.client.verify","app.oauth.runtime.resolve","app.oauth.context.resolve","app.oauth.redirects.read"]},"iwut-auth-read-only":{"status":"ACTIVE","keys":{"auth-center-e2e":{"publicKeyPemB64":"` + publicB64 + `"}},"permissions":["app.oauth.client.read"]}}`
+	return base64.StdEncoding.EncodeToString([]byte(registry))
+}
+
+func e2eServicePrivateKey() *rsa.PrivateKey {
+	privatePEM, err := base64.StdEncoding.Strict().DecodeString(e2eServicePrivateKeyB64())
+	if err != nil {
+		panic(err)
+	}
+	block, _ := pem.Decode(privatePEM)
+	if block == nil {
+		panic("missing E2E service private key PEM block")
+	}
+	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		panic(err)
+	}
+	return privateKey
+}
+
+func e2eSignServiceIdentity(t *testing.T, serviceID, audience string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	headerJSON, err := json.Marshal(map[string]any{"alg": "RS256", "typ": "JWT", "kid": "auth-center-e2e"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadJSON, err := json.Marshal(map[string]any{
+		"iss": serviceID, "sub": serviceID, "aud": audience,
+		"iat": now.Unix(), "nbf": now.Add(-time.Second).Unix(), "exp": now.Add(time.Minute).Unix(), "jti": "e2e-service-" + serviceID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signingInput := base64.RawURLEncoding.EncodeToString(headerJSON) + "." + base64.RawURLEncoding.EncodeToString(payloadJSON)
+	digest := sha256.Sum256([]byte(signingInput))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, e2eServicePrivateKey(), crypto.SHA256, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
 // e2eApplicationDocument mirrors only the persisted business/ownership fields
 // the assertions need. The test reads them directly from the isolated database
 // to prove the HTTP and gRPC calls crossed the real transaction-capable
@@ -1494,6 +1545,8 @@ func e2eEnvironment(values map[string]string) config.LookupEnv {
 				return "app-center-e2e-service", true
 			case config.ServiceIdentityPrivateKeyEnv:
 				return e2eServicePrivateKeyB64(), true
+			case config.ServiceCallersEnv:
+				return e2eServiceCallerRegistryB64(), true
 			}
 		}
 		return value, found

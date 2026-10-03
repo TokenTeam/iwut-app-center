@@ -18,7 +18,14 @@ func requiredValues() map[string]string {
 		ServiceIdentityIDEnv:         "iwut-app-center",
 		ServiceIdentityKIDEnv:        "app-center-1",
 		ServiceIdentityPrivateKeyEnv: base64.StdEncoding.EncodeToString([]byte("PEM")),
+		ServiceCallersEnv:            testServiceCallersValue("PUBLIC KEY"),
 	}
+}
+
+func testServiceCallersValue(publicKey string) string {
+	key := base64.StdEncoding.EncodeToString([]byte(publicKey))
+	registry := `{"iwut-auth-center":{"status":"ACTIVE","keys":{"auth-1":{"publicKeyPemB64":"` + key + `"}},"permissions":["app.oauth.client.read","app.oauth.client.verify","app.oauth.runtime.resolve","app.oauth.context.resolve","app.oauth.redirects.read"]}}`
+	return base64.StdEncoding.EncodeToString([]byte(registry))
 }
 
 func lookupFrom(values map[string]string) LookupEnv {
@@ -59,6 +66,9 @@ func TestLoad_DefaultsWhenOptionalVariablesAreMissing(t *testing.T) {
 	if got := configuration.IdentityPublicKeyFiles["primary"]; got != "/etc/iwut/identity-primary.pem" {
 		t.Fatalf("IdentityPublicKeyFiles[primary] = %q", got)
 	}
+	if len(configuration.ServiceCallers) != 1 || configuration.ServiceCallers[0].ServiceID != "iwut-auth-center" || configuration.ServiceIdentityMaxTTL != DefaultServiceMaxTTL || configuration.ServiceIdentityClockSkew != DefaultServiceClockSkew {
+		t.Fatalf("service caller configuration = %#v", configuration)
+	}
 }
 
 func TestLoad_UsesExplicitValues(t *testing.T) {
@@ -82,6 +92,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 		ServiceIdentityAudienceEnv:   "auth-prod",
 		ServiceIdentityPrivateKeyEnv: base64.StdEncoding.EncodeToString([]byte("PEM-PROD")),
 		ServiceIdentityTTLEnv:        "45s",
+		ServiceCallersEnv:            testServiceCallersValue("PUBLIC KEY PROD"),
+		ServiceMaxTTLEnv:             "50s",
+		ServiceClockSkewEnv:          "12s",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -111,6 +124,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 		configuration.ServiceIdentityAudience != "auth-prod" || configuration.ServiceIdentityTTL != 45*time.Second ||
 		string(configuration.ServiceIdentityPrivateKeyPEM) != "PEM-PROD" {
 		t.Fatalf("service identity = %#v", configuration)
+	}
+	if configuration.ServiceIdentityMaxTTL != 50*time.Second || configuration.ServiceIdentityClockSkew != 12*time.Second || len(configuration.ServiceCallers) != 1 {
+		t.Fatalf("service caller settings = %#v", configuration)
 	}
 }
 
@@ -162,6 +178,10 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "invalid service identity private key encoding", key: ServiceIdentityPrivateKeyEnv, value: "not-base64"},
 		{name: "invalid service identity TTL", key: ServiceIdentityTTLEnv, value: "forever"},
 		{name: "zero service identity TTL", key: ServiceIdentityTTLEnv, value: "0s"},
+		{name: "empty caller registry", key: ServiceCallersEnv, value: ""},
+		{name: "invalid caller registry encoding", key: ServiceCallersEnv, value: "not-base64"},
+		{name: "zero service max TTL", key: ServiceMaxTTLEnv, value: "0s"},
+		{name: "negative service clock skew", key: ServiceClockSkewEnv, value: "-1s"},
 	}
 
 	for _, testCase := range testCases {
@@ -180,7 +200,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 func TestLoad_RequiresMongoURIIssuerKeysAndAuthTarget(t *testing.T) {
 	t.Parallel()
 
-	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv, ServiceIdentityIDEnv, ServiceIdentityKIDEnv, ServiceIdentityPrivateKeyEnv} {
+	for _, missing := range []string{MongoURIEnv, IdentityIssuerEnv, IdentityPublicKeysEnv, AuthScopeCatalogTargetEnv, ServiceIdentityIDEnv, ServiceIdentityKIDEnv, ServiceIdentityPrivateKeyEnv, ServiceCallersEnv} {
 		t.Run(missing, func(t *testing.T) {
 			t.Parallel()
 			values := requiredValues()
@@ -218,6 +238,25 @@ func TestParsePublicKeyFiles(t *testing.T) {
 		t.Run("invalid:"+invalid, func(t *testing.T) {
 			if _, err := ParsePublicKeyFiles(invalid); !errors.Is(err, ErrInvalidConfiguration) {
 				t.Fatalf("ParsePublicKeyFiles(%q) error = %v, want InvalidConfiguration", invalid, err)
+			}
+		})
+	}
+}
+
+func TestParseServiceCallersRejectsNonCanonicalRegistry(t *testing.T) {
+	t.Parallel()
+	encode := func(value string) string { return base64.StdEncoding.EncodeToString([]byte(value)) }
+	key := base64.StdEncoding.EncodeToString([]byte("PUBLIC KEY"))
+	for name, value := range map[string]string{
+		"empty":                `{}`,
+		"unknown field":        `{"iwut-auth-center":{"status":"ACTIVE","keys":{"k":{"publicKeyPemB64":"` + key + `"}},"permissions":[],"unexpected":true}}`,
+		"identity audiences":   `{"iwut-auth-center":{"status":"ACTIVE","keys":{"k":{"publicKeyPemB64":"` + key + `"}},"permissions":[],"identityAudiences":["iwut-app-center"]}}`,
+		"system purposes":      `{"iwut-auth-center":{"status":"ACTIVE","keys":{"k":{"publicKeyPemB64":"` + key + `"}},"permissions":[],"systemPrincipalPurposes":["purpose"]}}`,
+		"duplicate permission": `{"iwut-auth-center":{"status":"ACTIVE","keys":{"k":{"publicKeyPemB64":"` + key + `"}},"permissions":["app.oauth.client.read","app.oauth.client.read"]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseServiceCallers(encode(value)); !errors.Is(err, ErrInvalidConfiguration) {
+				t.Fatalf("parseServiceCallers() error = %v", err)
 			}
 		})
 	}

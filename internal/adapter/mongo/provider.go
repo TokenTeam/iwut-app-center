@@ -17,6 +17,8 @@ import (
 // database and client providers live in the composition root because they need
 // validated configuration.
 var ProviderSet = wire.NewSet(
+	NewOAuthProviderRepository,
+	wire.Bind(new(oauthclientport.ProviderRepository), new(*OAuthProviderRepository)),
 	NewOAuthClientRepository,
 	wire.Bind(new(oauthclientport.Repository), new(*OAuthClientRepository)),
 	NewApplicationProfileRevisionRepository,

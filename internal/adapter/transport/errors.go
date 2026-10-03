@@ -140,6 +140,13 @@ const (
 	ReasonOAuthClientCredentialNotFound    = "ERROR_REASON_OAUTH_CLIENT_CREDENTIAL_NOT_FOUND"
 	ReasonOAuthClientCredentialChanged     = "ERROR_REASON_OAUTH_CLIENT_CREDENTIAL_CHANGED"
 	ReasonOAuthClientStateInconsistent     = "ERROR_REASON_OAUTH_CLIENT_STATE_INCONSISTENT"
+	ReasonServiceIdentityRequired          = "ERROR_REASON_SERVICE_IDENTITY_REQUIRED"
+	ReasonInvalidServiceIdentity           = "ERROR_REASON_INVALID_SERVICE_IDENTITY"
+	ReasonOAuthProviderPermissionDenied    = "ERROR_REASON_OAUTH_PROVIDER_PERMISSION_DENIED"
+	ReasonInvalidOAuthProviderRequest      = "ERROR_REASON_INVALID_OAUTH_PROVIDER_REQUEST"
+	ReasonOAuthClientRuntimeUnavailable    = "ERROR_REASON_OAUTH_CLIENT_RUNTIME_UNAVAILABLE"
+	ReasonOAuthRuntimeVersionChanged       = "ERROR_REASON_OAUTH_RUNTIME_VERSION_CHANGED"
+	ReasonOAuthProviderUnavailable         = "ERROR_REASON_OAUTH_PROVIDER_UNAVAILABLE"
 )
 
 type errorSpec struct {
@@ -199,26 +206,31 @@ var internalSpec = errorSpec{
 }
 
 var oauthClientDomainErrorSpecs = map[oauthclientdomain.ErrorCode]errorSpec{
-	oauthclientdomain.ErrorCodeDeveloperIdentityRequired:    {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
-	oauthclientdomain.ErrorCodeDeveloperApprovalRequired:    {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
-	oauthclientdomain.ErrorCodeInvalidApplicationID:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
-	oauthclientdomain.ErrorCodeInvalidOAuthChannel:          {code: codes.InvalidArgument, reason: ReasonInvalidOAuthChannel, message: "OAuth channel is invalid"},
-	oauthclientdomain.ErrorCodeOAuthChannelNotEnabled:       {code: codes.FailedPrecondition, reason: ReasonOAuthChannelNotEnabled, message: "OAuth channel is not enabled"},
-	oauthclientdomain.ErrorCodeInvalidOAuthClientType:       {code: codes.InvalidArgument, reason: ReasonInvalidOAuthClientType, message: "OAuth client type is invalid"},
-	oauthclientdomain.ErrorCodeInvalidOAuthClientID:         {code: codes.InvalidArgument, reason: ReasonInvalidOAuthClientID, message: "OAuth client ID is invalid"},
-	oauthclientdomain.ErrorCodeInvalidOAuthClientStatus:     {code: codes.InvalidArgument, reason: ReasonInvalidOAuthClientStatus, message: "OAuth client status is invalid"},
-	oauthclientdomain.ErrorCodeInvalidRegistrationRevision:  {code: codes.InvalidArgument, reason: ReasonInvalidOAuthRegistrationRevision, message: "OAuth registration revision is invalid"},
-	oauthclientdomain.ErrorCodeInvalidCredentialRevision:    {code: codes.InvalidArgument, reason: ReasonInvalidOAuthCredentialRevision, message: "OAuth client credential revision is invalid"},
-	oauthclientdomain.ErrorCodeApplicationNotFound:          {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
-	oauthclientdomain.ErrorCodeApplicationAdminRequired:     {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
-	oauthclientdomain.ErrorCodeOAuthRegistrationNotFound:    {code: codes.NotFound, reason: ReasonOAuthRegistrationNotFound, message: "OAuth registration not found"},
-	oauthclientdomain.ErrorCodeOAuthClientAlreadyExists:     {code: codes.AlreadyExists, reason: ReasonOAuthClientAlreadyExists, message: "OAuth client already exists"},
-	oauthclientdomain.ErrorCodeOAuthClientNotFound:          {code: codes.NotFound, reason: ReasonOAuthClientNotFound, message: "OAuth client not found"},
-	oauthclientdomain.ErrorCodeOAuthRegistrationChanged:     {code: codes.Aborted, reason: ReasonOAuthRegistrationChanged, message: "OAuth registration changed"},
-	oauthclientdomain.ErrorCodeOAuthCredentialNotFound:      {code: codes.NotFound, reason: ReasonOAuthClientCredentialNotFound, message: "OAuth client credential not found"},
-	oauthclientdomain.ErrorCodeOAuthCredentialChanged:       {code: codes.Aborted, reason: ReasonOAuthClientCredentialChanged, message: "OAuth client credential changed"},
-	oauthclientdomain.ErrorCodeOAuthClientStateInconsistent: {code: codes.Internal, reason: ReasonOAuthClientStateInconsistent, message: "OAuth client state is inconsistent"},
-	oauthclientdomain.ErrorCodeInternal:                     internalSpec,
+	oauthclientdomain.ErrorCodeDeveloperIdentityRequired:           {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	oauthclientdomain.ErrorCodeDeveloperApprovalRequired:           {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	oauthclientdomain.ErrorCodeInvalidApplicationID:                {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	oauthclientdomain.ErrorCodeInvalidOAuthChannel:                 {code: codes.InvalidArgument, reason: ReasonInvalidOAuthChannel, message: "OAuth channel is invalid"},
+	oauthclientdomain.ErrorCodeOAuthChannelNotEnabled:              {code: codes.FailedPrecondition, reason: ReasonOAuthChannelNotEnabled, message: "OAuth channel is not enabled"},
+	oauthclientdomain.ErrorCodeInvalidOAuthClientType:              {code: codes.InvalidArgument, reason: ReasonInvalidOAuthClientType, message: "OAuth client type is invalid"},
+	oauthclientdomain.ErrorCodeInvalidOAuthClientID:                {code: codes.InvalidArgument, reason: ReasonInvalidOAuthClientID, message: "OAuth client ID is invalid"},
+	oauthclientdomain.ErrorCodeInvalidOAuthClientStatus:            {code: codes.InvalidArgument, reason: ReasonInvalidOAuthClientStatus, message: "OAuth client status is invalid"},
+	oauthclientdomain.ErrorCodeInvalidRegistrationRevision:         {code: codes.InvalidArgument, reason: ReasonInvalidOAuthRegistrationRevision, message: "OAuth registration revision is invalid"},
+	oauthclientdomain.ErrorCodeInvalidCredentialRevision:           {code: codes.InvalidArgument, reason: ReasonInvalidOAuthCredentialRevision, message: "OAuth client credential revision is invalid"},
+	oauthclientdomain.ErrorCodeApplicationNotFound:                 {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	oauthclientdomain.ErrorCodeApplicationAdminRequired:            {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	oauthclientdomain.ErrorCodeOAuthRegistrationNotFound:           {code: codes.NotFound, reason: ReasonOAuthRegistrationNotFound, message: "OAuth registration not found"},
+	oauthclientdomain.ErrorCodeOAuthClientAlreadyExists:            {code: codes.AlreadyExists, reason: ReasonOAuthClientAlreadyExists, message: "OAuth client already exists"},
+	oauthclientdomain.ErrorCodeOAuthClientNotFound:                 {code: codes.NotFound, reason: ReasonOAuthClientNotFound, message: "OAuth client not found"},
+	oauthclientdomain.ErrorCodeOAuthRegistrationChanged:            {code: codes.Aborted, reason: ReasonOAuthRegistrationChanged, message: "OAuth registration changed"},
+	oauthclientdomain.ErrorCodeOAuthCredentialNotFound:             {code: codes.NotFound, reason: ReasonOAuthClientCredentialNotFound, message: "OAuth client credential not found"},
+	oauthclientdomain.ErrorCodeOAuthCredentialChanged:              {code: codes.Aborted, reason: ReasonOAuthClientCredentialChanged, message: "OAuth client credential changed"},
+	oauthclientdomain.ErrorCodeOAuthClientStateInconsistent:        {code: codes.Internal, reason: ReasonOAuthClientStateInconsistent, message: "OAuth client state is inconsistent"},
+	oauthclientdomain.ErrorCodeOAuthClientRuntimeUnavailable:       {code: codes.FailedPrecondition, reason: ReasonOAuthClientRuntimeUnavailable, message: "OAuth client runtime is unavailable"},
+	oauthclientdomain.ErrorCodeOAuthRuntimeVersionChanged:          {code: codes.FailedPrecondition, reason: ReasonOAuthRuntimeVersionChanged, message: "OAuth runtime version changed"},
+	oauthclientdomain.ErrorCodeApplicationProfileStateInconsistent: {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
+	oauthclientdomain.ErrorCodeOAuthProviderUnavailable:            {code: codes.Unavailable, reason: ReasonOAuthProviderUnavailable, message: "OAuth provider is unavailable"},
+	oauthclientdomain.ErrorCodeInvalidOAuthProviderRequest:         {code: codes.InvalidArgument, reason: ReasonInvalidOAuthProviderRequest, message: "OAuth provider request is invalid"},
+	oauthclientdomain.ErrorCodeInternal:                            internalSpec,
 }
 
 var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{

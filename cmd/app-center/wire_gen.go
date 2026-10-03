@@ -150,7 +150,17 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	oAuthClientRepository := mongo.NewOAuthClientRepository(database)
 	handlers := usecase8.NewHandlers(oAuthClientUUIDv4Generator, secretFactory, systemClock, oAuthClientRepository)
 	oAuthClientService := transport.NewOAuthClientService(handlers)
-	servers, err := transport.NewServers(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService)
+	serviceIdentityConfig := provideServiceIdentityConfig(configuration)
+	serviceIdentityVerifier, err := provideServiceIdentityVerifier(serviceIdentityConfig, systemClock)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	oAuthProviderRepository := mongo.NewOAuthProviderRepository(database, secretFactory)
+	providerHandlers := usecase8.NewProviderHandlers(systemClock, oAuthProviderRepository)
+	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
+	servers, err := transport.NewServersWithOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
 		cleanup2()
 		cleanup()

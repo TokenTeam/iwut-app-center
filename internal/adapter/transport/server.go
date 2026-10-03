@@ -114,6 +114,25 @@ type Servers struct {
 	GRPC *kgrpc.Server
 }
 
+func NewServersWithOAuthProvider(
+	config ServerConfig,
+	verifier *IdentityVerifier,
+	service *ApplicationService,
+	versionService *ApplicationVersionService,
+	reviewService *ApplicationReviewService,
+	publicationService *ApplicationPublicationService,
+	testerJoinLinkService *TesterJoinLinkService,
+	testerMembershipService *TesterMembershipService,
+	catalogService *CatalogService,
+	profileService *ApplicationProfileRevisionService,
+	profileReviewService *ApplicationProfileReviewService,
+	oauthClientService *OAuthClientService,
+	serviceVerifier *ServiceIdentityVerifier,
+	oauthProviderService *OAuthClientProviderService,
+) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, serviceVerifier, oauthProviderService)
+}
+
 func NewServers(
 	config ServerConfig,
 	verifier *IdentityVerifier,
@@ -127,6 +146,7 @@ func NewServers(
 	profileService *ApplicationProfileRevisionService,
 	profileReviewService *ApplicationProfileReviewService,
 	oauthClientService *OAuthClientService,
+	providerRuntime ...any,
 ) (*Servers, error) {
 	if verifier == nil {
 		return nil, errors.New("transport servers: identity verifier is required")
@@ -162,6 +182,22 @@ func NewServers(
 	if oauthClientService == nil {
 		return nil, errors.New("transport servers: OAuth client service is required")
 	}
+	var serviceVerifier *ServiceIdentityVerifier
+	var oauthProviderService *OAuthClientProviderService
+	if len(providerRuntime) != 0 {
+		if len(providerRuntime) != 2 {
+			return nil, errors.New("transport servers: complete OAuth provider runtime is required")
+		}
+		var ok bool
+		serviceVerifier, ok = providerRuntime[0].(*ServiceIdentityVerifier)
+		if !ok || serviceVerifier == nil {
+			return nil, errors.New("transport servers: service identity verifier is required")
+		}
+		oauthProviderService, ok = providerRuntime[1].(*OAuthClientProviderService)
+		if !ok || oauthProviderService == nil {
+			return nil, errors.New("transport servers: OAuth provider service is required")
+		}
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Filter(testerMembershipCredentialFilter(verifier)),
@@ -180,10 +216,11 @@ func NewServers(
 	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
 	oauthclientv1.RegisterOAuthClientServiceHTTPServer(httpServer, oauthClientService)
 
-	grpcServer := kgrpc.NewServer(
-		kgrpc.Address(config.GRPCAddr),
-		kgrpc.Middleware(identityMiddleware(verifier)),
-	)
+	grpcMiddleware := identityMiddleware(verifier)
+	if serviceVerifier != nil {
+		grpcMiddleware = authenticationMiddleware(verifier, serviceVerifier)
+	}
+	grpcServer := kgrpc.NewServer(kgrpc.Address(config.GRPCAddr), kgrpc.Middleware(grpcMiddleware))
 	profilereviewv1.RegisterApplicationProfileReviewServer(grpcServer, profileReviewService)
 	profilev1.RegisterApplicationProfileRevisionServer(grpcServer, profileService)
 	catalogv1.RegisterCatalogServer(grpcServer, catalogService)
@@ -194,6 +231,9 @@ func NewServers(
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
 	oauthclientv1.RegisterOAuthClientServiceServer(grpcServer, oauthClientService)
+	if oauthProviderService != nil {
+		oauthclientv1.RegisterOAuthClientProviderServiceServer(grpcServer, oauthProviderService)
+	}
 
 	return &Servers{HTTP: httpServer, GRPC: grpcServer}, nil
 }

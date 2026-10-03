@@ -17,14 +17,16 @@ import (
 	oauthclientv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/oauth_client"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/config"
 )
 
-func TestE2E_UCAPP018_ManageOAuthClientsOverHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP018_UCAPP019_ManageAndProvideOAuthClients(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
@@ -193,5 +195,43 @@ func TestE2E_UCAPP018_ManageOAuthClientsOverHTTPAndGRPC(t *testing.T) {
 		if _, exists := document[forbidden]; exists {
 			t.Fatalf("stored plaintext field %s", forbidden)
 		}
+	}
+
+	provider := oauthclientv1.NewOAuthClientProviderServiceClient(connection)
+	serviceToken := e2eSignServiceIdentity(t, "iwut-auth-center", "iwut-app-center")
+	serviceCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.ServiceAuthorizationHeader, "Bearer "+serviceToken))
+	publicClientID := publicRegistration.GetRegistration().GetPublicClient().GetClientId()
+	providerConfiguration, err := provider.GetClientConfiguration(serviceCtx, &oauthclientv1.GetClientConfigurationRequest{ClientId: publicClientID})
+	if err != nil || providerConfiguration.GetConfiguration().GetApplicationId() != application.GetId() || providerConfiguration.GetConfiguration().GetTokenEndpointAuthMethod() != oauthclientv1.TokenEndpointAuthMethod_TOKEN_ENDPOINT_AUTH_METHOD_NONE {
+		t.Fatalf("provider configuration=%v error=%v", providerConfiguration, err)
+	}
+	disabledConfiguration, err := provider.GetClientConfiguration(serviceCtx, &oauthclientv1.GetClientConfigurationRequest{ClientId: confidentialClientID})
+	if err != nil || disabledConfiguration.GetConfiguration().GetStatus() != oauthclientv1.OAuthClientStatus_OAUTH_CLIENT_STATUS_DISABLED || disabledConfiguration.GetConfiguration().GetCredentialRevision() != 2 || disabledConfiguration.GetConfiguration().GetRegistrationRevision() != 3 {
+		t.Fatalf("disabled provider configuration=%v error=%v", disabledConfiguration, err)
+	}
+	verified, err := provider.VerifyClientSecret(serviceCtx, &oauthclientv1.VerifyClientSecretRequest{ClientId: confidentialClientID, ClientSecret: secondSecret, ExpectedCredentialRevision: 2})
+	if err != nil || verified.GetVerified() || verified.GetCredentialRevision() != 0 {
+		// The client was disabled above: provider verification must fail without
+		// exposing whether the supplied current secret was correct.
+		t.Fatalf("disabled secret verification=%v error=%v", verified, err)
+	}
+
+	for name, call := range map[string]struct {
+		ctx    context.Context
+		code   codes.Code
+		reason string
+	}{
+		"missing":           {ctx, codes.Unauthenticated, transport.ReasonServiceIdentityRequired},
+		"user identity":     {metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, adminToken)), codes.Unauthenticated, transport.ReasonServiceIdentityRequired},
+		"wrong audience":    {metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.ServiceAuthorizationHeader, "Bearer "+e2eSignServiceIdentity(t, "iwut-auth-center", "wrong-audience"))), codes.Unauthenticated, transport.ReasonInvalidServiceIdentity},
+		"method permission": {metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.ServiceAuthorizationHeader, "Bearer "+e2eSignServiceIdentity(t, "iwut-auth-read-only", "iwut-app-center"))), codes.PermissionDenied, transport.ReasonOAuthProviderPermissionDenied},
+	} {
+		t.Run("provider service identity "+name, func(t *testing.T) {
+			_, err := provider.VerifyClientSecret(call.ctx, &oauthclientv1.VerifyClientSecretRequest{ClientId: confidentialClientID, ClientSecret: secondSecret, ExpectedCredentialRevision: 2})
+			st := status.Convert(err)
+			if st.Code() != call.code || e2eErrorReason(st) != call.reason {
+				t.Fatalf("error=%v code=%v reason=%q", err, st.Code(), e2eErrorReason(st))
+			}
+		})
 	}
 }

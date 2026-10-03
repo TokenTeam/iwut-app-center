@@ -129,6 +129,9 @@ commit IDs; report dirty-input fingerprints identify pre-commit verification.
 | `APP_CENTER_SERVICE_IDENTITY_AUDIENCE` | no | `iwut-auth-center` | audience for service-call JWS |
 | `APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64` | `serve` | — | strict standard Base64 of a PKCS#1/PKCS#8 RSA private-key PEM |
 | `APP_CENTER_SERVICE_IDENTITY_TTL` | no | `1m` | lifetime of each service-call JWS |
+| `APP_CENTER_SERVICE_CALLERS_B64` | `serve` | — | strict standard Base64 JSON registry of Auth service callers, public keys and the five `app.oauth.*` permissions |
+| `APP_CENTER_SERVICE_IDENTITY_MAX_TTL` | no | `1m` | maximum lifetime accepted for Auth service-call JWS |
+| `APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW` | no | `30s` | clock-skew allowance for Auth service-call JWS |
 | `APP_CENTER_IDENTITY_ISSUER` | `serve` | — | Expected JWS `iss` |
 | `APP_CENTER_IDENTITY_AUDIENCE` | no | `iwut-app-center` | Audience the JWS `aud` must contain |
 | `APP_CENTER_IDENTITY_MAX_TTL` | no | `5m` | Maximum `exp - iat` accepted |

@@ -29,3 +29,26 @@ func TestSecretFactoryProducesOpaqueUniqueSecrets(t *testing.T) {
 		t.Fatal("digest String leaked")
 	}
 }
+
+func TestSecretFactoryVerifiesOnlyMatchingClientAndSecret(t *testing.T) {
+	t.Parallel()
+	factory := NewSecretFactory()
+	clientID, err := domain.ParseClientID("123e4567-e89b-42d3-a456-426614174000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherID, err := domain.ParseClientID("123e4567-e89b-42d3-a456-426614174001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, digest, err := factory.NewSecret(clientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !factory.Verify(clientID, plain, digest) {
+		t.Fatal("matching secret did not verify")
+	}
+	if factory.Verify(clientID, plain+"x", digest) || factory.Verify(otherID, plain, digest) {
+		t.Fatal("wrong secret or client verified")
+	}
+}
