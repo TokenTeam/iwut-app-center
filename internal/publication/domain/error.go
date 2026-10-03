@@ -35,6 +35,8 @@ const (
 	ErrorCodeApplicationLaunchURLNotReviewable      ErrorCode = "ApplicationLaunchUrlNotReviewable"
 	ErrorCodeLaunchURLInspectionUnavailable         ErrorCode = "LaunchUrlInspectionUnavailable"
 	ErrorCodeOAuthClientRegistrationRequired        ErrorCode = "OAuthClientRegistrationRequired"
+	ErrorCodeApplicationProfileRequired             ErrorCode = "ApplicationProfileRequired"
+	ErrorCodeApplicationProfileStateInconsistent    ErrorCode = "ApplicationProfileStateInconsistent"
 	ErrorCodeInternal                               ErrorCode = "Internal"
 )
 
@@ -59,6 +61,10 @@ func NewLaunchURLInspectionUnavailableError(cause error) *Error {
 
 func NewScopeCatalogUnavailableError(cause error) *Error {
 	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeScopeCatalogUnavailable, "scope catalog is unavailable", cause)
+}
+
+func NewApplicationProfileStateInconsistentError(cause error) *Error {
+	return newError(ErrorCategoryInternal, ErrorCodeApplicationProfileStateInconsistent, "application profile state is inconsistent", cause)
 }
 
 func (e *Error) Error() string           { return e.message }
@@ -89,5 +95,7 @@ var (
 	ErrApplicationLaunchURLNotReviewable      = newError(ErrorCategoryValidation, ErrorCodeApplicationLaunchURLNotReviewable, "application launch URL is not reviewable", nil)
 	ErrLaunchURLInspectionUnavailable         = newError(ErrorCategoryDependencyUnavailable, ErrorCodeLaunchURLInspectionUnavailable, "launch URL inspection is unavailable", nil)
 	ErrOAuthClientRegistrationRequired        = newError(ErrorCategoryConflict, ErrorCodeOAuthClientRegistrationRequired, "OAuth client registration is required", nil)
+	ErrApplicationProfileRequired             = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileRequired, "application profile is required", nil)
+	ErrApplicationProfileStateInconsistent    = newError(ErrorCategoryInternal, ErrorCodeApplicationProfileStateInconsistent, "application profile state is inconsistent", nil)
 	ErrInternal                               = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

@@ -12,6 +12,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
+	profiledomain "iwut-app-center/internal/profile/domain"
+	profileport "iwut-app-center/internal/profile/port"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	publicationport "iwut-app-center/internal/publication/port"
 	"iwut-app-center/internal/shared"
@@ -63,6 +65,9 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 	}
 	if application.AdminID != adminID.String() {
 		return nil, publicationport.ErrApplicationAdminRequired
+	}
+	if err := r.ensureApprovedPublishedProfile(ctx, applicationID); err != nil {
+		return nil, err
 	}
 	if version.ReviewStatus != "APPROVED" {
 		return nil, publicationport.ErrApplicationVersionNotApproved
@@ -144,7 +149,10 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 		// Touch each authoritative source inside this transaction after validation;
 		// writes after our snapshot force a full transaction retry and revalidation.
 		// Existing invalid/revoked states are rejected before any validator is asked
-		// to accept a technical fence update on those documents.
+		// to accept a technical fence update on those documents. Profile approval
+		// also advances Application.coordinationRevision, so the Application fence
+		// serializes a concurrent currentPublishedProfileRevisionId replacement and
+		// forces this transaction to retry all profile checks.
 		for _, source := range []struct {
 			collection     string
 			filter, update bson.D
@@ -159,6 +167,53 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 		}
 	}
 	return candidate, nil
+}
+
+func (r *ApplicationPublicationRepository) ensureApprovedPublishedProfile(ctx context.Context, applicationID shared.ApplicationID) error {
+	raw, err := r.database.Collection(applicationProfilesCollectionName).FindOne(
+		ctx,
+		bson.D{{Key: "applicationId", Value: applicationID.String()}},
+	).Raw()
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return publicationport.ErrApplicationProfileRequired
+	}
+	if err != nil {
+		return err
+	}
+	profile, err := profileFromRaw(raw)
+	if errors.Is(err, profileport.ErrApplicationProfileStateInconsistent) {
+		return publicationport.ErrApplicationProfileStateInconsistent
+	}
+	if err != nil {
+		return err
+	}
+	if profile.ApplicationID != applicationID.String() {
+		return publicationport.ErrApplicationProfileStateInconsistent
+	}
+	if profile.CurrentPublishedProfileRevisionID == nil {
+		return publicationport.ErrApplicationProfileRequired
+	}
+	raw, err = r.database.Collection(applicationProfileRevisionsCollectionName).FindOne(
+		ctx,
+		bson.D{{Key: "applicationId", Value: applicationID.String()}, {Key: "profileRevisionId", Value: *profile.CurrentPublishedProfileRevisionID}},
+	).Raw()
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return publicationport.ErrApplicationProfileStateInconsistent
+	}
+	if err != nil {
+		return err
+	}
+	revision, err := profileRevisionFromRaw(raw)
+	if errors.Is(err, profileport.ErrApplicationProfileStateInconsistent) {
+		return publicationport.ErrApplicationProfileStateInconsistent
+	}
+	if err != nil {
+		return err
+	}
+	if revision.ApplicationID() != applicationID || revision.ProfileRevisionID().String() != *profile.CurrentPublishedProfileRevisionID || revision.ReviewStatus() != profiledomain.ReviewStatusApproved {
+		return publicationport.ErrApplicationProfileStateInconsistent
+	}
+	return nil
 }
 
 func (r *ApplicationPublicationRepository) ensureTestOAuthRegistration(ctx context.Context, applicationID shared.ApplicationID, requirePublic, requireConfidential bool) error {

@@ -124,6 +124,9 @@ func equalRevision(a, b *int64) bool {
 	return *a == *b
 }
 func mapRepositoryError(err error) error {
+	if errors.Is(err, port.ErrApplicationProfileStateInconsistent) || errors.Is(err, domain.ErrApplicationProfileStateInconsistent) {
+		return domain.NewApplicationProfileStateInconsistentError(err)
+	}
 	for _, entry := range []struct {
 		port   error
 		domain error
@@ -137,6 +140,7 @@ func mapRepositoryError(err error) error {
 		{port.ErrApplicationPublicationNotFound, domain.ErrApplicationPublicationNotFound},
 		{port.ErrApplicationPublicationRevisionConflict, domain.ErrApplicationPublicationRevisionConflict},
 		{port.ErrOAuthClientRegistrationRequired, domain.ErrOAuthClientRegistrationRequired},
+		{port.ErrApplicationProfileRequired, domain.ErrApplicationProfileRequired},
 	} {
 		if errors.Is(err, entry.port) || errors.Is(err, entry.domain) {
 			return entry.domain

@@ -39,7 +39,7 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 		systemID   = "auth-e2e-system"
 	)
 	adminToken := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
-	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review")
+	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review", "app.profile.review")
 
 	addresses := e2eReserveAddresses(t, 3)
 	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
@@ -157,7 +157,12 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 		}
 		return response.StatusCode, body
 	}
-	code, body := put("", 3, firstVersion, nil)
+	code, body := put(adminToken, 3, firstVersion, nil)
+	if code != http.StatusUnprocessableEntity || !bytes.Contains(body, []byte(transport.ReasonApplicationProfileRequired)) {
+		t.Fatalf("profile gate status=%d body=%s", code, body)
+	}
+	e2eApproveApplicationProfile(t, ctx, connection, application.GetId(), adminToken, reviewerToken)
+	code, body = put("", 3, firstVersion, nil)
 	if code != http.StatusUnauthorized {
 		t.Fatalf("identity status=%d body=%s", code, body)
 	}

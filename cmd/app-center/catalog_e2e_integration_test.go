@@ -54,7 +54,7 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 		systemID   = "auth-e2e-system"
 	)
 	adminToken := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
-	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review")
+	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review", "app.profile.review")
 
 	addresses := e2eReserveAddresses(t, 3)
 	httpAddress, grpcAddress, authAddress := addresses[0], addresses[1], addresses[2]
@@ -148,6 +148,7 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 		return version.GetVersionId()
 	}
 	versionID := approve("v12.0.0")
+	e2eApproveApplicationProfile(t, ctx, connection, application.GetId(), adminToken, reviewerToken)
 	adminCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, adminToken))
 	publication, err := publicationv1.NewApplicationPublicationClient(connection).PlaceApprovedVersionInTestSlot(adminCtx, &publicationv1.PlaceApprovedVersionInTestSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, Command: &publicationv1.PlaceApprovedVersionInTestSlotCommand{VersionId: versionID}})
 	if err != nil {

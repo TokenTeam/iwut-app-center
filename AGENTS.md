@@ -40,24 +40,21 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-002 → UC-APP-003 → UC-APP-004 → UC-APP-005 → UC-APP-007 — Version
-OAuth redirect delivery.** Design inputs are the corresponding generated briefs
-under `../../docs/app-center/briefs/`, the engineering baseline, the readiness
-note and implements README. Deliver the accepted extensions serially: attach the
-PKCE and confidential redirect URI arrays to each ApplicationVersion through a
-dependent `ApplicationVersionOAuthConfig`; create and replace it atomically with
-the Version under the Version revision; deep-copy it into immutable review
-snapshots; require the immutable `app-version-review-v2` redirect checks for new
-decisions; and recheck the TEST registration/credential required by non-empty
-approved arrays before publication commits. Add the committed backward-compatible
-Proto surface, migration/backfill, validators, HTTP/gRPC/Wire mappings and real
-MongoDB concurrency/E2E coverage. Keep the existing Scope Catalog `requestable`
-consumer contract: Auth now derives that compatibility projection from its single
-authoritative `enabled` state. Do not implement UC-APP-019 provider resolution,
-Auth secret verification, grants, tokens, sector/sub, frontend or future channels
-in this work package. Required final tier: `make check-auth-app`. Commit API inputs
-and generated outputs before the service gitlink, keep each accepted UC boundary
-reviewable, and keep all commits local.
+**UC-APP-007 — require an approved public profile for TEST placement.** Design
+input is `../../docs/app-center/briefs/UC-APP-007.md` plus the engineering
+baseline and implements README. Extend the existing placement candidate and final
+transaction checks so TEST creation, replacement and no-op all require
+`currentPublishedProfileRevisionId` to reference a same-Application APPROVED,
+structurally valid ProfileRevision. Missing publication is a stable
+`ApplicationProfileRequired` precondition; corrupt pointers or ProfileRevision
+state are `ApplicationProfileStateInconsistent` and surface as 500/INTERNAL with
+sanitized logging. Serialize final placement with concurrent Profile approval by
+the existing Application coordination fence, and cover missing/corrupt profile,
+post-validation recheck, approval concurrency, rollback, HTTP/gRPC mapping and
+real MongoDB E2E. Do not implement UC-APP-019 provider resolution, Auth grants or
+tokens, frontend behavior, profile unpublishing, or future channels in this work
+package. Required final tier: `make check-auth-app`. Commit API inputs and
+generated outputs before the service gitlink, and keep all commits local.
 
 ## Verification entry points
 

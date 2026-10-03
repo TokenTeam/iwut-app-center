@@ -81,6 +81,7 @@ const (
 	ReasonApplicationPublicationNotFound         = "ERROR_REASON_APPLICATION_PUBLICATION_NOT_FOUND"
 	ReasonApplicationPublicationRevisionConflict = "ERROR_REASON_APPLICATION_PUBLICATION_REVISION_CONFLICT"
 	ReasonOAuthClientRegistrationRequired        = "ERROR_REASON_OAUTH_CLIENT_REGISTRATION_REQUIRED"
+	ReasonApplicationProfileRequired             = "ERROR_REASON_APPLICATION_PROFILE_REQUIRED"
 
 	ReasonInvalidApplicationName                = "ERROR_REASON_INVALID_APPLICATION_NAME"
 	ReasonDeveloperIdentityRequired             = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
@@ -285,6 +286,8 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 	publicationdomain.ErrorCodeApplicationPublicationNotFound:         {code: codes.NotFound, reason: ReasonApplicationPublicationNotFound, message: "application publication not found"},
 	publicationdomain.ErrorCodeApplicationPublicationRevisionConflict: {code: codes.Aborted, reason: ReasonApplicationPublicationRevisionConflict, message: "publication revision conflicts"},
 	publicationdomain.ErrorCodeOAuthClientRegistrationRequired:        {code: codes.FailedPrecondition, reason: ReasonOAuthClientRegistrationRequired, message: "OAuth client registration is required"},
+	publicationdomain.ErrorCodeApplicationProfileRequired:             {code: codes.FailedPrecondition, reason: ReasonApplicationProfileRequired, message: "application profile is required"},
+	publicationdomain.ErrorCodeApplicationProfileStateInconsistent:    {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
 	publicationdomain.ErrorCodeDeveloperIdentityRequired:              {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
 	publicationdomain.ErrorCodeDeveloperApprovalRequired:              {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
 	publicationdomain.ErrorCodeApplicationVersionNotFound:             {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},

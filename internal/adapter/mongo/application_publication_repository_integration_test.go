@@ -15,6 +15,8 @@ import (
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	oauthclientdomain "iwut-app-center/internal/oauthclient/domain"
+	profiledomain "iwut-app-center/internal/profile/domain"
+	profileport "iwut-app-center/internal/profile/port"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	publicationport "iwut-app-center/internal/publication/port"
 	reviewdomain "iwut-app-center/internal/review/domain"
@@ -152,6 +154,88 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 			})
 		}
 	})
+	t.Run("BR-PUB-003 approved public profile is required and invariants fail closed", func(t *testing.T) {
+		for _, test := range []struct {
+			name   string
+			mutate func(*testing.T, *drivermongo.Database, decidableReview)
+			want   error
+		}{
+			{"missing projection", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfilesCollectionName).DeleteOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileRequired},
+			{"no published profile", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfilesCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"currentPublishedProfileRevisionId": nil}}); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileRequired},
+			{"malformed pointer", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfilesCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"currentPublishedProfileRevisionId": int32(7)}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileStateInconsistent},
+			{"missing target", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				id := nextIntegrationApplicationReviewID(t).String()
+				if _, err := db.Collection(applicationProfilesCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"currentPublishedProfileRevisionId": id}}); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileStateInconsistent},
+			{"target not approved", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfileRevisionsCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"reviewStatus": "DRAFT"}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileStateInconsistent},
+			{"target content invalid", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfileRevisionsCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"displayName": "Cafe\u0301"}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileStateInconsistent},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				db := migratedIntegrationDatabase(t, client)
+				seed := createApprovedPublicationVersion(t, db, "publication-profile-gate")
+				test.mutate(t, db, seed)
+				result, err := NewApplicationPublicationRepository(db).LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil)
+				if result != nil || !errors.Is(err, test.want) {
+					t.Fatalf("candidate=%v error=%v want=%v", result, err, test.want)
+				}
+				assertPublicationCounts(t, db, 0, 0)
+			})
+		}
+	})
+	t.Run("BR-PUB-003 BR-PUB-009 final transaction rechecks public profile", func(t *testing.T) {
+		for _, test := range []struct {
+			name   string
+			mutate func(*testing.T, *drivermongo.Database, decidableReview)
+			want   error
+		}{
+			{"publication removed", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfilesCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"currentPublishedProfileRevisionId": nil}}); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileRequired},
+			{"approved revision removed", func(t *testing.T, db *drivermongo.Database, seed decidableReview) {
+				if _, err := db.Collection(applicationProfileRevisionsCollectionName).DeleteOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}); err != nil {
+					t.Fatal(err)
+				}
+			}, publicationport.ErrApplicationProfileStateInconsistent},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				db := migratedIntegrationDatabase(t, client)
+				seed := createApprovedPublicationVersion(t, db, "publication-profile-recheck")
+				repo := NewApplicationPublicationRepository(db)
+				candidate := loadPublicationCandidate(t, repo, seed, 1, nil)
+				test.mutate(t, db, seed)
+				id := publicationdomain.ApplicationPublicationID(nextIntegrationApplicationReviewID(t))
+				result, err := repo.PlaceInTest(t.Context(), candidate, &id, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), seed.adminID, publicationTestValidation(), time.Now())
+				if result != nil || !errors.Is(err, test.want) {
+					t.Fatalf("result=%v error=%v want=%v", result, err, test.want)
+				}
+				assertPublicationCounts(t, db, 0, 0)
+			})
+		}
+	})
 	// Revocation is a future capability. These concurrency fixtures bypass the
 	// current lifecycle validator solely to simulate losing approval; UC007 does
 	// not add a revoke endpoint or enable the future state in its migration.
@@ -207,6 +291,66 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 				assertPublicationCounts(t, db, 0, 0)
 			})
 		}
+	})
+	t.Run("BR-PUB-003 BR-PUB-009 profile approval replacement shares the application write fence", func(t *testing.T) {
+		db := migratedIntegrationDatabase(t, client)
+		seed := createApprovedPublicationVersion(t, db, "publication-profile-race")
+		repo := NewApplicationPublicationRepository(db)
+		candidate := loadPublicationCandidate(t, repo, seed, 1, nil)
+
+		var replacement applicationProfileRevisionDocument
+		if err := db.Collection(applicationProfileRevisionsCollectionName).FindOne(t.Context(), bson.M{"applicationId": seed.applicationID.String()}).Decode(&replacement); err != nil {
+			t.Fatal(err)
+		}
+		replacement.ProfileRevisionID = nextIntegrationApplicationReviewID(t).String()
+		replacement.Sequence++
+		if _, err := db.Collection(applicationProfileRevisionsCollectionName).InsertOne(t.Context(), replacement); err != nil {
+			t.Fatal(err)
+		}
+
+		session, err := client.StartSession()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.EndSession(context.Background())
+		if err = session.StartTransaction(); err != nil {
+			t.Fatal(err)
+		}
+		tx := drivermongo.NewSessionContext(t.Context(), session)
+		if _, err = db.Collection(applicationsCollectionName).UpdateOne(tx, bson.M{"id": seed.applicationID.String()}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Collection(applicationProfilesCollectionName).UpdateOne(tx, bson.M{"applicationId": seed.applicationID.String()}, bson.M{"$set": bson.M{"currentPublishedProfileRevisionId": replacement.ProfileRevisionID}}); err != nil {
+			t.Fatal(err)
+		}
+
+		competing, started := publicationMonitoredClient(t, db.Name(), applicationsCollectionName)
+		ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+		defer cancel()
+		done := make(chan error, 1)
+		id := publicationdomain.ApplicationPublicationID(nextIntegrationApplicationReviewID(t))
+		history := publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t))
+		go func() {
+			_, err := NewApplicationPublicationRepository(competing.Database(db.Name())).PlaceInTest(ctx, candidate, &id, history, seed.adminID, publicationTestValidation(), time.Now())
+			done <- err
+		}()
+		awaitMongoCommand(t, ctx, started, "profile approval versus publication placement")
+		if err = session.CommitTransaction(ctx); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case err = <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		projection := readProfileProjection(t, db, seed.applicationID)
+		if projection.CurrentPublishedProfileRevisionID == nil || *projection.CurrentPublishedProfileRevisionID != replacement.ProfileRevisionID {
+			t.Fatalf("profile projection=%#v", projection)
+		}
+		assertPublicationCounts(t, db, 1, 1)
 	})
 }
 
@@ -357,7 +501,37 @@ func createApprovedPublicationVersion(t *testing.T, db *drivermongo.Database, na
 	t.Helper()
 	seed := createDecidableReview(t, db, "auth-publisher", name, "v1")
 	approvePublicationVersion(t, db, seed)
+	approvePublicationProfile(t, db, seed)
 	return seed
+}
+
+func approvePublicationProfile(t *testing.T, db *drivermongo.Database, seed decidableReview) profiledomain.ApplicationProfileRevisionID {
+	t.Helper()
+	repo := NewApplicationProfileRevisionRepository(db)
+	draft, err := repo.CreateDraft(t.Context(), seed.adminID, profileDraftFixture(t, seed.applicationID, seed.adminID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	submission, err := repo.SubmitDraft(t.Context(), draft.ApplicationID(), draft.ProfileRevisionID(), seed.adminID, 1, profileReviewID(t), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := repo.DecideReview(t.Context(), profileport.ProfileReviewDecisionInput{
+		ApplicationID:     seed.applicationID,
+		ProfileRevisionID: draft.ProfileRevisionID(),
+		ProfileReviewID:   submission.Review.ProfileReviewID(),
+		ReviewerID:        "independent-profile-reviewer",
+		Permissions:       []string{profiledomain.ProfileReviewPermission},
+		ExpectedRevision:  2,
+		PolicyVersion:     profiledomain.InitialProfileReviewPolicyVersion,
+		Outcome:           "APPROVE",
+		ConfirmedCheckIDs: profiledomain.InitialProfileReviewChecks(),
+		DecidedAt:         time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result.ProfileRevision.ProfileRevisionID()
 }
 func addApprovedPublicationVersion(t *testing.T, db *drivermongo.Database, seed decidableReview, label string) decidableReview {
 	t.Helper()

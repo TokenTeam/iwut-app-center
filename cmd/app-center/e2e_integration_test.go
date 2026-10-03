@@ -35,9 +35,12 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
+	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
@@ -2070,4 +2073,39 @@ func e2eAssertNoSecret(t *testing.T, database *drivermongo.Database, collectionN
 	if err := cursor.Err(); err != nil {
 		t.Fatalf("scan %s for secrets: %v", collectionName, err)
 	}
+}
+
+func e2eApproveApplicationProfile(t *testing.T, ctx context.Context, connection *grpc.ClientConn, applicationID, adminToken, reviewerToken string) string {
+	t.Helper()
+	adminCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, adminToken))
+	reviewerCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, reviewerToken))
+	draft, err := profilev1.NewApplicationProfileRevisionClient(connection).CreateApplicationProfileRevision(adminCtx, &profilev1.CreateApplicationProfileRevisionRequest{
+		ApplicationId: applicationID,
+		Profile:       &profilev1.ApplicationProfileContent{DisplayName: "Published application", Description: structpb.NewNullValue(), Icon: structpb.NewNullValue()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := profilereviewv1.NewApplicationProfileReviewClient(connection)
+	submitted, err := reviews.SubmitApplicationProfileRevisionReview(adminCtx, &profilereviewv1.SubmitApplicationProfileRevisionReviewRequest{
+		ApplicationId: applicationID, ProfileRevisionId: draft.GetProfileRevisionId(),
+		Command: &profilereviewv1.SubmitApplicationProfileRevisionReviewCommand{ExpectedRevision: 1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := reviews.DecideApplicationProfileRevisionReview(reviewerCtx, &profilereviewv1.DecideApplicationProfileRevisionReviewRequest{
+		ApplicationId: applicationID, ProfileRevisionId: draft.GetProfileRevisionId(), ProfileReviewId: submitted.GetReview().GetProfileReviewId(),
+		Command: &profilereviewv1.DecideApplicationProfileRevisionReviewCommand{
+			ExpectedProfileRevisionRevision:           2,
+			ExpectedCurrentPublishedProfileRevisionId: structpb.NewNullValue(),
+			ExpectedPolicyVersion:                     "app-profile-review-v1",
+			Outcome:                                   profilereviewv1.ProfileReviewDecisionAction_APPROVE,
+			ConfirmedCheckIds:                         []string{"content-policy-reviewed", "icon-content-reviewed"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return approved.GetProfileRevision().GetProfileRevisionId()
 }

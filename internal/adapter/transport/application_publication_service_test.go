@@ -1,8 +1,10 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -135,6 +137,8 @@ func TestPublicationService_UCAPP007_ErrorMappings(t *testing.T) {
 		{publicationdomain.ErrApplicationAdminRequired, codes.PermissionDenied, ReasonApplicationAdminRequired},
 		{publicationdomain.ErrDeveloperApprovalRequired, codes.PermissionDenied, ReasonDeveloperApprovalRequired},
 		{publicationdomain.ErrApplicationVersionNotApproved, codes.FailedPrecondition, ReasonApplicationVersionNotApproved},
+		{publicationdomain.ErrApplicationProfileRequired, codes.FailedPrecondition, ReasonApplicationProfileRequired},
+		{publicationdomain.ErrApplicationProfileStateInconsistent, codes.Internal, ReasonApplicationProfileStateInconsistent},
 		{publicationdomain.ErrApplicationReviewStateInconsistent, codes.Aborted, ReasonApplicationReviewStateInconsistent},
 		{publicationdomain.ErrApplicationVersionRpcApiIncompatible, codes.InvalidArgument, ReasonApplicationVersionRpcApiIncompatible},
 		{publicationdomain.ErrApplicationPublicationAlreadyExists, codes.AlreadyExists, ReasonApplicationPublicationAlreadyExists},
@@ -171,6 +175,8 @@ func TestPublicationService_UCAPP007_HTTPErrorStatus(t *testing.T) {
 		{publicationdomain.ErrDeveloperApprovalRequired, 403},
 		{publicationdomain.ErrApplicationAdminRequired, 403},
 		{publicationdomain.ErrApplicationVersionNotApproved, 422},
+		{publicationdomain.ErrApplicationProfileRequired, 422},
+		{publicationdomain.ErrApplicationProfileStateInconsistent, 500},
 		{publicationdomain.ErrApplicationVersionRpcApiIncompatible, 422},
 		{publicationdomain.ErrInvalidApplicationScope, 422},
 		{publicationdomain.ErrApplicationLaunchURLNotReviewable, 422},
@@ -196,5 +202,24 @@ func TestPublicationService_UCAPP007_HTTPErrorStatus(t *testing.T) {
 				t.Fatalf("status=%d calls=%d body=%s", recorder.Code, h.calls, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestPublicationService_UCAPP007_ProfileInvariantLoggingIsSanitized(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	h := &fakePlaceHandler{err: publicationdomain.NewApplicationProfileStateInconsistentError(errors.New("private profile pointer token"))}
+	service := NewApplicationPublicationService(h)
+	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "admin", DeveloperStatus: shared.DeveloperStatusApproved})
+	_, err := service.PlaceApprovedVersionInTestSlot(ctx, &publicationv1.PlaceApprovedVersionInTestSlotRequest{ApplicationId: testApplicationID, RpcApiMajor: 3, Command: &publicationv1.PlaceApprovedVersionInTestSlotCommand{VersionId: testApplicationVersionID}})
+	if status.Code(err) != codes.Internal || errorReason(status.Convert(err)) != ReasonApplicationProfileStateInconsistent {
+		t.Fatalf("error = %v", err)
+	}
+	output := logs.String()
+	if !strings.Contains(output, ReasonApplicationProfileStateInconsistent) || strings.Contains(output, "private profile pointer token") {
+		t.Fatalf("log = %s", output)
 	}
 }

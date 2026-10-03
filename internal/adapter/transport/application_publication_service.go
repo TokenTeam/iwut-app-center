@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	kratoserrors "github.com/go-kratos/kratos/v2/errors"
@@ -52,7 +53,10 @@ func (service *ApplicationPublicationService) PlaceApprovedVersionInTestSlot(ctx
 	}
 	result, err := service.handler.Handle(ctx, identity, applicationID, request.GetRpcApiMajor(), command)
 	if err != nil {
-		if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired)) {
+		if errors.Is(err, publicationdomain.ErrApplicationProfileStateInconsistent) {
+			slog.ErrorContext(ctx, "application profile state invariant failed", "reason", ReasonApplicationProfileStateInconsistent)
+		}
+		if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired)) {
 			var domainError *publicationdomain.Error
 			errors.As(err, &domainError)
 			spec := publicationDomainErrorSpecs[domainError.Code()]

@@ -22,6 +22,8 @@ var (
 	ErrApplicationPublicationNotFound         = errors.New("application publication not found")
 	ErrApplicationPublicationRevisionConflict = errors.New("application publication revision conflict")
 	ErrOAuthClientRegistrationRequired        = errors.New("OAuth client registration required")
+	ErrApplicationProfileRequired             = errors.New("application profile required")
+	ErrApplicationProfileStateInconsistent    = errors.New("application profile state inconsistent")
 )
 
 type UUIDv7Generator interface{ NewUUIDv7() (string, error) }
