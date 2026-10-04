@@ -17,6 +17,7 @@ import (
 	"iwut-app-center/internal/application/usecase"
 	catalogusecase "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
+	filterusecase "iwut-app-center/internal/filter/usecase"
 	oauthclientusecase "iwut-app-center/internal/oauthclient/usecase"
 	profileusecase "iwut-app-center/internal/profile/usecase"
 	publicationusecase "iwut-app-center/internal/publication/usecase"
@@ -33,6 +34,8 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		filterusecase.NewHandlers,
+		wire.Bind(new(transport.ApplicationFilterHandlers), new(*filterusecase.Handlers)),
 		oauthcredential.ProviderSet,
 		oauthclientusecase.NewHandlers,
 		wire.Bind(new(transport.OAuthClientHandlers), new(*oauthclientusecase.Handlers)),

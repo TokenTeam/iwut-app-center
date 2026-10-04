@@ -2,6 +2,7 @@ package generator
 
 import (
 	"github.com/goforj/wire"
+	filterport "iwut-app-center/internal/filter/port"
 	oauthclientport "iwut-app-center/internal/oauthclient/port"
 	profileport "iwut-app-center/internal/profile/port"
 	publicationport "iwut-app-center/internal/publication/port"
@@ -15,6 +16,9 @@ import (
 // ProviderSet binds the concrete generators to the narrow ports the
 // Application use case consumes.
 var ProviderSet = wire.NewSet(
+	NewApplicationFilterRevisionUUIDv7Generator,
+	wire.Bind(new(filterport.RevisionIDGenerator), new(*ApplicationFilterRevisionUUIDv7Generator)),
+	wire.Bind(new(filterport.Clock), new(*SystemClock)),
 	NewOAuthClientUUIDv4Generator,
 	wire.Bind(new(oauthclientport.ClientIDGenerator), new(*OAuthClientUUIDv4Generator)),
 	NewApplicationProfileRevisionUUIDv7Generator,

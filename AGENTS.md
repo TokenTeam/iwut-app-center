@@ -40,20 +40,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-021 — manage Grey rollout.** Design input is
-`../../docs/app-center/briefs/UC-APP-021.md` plus the engineering baseline and
-implements README. Deliver Stable-backed exact-major Grey set, proportional
-adjustment, Version replacement and clear; deterministic authenticated-user
-cohorts using the fixed grey-bucket-v1 HMAC algorithm; shared Publication OCC
-and append-only History; the 0017 schema migration; GREY OAuth registration
-management; and GREY support in the five existing Auth-only provider methods.
-Preserve cohort identity through one continuous rollout, distinguish risk
-increases from reductions for external revalidation, and never expose the
-cohort seed. Do not implement unified test/grey/stable routing, Catalog, Filter,
-test clear, Application disable, Auth grants/codes/tokens, analytics, atomic
-promotion, sector/sub storage, or frontend behavior. Required final tier:
-`make check-auth-app`. Commit API inputs and generated outputs before the
-service gitlink, and keep all commits local.
+**UC-APP-022 — manage Application Filter.** Design input is
+`../../docs/app-center/briefs/UC-APP-022.md` plus the engineering baseline and
+implements README. Deliver Application-level Get/Set/Clear management for a
+no-review Filter with immutable immediately-published revisions; the typed,
+bounded `profile-filter-v1` rule tree; revision-0 ALLOW_ALL default and explicit
+ALLOW_ALL Clear revisions; independent OCC and no-op behavior; Application
+administrator write fencing; the 0018 schema migration; HTTP/gRPC transport and
+backend acceptance. App Center validates and stores rules but never reads user
+profile values or evaluates per-user results. Do not implement Catalog, unified
+test/grey/stable resolution, client evaluation/UI, Auth profile calls, test
+clear, Application disable, history-list/rollback APIs or any Publication/
+Profile/Version/OAuth mutation. Required final tier: `make check-full`. Commit
+API inputs and generated outputs before the service gitlink, and keep all
+commits local.
 
 ## Verification entry points
 

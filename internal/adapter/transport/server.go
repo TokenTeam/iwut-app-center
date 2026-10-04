@@ -13,6 +13,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
@@ -112,6 +113,12 @@ const (
 	RotateOAuthClientSecretInternalPath          = "/v1/oauth-clients/{client_id}/credential-rotations"
 	RotateOAuthClientSecretExternalPath          = ServicePrefix + RotateOAuthClientSecretInternalPath
 	RotateOAuthClientSecretGRPCMethod            = oauthclientv1.OperationOAuthClientServiceRotateOAuthClientSecret
+
+	ApplicationFilterInternalPath    = "/v1/applications/{application_id}/filter"
+	ApplicationFilterExternalPath    = ServicePrefix + ApplicationFilterInternalPath
+	GetApplicationFilterGRPCMethod   = filterv1.OperationApplicationFilterServiceGetApplicationFilter
+	SetApplicationFilterGRPCMethod   = filterv1.OperationApplicationFilterServiceSetApplicationFilter
+	ClearApplicationFilterGRPCMethod = filterv1.OperationApplicationFilterServiceClearApplicationFilter
 )
 
 // ServerConfig carries the two listen addresses validated at startup.
@@ -139,10 +146,11 @@ func NewServersWithOAuthProvider(
 	profileService *ApplicationProfileRevisionService,
 	profileReviewService *ApplicationProfileReviewService,
 	oauthClientService *OAuthClientService,
+	filterService *ApplicationFilterService,
 	serviceVerifier *ServiceIdentityVerifier,
 	oauthProviderService *OAuthClientProviderService,
 ) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, serviceVerifier, oauthProviderService)
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, filterService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -196,10 +204,16 @@ func NewServers(
 	}
 	var serviceVerifier *ServiceIdentityVerifier
 	var oauthProviderService *OAuthClientProviderService
-	if len(providerRuntime) != 0 {
-		if len(providerRuntime) != 2 {
-			return nil, errors.New("transport servers: complete OAuth provider runtime is required")
+	var filterService *ApplicationFilterService
+	switch len(providerRuntime) {
+	case 0:
+	case 1:
+		var ok bool
+		filterService, ok = providerRuntime[0].(*ApplicationFilterService)
+		if !ok || filterService == nil {
+			return nil, errors.New("transport servers: application filter service is required")
 		}
+	case 2:
 		var ok bool
 		serviceVerifier, ok = providerRuntime[0].(*ServiceIdentityVerifier)
 		if !ok || serviceVerifier == nil {
@@ -209,6 +223,22 @@ func NewServers(
 		if !ok || oauthProviderService == nil {
 			return nil, errors.New("transport servers: OAuth provider service is required")
 		}
+	case 3:
+		var ok bool
+		filterService, ok = providerRuntime[0].(*ApplicationFilterService)
+		if !ok || filterService == nil {
+			return nil, errors.New("transport servers: application filter service is required")
+		}
+		serviceVerifier, ok = providerRuntime[1].(*ServiceIdentityVerifier)
+		if !ok || serviceVerifier == nil {
+			return nil, errors.New("transport servers: service identity verifier is required")
+		}
+		oauthProviderService, ok = providerRuntime[2].(*OAuthClientProviderService)
+		if !ok || oauthProviderService == nil {
+			return nil, errors.New("transport servers: OAuth provider service is required")
+		}
+	default:
+		return nil, errors.New("transport servers: invalid optional runtime")
 	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
@@ -227,6 +257,9 @@ func NewServers(
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
 	oauthclientv1.RegisterOAuthClientServiceHTTPServer(httpServer, oauthClientService)
+	if filterService != nil {
+		filterv1.RegisterApplicationFilterServiceHTTPServer(httpServer, filterService)
+	}
 
 	grpcMiddleware := identityMiddleware(verifier)
 	if serviceVerifier != nil {
@@ -243,6 +276,9 @@ func NewServers(
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
 	oauthclientv1.RegisterOAuthClientServiceServer(grpcServer, oauthClientService)
+	if filterService != nil {
+		filterv1.RegisterApplicationFilterServiceServer(grpcServer, filterService)
+	}
 	if oauthProviderService != nil {
 		oauthclientv1.RegisterOAuthClientProviderServiceServer(grpcServer, oauthProviderService)
 	}
@@ -311,6 +347,15 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		*oauthclientv1.GetOAuthClientCredentialMetadataResponse,
 		*oauthclientv1.RotateOAuthClientSecretResponse:
 		w.Header().Set("Cache-Control", "no-store")
+	case *filterv1.GetApplicationFilterResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetFilter().GetRevision()))
+	case *filterv1.SetApplicationFilterResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetFilter().GetRevision()))
+		if response.GetChanged() && response.GetFilter().GetRevision() == 1 {
+			w.WriteHeader(http.StatusCreated)
+		}
+	case *filterv1.ClearApplicationFilterResponse:
+		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetFilter().GetRevision()))
 	}
 	return khttp.DefaultResponseEncoder(w, r, v)
 }
@@ -318,6 +363,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isApplicationFilterRequest(r) {
+		applicationFilterSafeErrorEncoder(w, r, err)
+		return
+	}
 	if isOAuthClientManagementRequest(r) {
 		w.Header().Set("Cache-Control", "no-store")
 	}
@@ -411,7 +460,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -441,6 +490,16 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					operation := JoinApplicationAsTesterGRPCMethod
 					if isOAuthClientManagementRequest(r) {
 						operation = RegisterOAuthClientGRPCMethod
+					}
+					if isApplicationFilterRequest(r) {
+						switch r.Method {
+						case http.MethodGet:
+							operation = GetApplicationFilterGRPCMethod
+						case http.MethodPut:
+							operation = SetApplicationFilterGRPCMethod
+						case http.MethodDelete:
+							operation = ClearApplicationFilterGRPCMethod
+						}
 					}
 					if isDecideApplicationProfileReviewRequest(r) {
 						operation = DecideApplicationProfileReviewGRPCMethod
@@ -498,6 +557,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if isTesterRemovalRequest(r) && !validTesterRemovalHTTPInput(r) {
 					credentialSafeErrorEncoder(w, r, invalidRemoveTesterRequest())
+					return
+				}
+				if isApplicationFilterRequest(r) && !validApplicationFilterHTTPInput(r) {
+					applicationFilterSafeErrorEncoder(w, r, toTransportError(filterInvalidApplicationFilter()))
 					return
 				}
 			}

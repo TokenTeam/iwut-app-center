@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	catalogdomain "iwut-app-center/internal/catalog/domain"
+	filterdomain "iwut-app-center/internal/filter/domain"
 	oauthclientdomain "iwut-app-center/internal/oauthclient/domain"
 	profiledomain "iwut-app-center/internal/profile/domain"
 
@@ -150,6 +151,10 @@ const (
 	ReasonOAuthClientRuntimeUnavailable    = "ERROR_REASON_OAUTH_CLIENT_RUNTIME_UNAVAILABLE"
 	ReasonOAuthRuntimeVersionChanged       = "ERROR_REASON_OAUTH_RUNTIME_VERSION_CHANGED"
 	ReasonOAuthProviderUnavailable         = "ERROR_REASON_OAUTH_PROVIDER_UNAVAILABLE"
+
+	ReasonInvalidApplicationFilter           = "ERROR_REASON_INVALID_APPLICATION_FILTER"
+	ReasonApplicationFilterRevisionConflict  = "ERROR_REASON_APPLICATION_FILTER_REVISION_CONFLICT"
+	ReasonApplicationFilterStateInconsistent = "ERROR_REASON_APPLICATION_FILTER_STATE_INCONSISTENT"
 )
 
 type errorSpec struct {
@@ -206,6 +211,18 @@ var internalSpec = errorSpec{
 	code:    codes.Internal,
 	reason:  ReasonInternal,
 	message: "internal failure",
+}
+
+var filterDomainErrorSpecs = map[filterdomain.ErrorCode]errorSpec{
+	filterdomain.ErrorCodeInvalidApplicationID:               {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	filterdomain.ErrorCodeDeveloperIdentityRequired:          {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	filterdomain.ErrorCodeDeveloperApprovalRequired:          {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	filterdomain.ErrorCodeInvalidApplicationFilter:           {code: codes.InvalidArgument, reason: ReasonInvalidApplicationFilter, message: "application filter is invalid"},
+	filterdomain.ErrorCodeApplicationNotFound:                {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	filterdomain.ErrorCodeApplicationAdminRequired:           {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	filterdomain.ErrorCodeApplicationFilterRevisionConflict:  {code: codes.Aborted, reason: ReasonApplicationFilterRevisionConflict, message: "application filter revision conflict"},
+	filterdomain.ErrorCodeApplicationFilterStateInconsistent: {code: codes.Internal, reason: ReasonApplicationFilterStateInconsistent, message: "application filter state is inconsistent"},
+	filterdomain.ErrorCodeInternal:                           internalSpec,
 }
 
 var oauthClientDomainErrorSpecs = map[oauthclientdomain.ErrorCode]errorSpec{
@@ -405,6 +422,14 @@ func toTransportError(err error) error {
 	}
 	if errors.Is(err, errIdentityInvalid) {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidDeveloperIdentity, "developer identity is invalid")
+	}
+	var filterError *filterdomain.Error
+	if errors.As(err, &filterError) {
+		spec, ok := filterDomainErrorSpecs[filterError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
 	}
 	var oauthClientError *oauthclientdomain.Error
 	if errors.As(err, &oauthClientError) {
