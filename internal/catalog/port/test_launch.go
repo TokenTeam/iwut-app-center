@@ -14,6 +14,9 @@ var (
 	ErrApplicationTestPublicationInconsistent = errors.New("application test publication is inconsistent")
 	ErrApplicationLaunchTargetUnavailable     = errors.New("application launch target is unavailable")
 	ErrApplicationRuntimeStateInconsistent    = errors.New("application runtime state is inconsistent")
+	ErrInvalidPageToken                       = errors.New("invalid page token")
+	ErrPublicApplicationNotFound              = errors.New("public application not found")
+	ErrApplicationCatalogStateInconsistent    = errors.New("application catalog state is inconsistent")
 )
 
 // TestLaunchResolver authorizes and resolves only within one read-only snapshot.
@@ -26,4 +29,9 @@ type TestLaunchResolver interface {
 // anonymous; a non-empty value has already crossed the trusted identity edge.
 type LaunchTargetResolver interface {
 	Resolve(context.Context, shared.ApplicationID, shared.AuthID, int32, []domain.CapabilityName) (*domain.LaunchTargetDescriptor, error)
+}
+
+type PublicApplicationCatalogRepository interface {
+	ListPublic(context.Context, shared.AuthID, int32, []domain.CapabilityName, int32, string) (*domain.PublicApplicationCatalogPage, error)
+	GetPublic(context.Context, shared.ApplicationID, shared.AuthID, int32, []domain.CapabilityName) (*domain.PublicApplicationCatalogItem, error)
 }

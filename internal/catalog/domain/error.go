@@ -23,6 +23,10 @@ const (
 	ErrorCodeApplicationTestPublicationInconsistent ErrorCode     = "ApplicationTestPublicationInconsistent"
 	ErrorCodeApplicationLaunchTargetUnavailable     ErrorCode     = "ApplicationLaunchTargetUnavailable"
 	ErrorCodeApplicationRuntimeStateInconsistent    ErrorCode     = "ApplicationRuntimeStateInconsistent"
+	ErrorCodeInvalidPageSize                        ErrorCode     = "InvalidPageSize"
+	ErrorCodeInvalidPageToken                       ErrorCode     = "InvalidPageToken"
+	ErrorCodePublicApplicationNotFound              ErrorCode     = "PublicApplicationNotFound"
+	ErrorCodeApplicationCatalogStateInconsistent    ErrorCode     = "ApplicationCatalogStateInconsistent"
 	ErrorCodeInternal                               ErrorCode     = "Internal"
 )
 
@@ -79,5 +83,9 @@ var (
 	ErrApplicationTestPublicationInconsistent = newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationTestPublicationInconsistent, "application test publication is temporarily unavailable")
 	ErrApplicationLaunchTargetUnavailable     = newError(ErrorCategoryNotFound, ErrorCodeApplicationLaunchTargetUnavailable, "application launch target is unavailable")
 	ErrApplicationRuntimeStateInconsistent    = newError(ErrorCategoryInternal, ErrorCodeApplicationRuntimeStateInconsistent, "application runtime state is inconsistent")
+	ErrInvalidPageSize                        = newError(ErrorCategoryValidation, ErrorCodeInvalidPageSize, "page size is invalid")
+	ErrInvalidPageToken                       = newError(ErrorCategoryValidation, ErrorCodeInvalidPageToken, "page token is invalid")
+	ErrPublicApplicationNotFound              = newError(ErrorCategoryNotFound, ErrorCodePublicApplicationNotFound, "public application not found")
+	ErrApplicationCatalogStateInconsistent    = newError(ErrorCategoryInternal, ErrorCodeApplicationCatalogStateInconsistent, "application catalog state is inconsistent")
 	ErrInternal                               = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure")
 )

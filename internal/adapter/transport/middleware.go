@@ -52,7 +52,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod {
+				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == testermembershipv1.OperationTesterMembershipRemoveApplicationTester {
@@ -62,7 +62,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			if hasLegacyIdentityHeader(ctx) {
 				return nil, toIdentityTransportError(errIdentityInvalid, operation)
 			}
-			if operation == ResolveLaunchTargetGRPCMethod {
+			if operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod {
 				token, present, err := optionalIdentityTokenFromContext(ctx)
 				if err != nil {
 					return nil, toIdentityTransportError(err, operation)
@@ -90,7 +90,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
-	if operation == ResolveLaunchTargetGRPCMethod {
+	if operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidAuthenticatedUser, "authenticated user identity is invalid")
 	}
 	if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == ResolveTestLaunchTargetGRPCMethod {

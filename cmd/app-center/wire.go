@@ -53,6 +53,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		wire.Bind(new(transport.ResolveTestLaunchTargetHandler), new(*catalogusecase.ResolveTestLaunchTarget)),
 		catalogusecase.NewResolveLaunchTarget,
 		wire.Bind(new(transport.ResolveLaunchTargetHandler), new(*catalogusecase.ResolveLaunchTarget)),
+		catalogusecase.NewPublicCatalog,
+		wire.Bind(new(transport.PublicCatalogHandler), new(*catalogusecase.PublicCatalog)),
 		testercredential.ProviderSet,
 		provideTesterJoinURLPrefix,
 		testerusecase.NewCreateOrRotateTesterJoinLinkHandler,

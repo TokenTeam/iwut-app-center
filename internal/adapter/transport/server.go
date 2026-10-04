@@ -13,6 +13,7 @@ import (
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	applicationcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_catalog"
 	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
@@ -46,6 +47,12 @@ const (
 	ResolveLaunchTargetInternalPath     = "/v1/applications/{application_id}/launch-target:resolve"
 	ResolveLaunchTargetExternalPath     = ServicePrefix + ResolveLaunchTargetInternalPath
 	ResolveLaunchTargetGRPCMethod       = runtimev1.OperationRuntimeResolutionServiceResolveLaunchTarget
+	ListPublicApplicationsInternalPath  = "/v1/catalog/applications:search"
+	ListPublicApplicationsExternalPath  = ServicePrefix + ListPublicApplicationsInternalPath
+	ListPublicApplicationsGRPCMethod    = applicationcatalogv1.OperationApplicationCatalogServiceListPublicApplications
+	GetPublicApplicationInternalPath    = "/v1/catalog/applications/{application_id}:get"
+	GetPublicApplicationExternalPath    = ServicePrefix + GetPublicApplicationInternalPath
+	GetPublicApplicationGRPCMethod      = applicationcatalogv1.OperationApplicationCatalogServiceGetPublicApplication
 
 	RevokeTesterJoinLinkInternalPath           = "/v1/applications/{application_id}/tester-join-links/{join_link_id}"
 	RevokeTesterJoinLinkExternalPath           = ServicePrefix + RevokeTesterJoinLinkInternalPath
@@ -178,6 +185,10 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, filterService, serviceVerifier, oauthProviderService)
+}
+
 func NewServers(
 	config ServerConfig,
 	verifier *IdentityVerifier,
@@ -231,6 +242,7 @@ func NewServers(
 	var oauthProviderService *OAuthClientProviderService
 	var filterService *ApplicationFilterService
 	var runtimeResolutionService *RuntimeResolutionService
+	var applicationCatalogService *ApplicationCatalogService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
 		case *RuntimeResolutionService:
@@ -238,6 +250,11 @@ func NewServers(
 				return nil, errors.New("transport servers: runtime resolution service is invalid")
 			}
 			runtimeResolutionService = value
+		case *ApplicationCatalogService:
+			if value == nil || applicationCatalogService != nil {
+				return nil, errors.New("transport servers: application catalog service is invalid")
+			}
+			applicationCatalogService = value
 		case *ApplicationFilterService:
 			if value == nil || filterService != nil {
 				return nil, errors.New("transport servers: application filter service is invalid")
@@ -270,6 +287,9 @@ func NewServers(
 	if runtimeResolutionService != nil {
 		runtimev1.RegisterRuntimeResolutionServiceHTTPServer(httpServer, runtimeResolutionService)
 	}
+	if applicationCatalogService != nil {
+		applicationcatalogv1.RegisterApplicationCatalogServiceHTTPServer(httpServer, applicationCatalogService)
+	}
 	testermembershipv1.RegisterTesterMembershipHTTPServer(httpServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
@@ -291,6 +311,9 @@ func NewServers(
 	catalogv1.RegisterCatalogServer(grpcServer, catalogService)
 	if runtimeResolutionService != nil {
 		runtimev1.RegisterRuntimeResolutionServiceServer(grpcServer, runtimeResolutionService)
+	}
+	if applicationCatalogService != nil {
+		applicationcatalogv1.RegisterApplicationCatalogServiceServer(grpcServer, applicationCatalogService)
 	}
 	testermembershipv1.RegisterTesterMembershipServer(grpcServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
@@ -328,6 +351,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 	case *catalogv1.TestLaunchDescriptor:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *runtimev1.LaunchTargetDescriptor:
+		w.Header().Set("Cache-Control", "private, no-store")
+	case *applicationcatalogv1.PublicApplicationCatalogPage, *applicationcatalogv1.PublicApplicationCatalogItem:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
 		w.Header().Set("Cache-Control", "no-store")
@@ -415,6 +440,10 @@ func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err erro
 		runtimeResolutionSafeErrorEncoder(w, r, err)
 		return
 	}
+	if isPublicCatalogRequest(r) {
+		applicationCatalogSafeErrorEncoder(w, r, err)
+		return
+	}
 	if isTesterJoinLinkRevocationRequest(r) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := testerjoinlinkv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -489,9 +518,9 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
-				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) {
+				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
 				}
 				var identityErr error
@@ -502,7 +531,7 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 						}
 					}
 				}
-				if identityErr == nil && isRuntimeResolutionRequest(r) {
+				if identityErr == nil && (isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r)) {
 					values := r.Header.Values(IdentityHeader)
 					switch {
 					case len(values) == 0:
@@ -557,6 +586,11 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					if isRuntimeResolutionRequest(r) {
 						operation = ResolveLaunchTargetGRPCMethod
 					}
+					if isPublicCatalogListRequest(r) {
+						operation = ListPublicApplicationsGRPCMethod
+					} else if isPublicCatalogRequest(r) {
+						operation = GetPublicApplicationGRPCMethod
+					}
 					if isTesterRemovalRequest(r) {
 						operation = RemoveApplicationTesterGRPCMethod
 					}
@@ -594,6 +628,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if isRuntimeResolutionRequest(r) && !validRuntimeResolutionHTTPInput(r) {
 					credentialSafeErrorEncoder(w, r, invalidResolveLaunchTargetRequest())
+					return
+				}
+				if isPublicCatalogRequest(r) && !validApplicationCatalogHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, invalidApplicationCatalogRequest())
 					return
 				}
 				if isTesterJoinLinkRevocationRequest(r) && !validTesterRemovalHTTPInput(r) {

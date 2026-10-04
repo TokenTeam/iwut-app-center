@@ -145,6 +145,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	unifiedLaunchResolver := mongo.NewUnifiedLaunchResolver(database)
 	resolveLaunchTarget := usecase6.NewResolveLaunchTarget(unifiedLaunchResolver)
 	runtimeResolutionService := transport.NewRuntimeResolutionService(resolveLaunchTarget)
+	publicCatalogRepository := mongo.NewPublicCatalogRepository(database)
+	publicCatalog := usecase6.NewPublicCatalog(publicCatalogRepository)
+	applicationCatalogService := transport.NewApplicationCatalogService(publicCatalog)
 	applicationProfileRevisionUUIDv7Generator := generator.NewApplicationProfileRevisionUUIDv7Generator()
 	applicationProfileRevisionRepository := mongo.NewApplicationProfileRevisionRepository(database)
 	createApplicationProfileRevisionHandler := usecase7.NewCreateApplicationProfileRevisionHandler(applicationProfileRevisionUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
@@ -173,7 +176,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	oAuthProviderRepository := mongo.NewOAuthProviderRepository(database, secretFactory)
 	providerHandlers := usecase8.NewProviderHandlers(systemClock, oAuthProviderRepository)
 	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
-	servers, err := transport.NewServersWithRuntimeResolutionAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, serviceIdentityVerifier, oAuthClientProviderService)
+	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
 		cleanup2()
 		cleanup()

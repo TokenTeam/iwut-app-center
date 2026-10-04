@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 18)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 19)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -313,7 +313,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		"_id_", testerJoinLinkIDUniqueIndexName, testerJoinLinkTokenHashUniqueIndexName, testerJoinLinkActiveUniqueIndexName, testerJoinLinkAuditIndexName,
 	})
 	assertIndexNames(t, database.Collection(applicationPublicationsCollectionName), []string{
-		"_id_", publicationIDUniqueIndexName, publicationPartitionUniqueIndexName,
+		"_id_", publicationIDUniqueIndexName, publicationPartitionUniqueIndexName, applicationCatalogStableScanIndexName,
 	})
 	assertIndexNames(t, database.Collection(applicationPublicationHistoryCollectionName), []string{
 		"_id_", publicationHistoryIDUniqueIndexName, publicationHistoryRevisionUniqueIndexName, publicationHistoryAuditIndexName,
@@ -358,7 +358,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 18)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 19)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
@@ -442,6 +442,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		stablePublicationMigrationID,
 		greyPublicationMigrationID,
 		applicationFilterMigrationID,
+		applicationCatalogMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {

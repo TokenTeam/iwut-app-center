@@ -216,3 +216,22 @@ HTTP 500 / gRPC INTERNAL. Callers without an ACTIVE Tester episode do not load
 the Test pointer or Test Version. The endpoint returns one channel-qualified
 descriptor with `Cache-Control: private, no-store`; it does not return Profile,
 Filter, OAuth client IDs, cohort material or alternative candidates.
+
+UC-APP-024 exposes the ordinary public catalog through
+`POST /v1/catalog/applications:search`,
+`POST /v1/catalog/applications/{application_id}:get` and native gRPC
+`app_center.v1.application_catalog.ApplicationCatalogService`. Ordinary catalog
+eligibility always requires a current approved public Profile and a compatible
+Stable version for the requested exact RPC major. After that eligibility check,
+an optional valid identity selects the same `TEST > GREY > STABLE` launch target
+as UC-APP-023. A present invalid identity is rejected.
+
+Each item contains the reviewed public Profile, one launch target and the current
+`profile-filter-v1` projection. The App Center does not receive user profile data
+or evaluate the Filter. List order is by Application ID and uses a query-bound
+opaque keyset token; the default page size is 20 and the maximum is 100. Every
+page or detail is assembled in one read-only MongoDB snapshot using batched local
+reads. Pointer, approval snapshot or Filter corruption fails the whole request
+with HTTP 500 / gRPC INTERNAL. Responses use `Cache-Control: private, no-store`.
+Migration `0019_application_catalog_indexes` adds the partial Stable-candidate
+scan index required by the list query.

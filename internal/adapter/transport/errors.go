@@ -59,6 +59,11 @@ const (
 	ReasonApplicationLaunchTargetUnavailable             = "ERROR_REASON_APPLICATION_LAUNCH_TARGET_UNAVAILABLE"
 	ReasonApplicationRuntimeStateInconsistent            = "ERROR_REASON_APPLICATION_RUNTIME_STATE_INCONSISTENT"
 	ReasonInvalidResolveLaunchTargetRequest              = "ERROR_REASON_INVALID_RESOLVE_LAUNCH_TARGET_REQUEST"
+	ReasonInvalidPageSize                                = "ERROR_REASON_INVALID_PAGE_SIZE"
+	ReasonInvalidPageToken                               = "ERROR_REASON_INVALID_PAGE_TOKEN"
+	ReasonPublicApplicationNotFound                      = "ERROR_REASON_PUBLIC_APPLICATION_NOT_FOUND"
+	ReasonApplicationCatalogStateInconsistent            = "ERROR_REASON_APPLICATION_CATALOG_STATE_INCONSISTENT"
+	ReasonInvalidApplicationCatalogRequest               = "ERROR_REASON_INVALID_APPLICATION_CATALOG_REQUEST"
 
 	ReasonApplicationTesterJoinLinkStateInconsistent = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT"
 	ReasonInvalidRevokeTesterJoinLinkRequest         = "ERROR_REASON_INVALID_REVOKE_TESTER_JOIN_LINK_REQUEST"
@@ -372,6 +377,10 @@ var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
 	catalogdomain.ErrorCodeApplicationTestPublicationInconsistent: {code: codes.Unavailable, reason: ReasonApplicationTestPublicationInconsistent, message: "application test publication is unavailable"},
 	catalogdomain.ErrorCodeApplicationLaunchTargetUnavailable:     {code: codes.NotFound, reason: ReasonApplicationLaunchTargetUnavailable, message: "application launch target is unavailable"},
 	catalogdomain.ErrorCodeApplicationRuntimeStateInconsistent:    {code: codes.Internal, reason: ReasonApplicationRuntimeStateInconsistent, message: "application runtime state is inconsistent"},
+	catalogdomain.ErrorCodeInvalidPageSize:                        {code: codes.InvalidArgument, reason: ReasonInvalidPageSize, message: "page size is invalid"},
+	catalogdomain.ErrorCodeInvalidPageToken:                       {code: codes.InvalidArgument, reason: ReasonInvalidPageToken, message: "page token is invalid"},
+	catalogdomain.ErrorCodePublicApplicationNotFound:              {code: codes.NotFound, reason: ReasonPublicApplicationNotFound, message: "public application not found"},
+	catalogdomain.ErrorCodeApplicationCatalogStateInconsistent:    {code: codes.Internal, reason: ReasonApplicationCatalogStateInconsistent, message: "application catalog state is inconsistent"},
 	catalogdomain.ErrorCodeInternal:                               internalSpec,
 }
 

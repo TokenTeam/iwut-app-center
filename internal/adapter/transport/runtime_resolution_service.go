@@ -50,13 +50,18 @@ func (service *RuntimeResolutionService) ResolveLaunchTarget(ctx context.Context
 	if result == nil {
 		return nil, toTransportError(catalogdomain.NewInternalError(nil))
 	}
+	return launchTargetResource(result), nil
+}
+
+func launchTargetResource(result *catalogdomain.LaunchTargetDescriptor) *runtimev1.LaunchTargetDescriptor {
+	if result == nil {
+		return nil
+	}
 	capabilities := make([]string, len(result.RequiredCapabilities()))
 	for index, name := range result.RequiredCapabilities() {
 		capabilities[index] = name.String()
 	}
-	return &runtimev1.LaunchTargetDescriptor{
-		ApplicationId: result.ApplicationID().String(), PublicationId: result.PublicationID(), PublicationRevision: result.PublicationRevision(), Channel: runtimeLaunchChannel(result.Channel()), RpcApiMajor: result.RPCAPIMajor(), VersionId: result.VersionID(), VersionLabel: result.VersionLabel(), LaunchUrl: result.LaunchURL(), RpcApiMinVersion: result.RPCAPIMinVersion(), RpcApiMaxVersionExclusive: result.RPCAPIMaxVersionExclusive(), RequiredCapabilities: capabilities, RequiredScopes: result.RequiredScopes(), OptionalScopes: result.OptionalScopes(),
-	}, nil
+	return &runtimev1.LaunchTargetDescriptor{ApplicationId: result.ApplicationID().String(), PublicationId: result.PublicationID(), PublicationRevision: result.PublicationRevision(), Channel: runtimeLaunchChannel(result.Channel()), RpcApiMajor: result.RPCAPIMajor(), VersionId: result.VersionID(), VersionLabel: result.VersionLabel(), LaunchUrl: result.LaunchURL(), RpcApiMinVersion: result.RPCAPIMinVersion(), RpcApiMaxVersionExclusive: result.RPCAPIMaxVersionExclusive(), RequiredCapabilities: capabilities, RequiredScopes: result.RequiredScopes(), OptionalScopes: result.OptionalScopes()}
 }
 
 func runtimeLaunchChannel(channel catalogdomain.LaunchChannel) runtimev1.LaunchChannel {

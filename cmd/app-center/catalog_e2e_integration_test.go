@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	applicationcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_catalog"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
@@ -301,6 +302,47 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 	testerRuntime, err := runtimeClient.ResolveLaunchTarget(userCtx, runtimeRequest)
 	if err != nil || testerRuntime.GetChannel() != runtimev1.LaunchChannel_LAUNCH_CHANNEL_TEST {
 		t.Fatalf("tester runtime=%v error=%v", testerRuntime, err)
+	}
+	queryCatalogHTTP := func(token, path, payload string) (int, []byte) {
+		t.Helper()
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+httpAddress+path, bytes.NewBufferString(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			request.Header.Set(transport.IdentityHeader, token)
+		}
+		response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Header.Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("catalog cache policy %q", response.Header.Get("Cache-Control"))
+		}
+		return response.StatusCode, body
+	}
+	code, body = queryCatalogHTTP("", "/v1/catalog/applications:search", `{"runtime":{"hostRpcApiMajor":3,"hostCapabilities":["user.profile.v1"]}}`)
+	var catalogPage applicationcatalogv1.PublicApplicationCatalogPage
+	if code != http.StatusOK || protojson.Unmarshal(body, &catalogPage) != nil || len(catalogPage.GetApplications()) != 1 || catalogPage.GetApplications()[0].GetApplicationId() != application.GetId() || catalogPage.GetApplications()[0].GetLaunchTarget().GetChannel() != runtimev1.LaunchChannel_LAUNCH_CHANNEL_STABLE || catalogPage.GetApplications()[0].GetProfile().GetDisplayName() == "" || catalogPage.GetApplications()[0].GetFilter().GetMode().String() != "FILTER_MODE_ALLOW_ALL" {
+		t.Fatalf("public catalog status=%d page=%v body=%s", code, &catalogPage, body)
+	}
+	catalogClient := applicationcatalogv1.NewApplicationCatalogServiceClient(connection)
+	var catalogHeaders metadata.MD
+	catalogDetail, err := catalogClient.GetPublicApplication(userCtx, &applicationcatalogv1.GetPublicApplicationRequest{ApplicationId: application.GetId(), Query: &applicationcatalogv1.CatalogRuntimeQuery{HostRpcApiMajor: 3, HostCapabilities: []string{"user.profile.v1"}}}, grpc.Header(&catalogHeaders))
+	if err != nil || catalogDetail.GetLaunchTarget().GetChannel() != runtimev1.LaunchChannel_LAUNCH_CHANNEL_TEST {
+		t.Fatalf("tester catalog detail=%v error=%v", catalogDetail, err)
+	}
+	if values := catalogHeaders.Get("cache-control"); len(values) != 1 || values[0] != "private, no-store" {
+		t.Fatal("catalog gRPC cache policy missing")
+	}
+	if code, body := queryCatalogHTTP("private-forged", "/v1/catalog/applications:search", `{"runtime":{"hostRpcApiMajor":3}}`); code != http.StatusUnauthorized || !bytes.Contains(body, []byte(transport.ReasonInvalidAuthenticatedUser)) || bytes.Contains(body, []byte("private-forged")) {
+		t.Fatalf("invalid catalog identity status=%d body=%s", code, body)
 	}
 	if code, body := resolveRuntimeHTTP("private-forged", validBody); code != http.StatusUnauthorized || !bytes.Contains(body, []byte(transport.ReasonInvalidAuthenticatedUser)) || bytes.Contains(body, []byte("private-forged")) {
 		t.Fatalf("invalid runtime identity status=%d body=%s", code, body)

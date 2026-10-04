@@ -81,6 +81,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: stablePublicationMigrationID, apply: migrator.applyStablePublicationMigration},
 		{id: greyPublicationMigrationID, apply: migrator.applyGreyPublicationMigration},
 		{id: applicationFilterMigrationID, apply: migrator.applyApplicationFilterMigration},
+		{id: applicationCatalogMigrationID, apply: migrator.applyApplicationCatalogMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {

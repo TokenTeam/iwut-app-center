@@ -33,6 +33,8 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(catalogport.TestLaunchResolver), new(*TestLaunchResolver)),
 	NewUnifiedLaunchResolver,
 	wire.Bind(new(catalogport.LaunchTargetResolver), new(*UnifiedLaunchResolver)),
+	NewPublicCatalogRepository,
+	wire.Bind(new(catalogport.PublicApplicationCatalogRepository), new(*PublicCatalogRepository)),
 	NewApplicationTesterMembershipRepository,
 	wire.Bind(new(testerport.ApplicationTesterMembershipRepository), new(*ApplicationTesterMembershipRepository)),
 	wire.Bind(new(testerport.ApplicationTesterRemovalRepository), new(*ApplicationTesterMembershipRepository)),

@@ -40,16 +40,17 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-023 — resolve a unified launch target.** Design input is
-`../../docs/app-center/briefs/UC-APP-023.md` plus the engineering baseline and
-implements README. Deliver a read-only single-Application resolver with exact-
-major `TEST > GREY > STABLE` selection, optional trusted identity, deterministic
-server-side Grey cohorts, capability-only fallback, persisted-invariant fail-
-closed behavior, one minimal LaunchTargetDescriptor, a reusable Catalog query
-port, MongoDB snapshot consistency, HTTP/gRPC transport and backend acceptance.
-Preserve UC-APP-012 strict Test-only behavior. Do not implement Catalog list or
-detail, Filter distribution/evaluation, OAuth client discovery, test clear,
-Application disable/suspension, frontend launch, sessions, grants or tokens.
+**UC-APP-024 — query the public Application Catalog.** Design input is
+`../../docs/app-center/briefs/UC-APP-024.md` plus the engineering baseline and
+implements README. Deliver Stable-backed public list and detail queries that
+combine the current approved public Profile, UC-APP-023 exact-major unified
+launch target and current Application Filter in one read snapshot. Preserve
+optional trusted identity, client-side Filter evaluation, test-only exclusion,
+ApplicationId keyset pagination, whole-query invariant failure, bounded short
+pages, batch Mongo access, an index-only 0019 migration, HTTP/gRPC transport and
+backend acceptance. Do not implement test-only listings, Filter evaluation,
+search/ranking, OAuth client discovery, Application disable/suspension,
+frontend behavior, sessions, grants or tokens.
 Required final tier: `make check-full`. Commit API inputs and generated outputs
 before the service gitlink, and keep all commits local.
 
