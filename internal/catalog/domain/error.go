@@ -21,6 +21,8 @@ const (
 	ErrorCodeApplicationTestTargetUnavailable       ErrorCode     = "ApplicationTestTargetUnavailable"
 	ErrorCodeHostCapabilitiesInsufficient           ErrorCode     = "HostCapabilitiesInsufficient"
 	ErrorCodeApplicationTestPublicationInconsistent ErrorCode     = "ApplicationTestPublicationInconsistent"
+	ErrorCodeApplicationLaunchTargetUnavailable     ErrorCode     = "ApplicationLaunchTargetUnavailable"
+	ErrorCodeApplicationRuntimeStateInconsistent    ErrorCode     = "ApplicationRuntimeStateInconsistent"
 	ErrorCodeInternal                               ErrorCode     = "Internal"
 )
 
@@ -75,5 +77,7 @@ var (
 	ErrApplicationTestTargetUnavailable       = newError(ErrorCategoryNotFound, ErrorCodeApplicationTestTargetUnavailable, "application test target is unavailable")
 	ErrHostCapabilitiesInsufficient           = newError(ErrorCategoryValidation, ErrorCodeHostCapabilitiesInsufficient, "host capabilities are insufficient")
 	ErrApplicationTestPublicationInconsistent = newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationTestPublicationInconsistent, "application test publication is temporarily unavailable")
+	ErrApplicationLaunchTargetUnavailable     = newError(ErrorCategoryNotFound, ErrorCodeApplicationLaunchTargetUnavailable, "application launch target is unavailable")
+	ErrApplicationRuntimeStateInconsistent    = newError(ErrorCategoryInternal, ErrorCodeApplicationRuntimeStateInconsistent, "application runtime state is inconsistent")
 	ErrInternal                               = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure")
 )

@@ -56,6 +56,9 @@ const (
 	ReasonHostCapabilitiesInsufficient                   = "ERROR_REASON_HOST_CAPABILITIES_INSUFFICIENT"
 	ReasonApplicationTestPublicationInconsistent         = "ERROR_REASON_APPLICATION_TEST_PUBLICATION_INCONSISTENT"
 	ReasonInvalidResolveTestLaunchRequest                = "ERROR_REASON_INVALID_RESOLVE_TEST_LAUNCH_REQUEST"
+	ReasonApplicationLaunchTargetUnavailable             = "ERROR_REASON_APPLICATION_LAUNCH_TARGET_UNAVAILABLE"
+	ReasonApplicationRuntimeStateInconsistent            = "ERROR_REASON_APPLICATION_RUNTIME_STATE_INCONSISTENT"
+	ReasonInvalidResolveLaunchTargetRequest              = "ERROR_REASON_INVALID_RESOLVE_LAUNCH_TARGET_REQUEST"
 
 	ReasonApplicationTesterJoinLinkStateInconsistent = "ERROR_REASON_APPLICATION_TESTER_JOIN_LINK_STATE_INCONSISTENT"
 	ReasonInvalidRevokeTesterJoinLinkRequest         = "ERROR_REASON_INVALID_REVOKE_TESTER_JOIN_LINK_REQUEST"
@@ -367,6 +370,8 @@ var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
 	catalogdomain.ErrorCodeApplicationTestTargetUnavailable:       {code: codes.NotFound, reason: ReasonApplicationTestTargetUnavailable, message: "application test target is unavailable"},
 	catalogdomain.ErrorCodeHostCapabilitiesInsufficient:           {code: codes.FailedPrecondition, reason: ReasonHostCapabilitiesInsufficient, message: "host capabilities are insufficient"},
 	catalogdomain.ErrorCodeApplicationTestPublicationInconsistent: {code: codes.Unavailable, reason: ReasonApplicationTestPublicationInconsistent, message: "application test publication is unavailable"},
+	catalogdomain.ErrorCodeApplicationLaunchTargetUnavailable:     {code: codes.NotFound, reason: ReasonApplicationLaunchTargetUnavailable, message: "application launch target is unavailable"},
+	catalogdomain.ErrorCodeApplicationRuntimeStateInconsistent:    {code: codes.Internal, reason: ReasonApplicationRuntimeStateInconsistent, message: "application runtime state is inconsistent"},
 	catalogdomain.ErrorCodeInternal:                               internalSpec,
 }
 

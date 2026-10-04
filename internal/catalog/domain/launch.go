@@ -41,6 +41,66 @@ func MissingCapabilities(required, host []CapabilityName) []CapabilityName {
 	return slices.Compact(missing)
 }
 
+type LaunchChannel string
+
+const (
+	LaunchChannelTest   LaunchChannel = "TEST"
+	LaunchChannelGrey   LaunchChannel = "GREY"
+	LaunchChannelStable LaunchChannel = "STABLE"
+)
+
+func (channel LaunchChannel) IsValid() bool {
+	switch channel {
+	case LaunchChannelTest, LaunchChannelGrey, LaunchChannelStable:
+		return true
+	default:
+		return false
+	}
+}
+
+// LaunchTargetDescriptor is the one resolved TEST, GREY or STABLE target for
+// a logical read snapshot. It carries neither candidate-set nor cohort facts.
+type LaunchTargetDescriptor struct {
+	applicationID                               shared.ApplicationID
+	publicationID                               string
+	publicationRevision                         int64
+	channel                                     LaunchChannel
+	rpcAPIMajor                                 int32
+	versionID, versionLabel, launchURL          string
+	rpcAPIMinVersion, rpcAPIMaxVersionExclusive int32
+	requiredCapabilities                        []CapabilityName
+	requiredScopes, optionalScopes              []string
+}
+
+func NewLaunchTargetDescriptor(applicationID shared.ApplicationID, publicationID string, publicationRevision int64, channel LaunchChannel, rpcAPIMajor int32, versionID, versionLabel, launchURL string, rpcAPIMinVersion, rpcAPIMaxVersionExclusive int32, requiredCapabilities []CapabilityName, requiredScopes, optionalScopes []string) (*LaunchTargetDescriptor, error) {
+	if !validLaunchDescriptor(applicationID, publicationID, publicationRevision, rpcAPIMajor, versionID, versionLabel, launchURL, rpcAPIMinVersion, rpcAPIMaxVersionExclusive, requiredCapabilities, requiredScopes, optionalScopes) || !channel.IsValid() {
+		return nil, ErrApplicationRuntimeStateInconsistent
+	}
+	return &LaunchTargetDescriptor{applicationID, publicationID, publicationRevision, channel, rpcAPIMajor, versionID, versionLabel, launchURL, rpcAPIMinVersion, rpcAPIMaxVersionExclusive, append([]CapabilityName{}, requiredCapabilities...), append([]string{}, requiredScopes...), append([]string{}, optionalScopes...)}, nil
+}
+
+func (d LaunchTargetDescriptor) ApplicationID() shared.ApplicationID { return d.applicationID }
+func (d LaunchTargetDescriptor) PublicationID() string               { return d.publicationID }
+func (d LaunchTargetDescriptor) PublicationRevision() int64          { return d.publicationRevision }
+func (d LaunchTargetDescriptor) Channel() LaunchChannel              { return d.channel }
+func (d LaunchTargetDescriptor) RPCAPIMajor() int32                  { return d.rpcAPIMajor }
+func (d LaunchTargetDescriptor) VersionID() string                   { return d.versionID }
+func (d LaunchTargetDescriptor) VersionLabel() string                { return d.versionLabel }
+func (d LaunchTargetDescriptor) LaunchURL() string                   { return d.launchURL }
+func (d LaunchTargetDescriptor) RPCAPIMinVersion() int32             { return d.rpcAPIMinVersion }
+func (d LaunchTargetDescriptor) RPCAPIMaxVersionExclusive() int32 {
+	return d.rpcAPIMaxVersionExclusive
+}
+func (d LaunchTargetDescriptor) RequiredCapabilities() []CapabilityName {
+	return append([]CapabilityName{}, d.requiredCapabilities...)
+}
+func (d LaunchTargetDescriptor) RequiredScopes() []string {
+	return append([]string{}, d.requiredScopes...)
+}
+func (d LaunchTargetDescriptor) OptionalScopes() []string {
+	return append([]string{}, d.optionalScopes...)
+}
+
 // TestLaunchDescriptor is an immutable result for one consistent read snapshot.
 // It is not a lease and carries no membership, approval audit or credentials.
 type TestLaunchDescriptor struct {
@@ -55,20 +115,27 @@ type TestLaunchDescriptor struct {
 }
 
 func NewTestLaunchDescriptor(applicationID shared.ApplicationID, publicationID string, publicationRevision int64, rpcAPIMajor int32, versionID, versionLabel, launchURL string, rpcAPIMinVersion, rpcAPIMaxVersionExclusive int32, requiredCapabilities []CapabilityName, requiredScopes, optionalScopes []string) (*TestLaunchDescriptor, error) {
-	if !applicationID.IsValid() || !shared.IsUUIDv7(publicationID) || !shared.IsUUIDv7(versionID) || publicationRevision < 1 || rpcAPIMinVersion < 1 || rpcAPIMaxVersionExclusive <= rpcAPIMinVersion || rpcAPIMajor < rpcAPIMinVersion || rpcAPIMajor >= rpcAPIMaxVersionExclusive || versionLabel == "" || !utf8.ValidString(versionLabel) || launchURL == "" || !strictlySortedUnique(requiredCapabilities) || !strictlySortedUnique(requiredScopes) || !strictlySortedUnique(optionalScopes) {
+	if !validLaunchDescriptor(applicationID, publicationID, publicationRevision, rpcAPIMajor, versionID, versionLabel, launchURL, rpcAPIMinVersion, rpcAPIMaxVersionExclusive, requiredCapabilities, requiredScopes, optionalScopes) {
 		return nil, ErrApplicationTestPublicationInconsistent
+	}
+	return &TestLaunchDescriptor{applicationID, publicationID, publicationRevision, rpcAPIMajor, versionID, versionLabel, launchURL, rpcAPIMinVersion, rpcAPIMaxVersionExclusive, append([]CapabilityName{}, requiredCapabilities...), append([]string{}, requiredScopes...), append([]string{}, optionalScopes...)}, nil
+}
+
+func validLaunchDescriptor(applicationID shared.ApplicationID, publicationID string, publicationRevision int64, rpcAPIMajor int32, versionID, versionLabel, launchURL string, rpcAPIMinVersion, rpcAPIMaxVersionExclusive int32, requiredCapabilities []CapabilityName, requiredScopes, optionalScopes []string) bool {
+	if !applicationID.IsValid() || !shared.IsUUIDv7(publicationID) || !shared.IsUUIDv7(versionID) || publicationRevision < 1 || rpcAPIMinVersion < 1 || rpcAPIMaxVersionExclusive <= rpcAPIMinVersion || rpcAPIMajor < rpcAPIMinVersion || rpcAPIMajor >= rpcAPIMaxVersionExclusive || versionLabel == "" || !utf8.ValidString(versionLabel) || launchURL == "" || !strictlySortedUnique(requiredCapabilities) || !strictlySortedUnique(requiredScopes) || !strictlySortedUnique(optionalScopes) {
+		return false
 	}
 	for _, capability := range requiredCapabilities {
 		if !capabilityNamePattern.MatchString(string(capability)) {
-			return nil, ErrApplicationTestPublicationInconsistent
+			return false
 		}
 	}
 	for _, required := range requiredScopes {
 		if slices.Contains(optionalScopes, required) {
-			return nil, ErrApplicationTestPublicationInconsistent
+			return false
 		}
 	}
-	return &TestLaunchDescriptor{applicationID, publicationID, publicationRevision, rpcAPIMajor, versionID, versionLabel, launchURL, rpcAPIMinVersion, rpcAPIMaxVersionExclusive, append([]CapabilityName{}, requiredCapabilities...), append([]string{}, requiredScopes...), append([]string{}, optionalScopes...)}, nil
+	return true
 }
 func strictlySortedUnique[T ~string](values []T) bool {
 	if !slices.IsSorted(values) {

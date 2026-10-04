@@ -52,7 +52,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if operation == ResolveTestLaunchTargetGRPCMethod {
+				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == testermembershipv1.OperationTesterMembershipRemoveApplicationTester {
@@ -61,6 +61,20 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			}
 			if hasLegacyIdentityHeader(ctx) {
 				return nil, toIdentityTransportError(errIdentityInvalid, operation)
+			}
+			if operation == ResolveLaunchTargetGRPCMethod {
+				token, present, err := optionalIdentityTokenFromContext(ctx)
+				if err != nil {
+					return nil, toIdentityTransportError(err, operation)
+				}
+				if !present {
+					return handler(ctx, request)
+				}
+				identity, err := verifier.Verify(token)
+				if err != nil {
+					return nil, toIdentityTransportError(err, operation)
+				}
+				return handler(withTrustedIdentity(ctx, identity), request)
 			}
 			token, err := identityTokenFromContext(ctx)
 			if err != nil {
@@ -76,6 +90,9 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
+	if operation == ResolveLaunchTargetGRPCMethod {
+		return transportStatus(codes.Unauthenticated, ReasonInvalidAuthenticatedUser, "authenticated user identity is invalid")
+	}
 	if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == ResolveTestLaunchTargetGRPCMethod {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonAuthenticatedUserRequired, "authenticated user is required")
@@ -89,6 +106,25 @@ func toIdentityTransportError(err error, operation string) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidReviewerIdentity, "reviewer identity is invalid")
 	}
 	return toTransportError(err)
+}
+
+func optionalIdentityTokenFromContext(ctx context.Context) (string, bool, error) {
+	transporter, ok := transport.FromServerContext(ctx)
+	if !ok {
+		return "", false, errIdentityInvalid
+	}
+	values := transporter.RequestHeader().Values(IdentityHeader)
+	if len(values) == 0 {
+		return "", false, nil
+	}
+	if len(values) != 1 {
+		return "", false, errIdentityInvalid
+	}
+	token := strings.TrimSpace(values[0])
+	if token == "" {
+		return "", false, errIdentityInvalid
+	}
+	return token, true, nil
 }
 
 func identityTokenFromContext(ctx context.Context) (string, error) {

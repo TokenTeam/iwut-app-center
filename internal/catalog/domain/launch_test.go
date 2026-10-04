@@ -86,3 +86,23 @@ func TestBR_RUN_002_004_006_DescriptorRangeAndImmutability(t *testing.T) {
 		}
 	}
 }
+
+func TestBR_RUN_017_UnifiedDescriptorChannelAndImmutability(t *testing.T) {
+	caps := []CapabilityName{"camera.read.v1"}
+	required := []string{"profile.basic"}
+	optional := []string{"schedule.read"}
+	descriptor, err := NewLaunchTargetDescriptor(appID, publicationID, 9, LaunchChannelGrey, 3, versionID, "v2", "https://example.edu/grey", 3, 4, caps, required, optional)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps[0], required[0], optional[0] = "changed.v1", "changed", "changed"
+	descriptor.RequiredCapabilities()[0] = "changed.v1"
+	if descriptor.Channel() != LaunchChannelGrey || descriptor.RequiredCapabilities()[0] != "camera.read.v1" || descriptor.RequiredScopes()[0] != "profile.basic" || descriptor.OptionalScopes()[0] != "schedule.read" {
+		t.Fatal("unified descriptor is mutable or lost channel")
+	}
+	for _, channel := range []LaunchChannel{"", "UNKNOWN"} {
+		if _, err := NewLaunchTargetDescriptor(appID, publicationID, 9, channel, 3, versionID, "v2", "https://example.edu/grey", 3, 4, nil, nil, nil); !errors.Is(err, ErrApplicationRuntimeStateInconsistent) {
+			t.Fatalf("accepted channel %q", channel)
+		}
+	}
+}

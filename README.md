@@ -201,3 +201,18 @@ capabilities return HTTP 422 / gRPC FAILED_PRECONDITION, with only a sorted
 `missingCapabilities` JSON-array string in error metadata. Inconsistent stored
 publication/approval facts return HTTP 503 / gRPC UNAVAILABLE and produce a safe
 internal alert. Neither failure returns a partial launch descriptor.
+
+UC-APP-023 adds the unified single-Application resolver at
+`POST /v1/applications/{application_id}/launch-target:resolve` and native gRPC
+`app_center.v1.runtime_resolution.RuntimeResolutionService/ResolveLaunchTarget`.
+Identity is optional: no identity considers only Stable, while a valid identity
+enables server-side Tester and Grey cohort checks. A present invalid identity is
+rejected rather than downgraded to anonymous.
+
+The resolver reads only the exact RPC major and chooses `TEST > GREY > STABLE`.
+Missing host capabilities may fall through to the next channel; dangling,
+cross-Application, non-approved or snapshot-drifted state fails closed with
+HTTP 500 / gRPC INTERNAL. Callers without an ACTIVE Tester episode do not load
+the Test pointer or Test Version. The endpoint returns one channel-qualified
+descriptor with `Cache-Control: private, no-store`; it does not return Profile,
+Filter, OAuth client IDs, cohort material or alternative candidates.

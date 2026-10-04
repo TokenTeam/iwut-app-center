@@ -9,6 +9,7 @@ import (
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	catalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/catalog"
+	runtimev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/runtime_resolution"
 	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
@@ -154,6 +155,11 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expectedPublicationRevision := int64(1)
+	stablePublication, err := publicationv1.NewApplicationPublicationClient(connection).SetApprovedVersionInStableSlot(adminCtx, &publicationv1.SetApprovedVersionInStableSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, Command: &publicationv1.SetApprovedVersionInStableSlotCommand{VersionId: versionID, ExpectedPublicationRevision: &expectedPublicationRevision}})
+	if err != nil || stablePublication.GetPublication().GetRevision() != 2 {
+		t.Fatalf("set stable publication=%v error=%v", stablePublication, err)
+	}
 	link, err := testerjoinlinkv1.NewTesterJoinLinkClient(connection).CreateOrRotateTesterJoinLink(adminCtx, &testerjoinlinkv1.CreateOrRotateTesterJoinLinkRequest{ApplicationId: application.GetId(), Command: &testerjoinlinkv1.CreateOrRotateTesterJoinLinkCommand{}})
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +236,7 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 	if code != 200 || protojson.Unmarshal(body, &httpDescriptor) != nil {
 		t.Fatalf("resolve status%d body%s", code, body)
 	}
-	if httpDescriptor.GetVersionId() != versionID || httpDescriptor.GetApplicationId() != application.GetId() || httpDescriptor.GetPublicationId() != publication.GetPublication().GetPublicationId() || httpDescriptor.GetPublicationRevision() != 1 || httpDescriptor.GetRpcApiMajor() != 3 || httpDescriptor.GetRpcApiMinVersion() != 3 || httpDescriptor.GetRpcApiMaxVersionExclusive() != 5 || httpDescriptor.GetVersionLabel() != "v12.0.0" || httpDescriptor.GetLaunchUrl() == "" || !reflect.DeepEqual(httpDescriptor.GetRequiredCapabilities(), []string{"user.profile.v1"}) || !reflect.DeepEqual(httpDescriptor.GetRequiredScopes(), []string{"profile.basic"}) || len(httpDescriptor.GetOptionalScopes()) != 0 {
+	if httpDescriptor.GetVersionId() != versionID || httpDescriptor.GetApplicationId() != application.GetId() || httpDescriptor.GetPublicationId() != publication.GetPublication().GetPublicationId() || httpDescriptor.GetPublicationRevision() != 2 || httpDescriptor.GetRpcApiMajor() != 3 || httpDescriptor.GetRpcApiMinVersion() != 3 || httpDescriptor.GetRpcApiMaxVersionExclusive() != 5 || httpDescriptor.GetVersionLabel() != "v12.0.0" || httpDescriptor.GetLaunchUrl() == "" || !reflect.DeepEqual(httpDescriptor.GetRequiredCapabilities(), []string{"user.profile.v1"}) || !reflect.DeepEqual(httpDescriptor.GetRequiredScopes(), []string{"profile.basic"}) || len(httpDescriptor.GetOptionalScopes()) != 0 {
 		t.Fatalf("descriptor %v", &httpDescriptor)
 	}
 	client := catalogv1.NewCatalogClient(connection)
@@ -242,6 +248,65 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 	}
 	if values := headers.Get("cache-control"); len(values) != 1 || values[0] != "private, no-store" {
 		t.Fatal("gRPC cache policy missing")
+	}
+	resolveRuntimeHTTP := func(token, payload string) (int, []byte) {
+		t.Helper()
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+httpAddress+"/v1/applications/"+application.GetId()+"/launch-target:resolve", bytes.NewBufferString(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			request.Header.Set(transport.IdentityHeader, token)
+		}
+		response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Header.Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("runtime cache policy %q", response.Header.Get("Cache-Control"))
+		}
+		return response.StatusCode, body
+	}
+	for _, runtimeCase := range []struct {
+		name, token string
+		channel     runtimev1.LaunchChannel
+	}{
+		{"anonymous stable", "", runtimev1.LaunchChannel_LAUNCH_CHANNEL_STABLE},
+		{"tester test", userToken, runtimev1.LaunchChannel_LAUNCH_CHANNEL_TEST},
+	} {
+		t.Run("UCAPP023 "+runtimeCase.name, func(t *testing.T) {
+			code, body := resolveRuntimeHTTP(runtimeCase.token, validBody)
+			var descriptor runtimev1.LaunchTargetDescriptor
+			if code != http.StatusOK || protojson.Unmarshal(body, &descriptor) != nil || descriptor.GetChannel() != runtimeCase.channel || descriptor.GetVersionId() != versionID || descriptor.GetPublicationRevision() != 2 {
+				t.Fatalf("runtime status=%d descriptor=%v body=%s", code, &descriptor, body)
+			}
+		})
+	}
+	runtimeClient := runtimev1.NewRuntimeResolutionServiceClient(connection)
+	runtimeRequest := &runtimev1.ResolveLaunchTargetRequest{ApplicationId: application.GetId(), Query: &runtimev1.ResolveLaunchTargetQuery{HostRpcApiMajor: 3, HostCapabilities: []string{"user.profile.v1"}}}
+	var runtimeHeaders metadata.MD
+	anonymousRuntime, err := runtimeClient.ResolveLaunchTarget(ctx, runtimeRequest, grpc.Header(&runtimeHeaders))
+	if err != nil || anonymousRuntime.GetChannel() != runtimev1.LaunchChannel_LAUNCH_CHANNEL_STABLE {
+		t.Fatalf("anonymous runtime=%v error=%v", anonymousRuntime, err)
+	}
+	if values := runtimeHeaders.Get("cache-control"); len(values) != 1 || values[0] != "private, no-store" {
+		t.Fatal("runtime gRPC cache policy missing")
+	}
+	testerRuntime, err := runtimeClient.ResolveLaunchTarget(userCtx, runtimeRequest)
+	if err != nil || testerRuntime.GetChannel() != runtimev1.LaunchChannel_LAUNCH_CHANNEL_TEST {
+		t.Fatalf("tester runtime=%v error=%v", testerRuntime, err)
+	}
+	if code, body := resolveRuntimeHTTP("private-forged", validBody); code != http.StatusUnauthorized || !bytes.Contains(body, []byte(transport.ReasonInvalidAuthenticatedUser)) || bytes.Contains(body, []byte("private-forged")) {
+		t.Fatalf("invalid runtime identity status=%d body=%s", code, body)
+	}
+	if code, body := resolveRuntimeHTTP("", `{"hostRpcApiMajor":3,"channel":"TEST"}`); code != http.StatusBadRequest || !bytes.Contains(body, []byte(transport.ReasonInvalidResolveLaunchTargetRequest)) {
+		t.Fatalf("runtime injection status=%d body=%s", code, body)
 	}
 	for _, tc := range []struct {
 		token, app, query, body, reason string
@@ -312,6 +377,9 @@ func TestE2E_UCAPP012_BR_RUN_001_010_TestLaunch(t *testing.T) {
 	_, err = client.ResolveTestLaunchTarget(userCtx, request)
 	if status.Code(err) != codes.Unavailable || e2eErrorReason(status.Convert(err)) != transport.ReasonApplicationTestPublicationInconsistent {
 		t.Fatalf("inconsistency gRPC %v", err)
+	}
+	if code, body := resolveRuntimeHTTP("", validBody); code != http.StatusInternalServerError || !bytes.Contains(body, []byte(transport.ReasonApplicationRuntimeStateInconsistent)) {
+		t.Fatalf("runtime inconsistency status=%d body=%s", code, body)
 	}
 	// Removal remains authorization-first even when publication is corrupt.
 	_, err = memberships.RemoveApplicationTester(adminCtx, &testermembershipv1.RemoveApplicationTesterRequest{ApplicationId: application.GetId(), MembershipId: membership.GetMembership().GetMembershipId()})

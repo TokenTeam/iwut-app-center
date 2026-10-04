@@ -13,10 +13,11 @@ var ProviderSet = wire.NewSet(
 	NewTesterJoinLinkService,
 	NewTesterMembershipService,
 	NewCatalogService,
+	NewRuntimeResolutionService,
 	NewApplicationProfileRevisionService,
 	NewApplicationProfileReviewService,
 	NewApplicationFilterService,
 	NewOAuthClientService,
 	NewOAuthClientProviderService,
-	NewServersWithOAuthProvider,
+	NewServersWithRuntimeResolutionAndOAuthProvider,
 )

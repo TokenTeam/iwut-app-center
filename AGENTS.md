@@ -40,20 +40,18 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-022 — manage Application Filter.** Design input is
-`../../docs/app-center/briefs/UC-APP-022.md` plus the engineering baseline and
-implements README. Deliver Application-level Get/Set/Clear management for a
-no-review Filter with immutable immediately-published revisions; the typed,
-bounded `profile-filter-v1` rule tree; revision-0 ALLOW_ALL default and explicit
-ALLOW_ALL Clear revisions; independent OCC and no-op behavior; Application
-administrator write fencing; the 0018 schema migration; HTTP/gRPC transport and
-backend acceptance. App Center validates and stores rules but never reads user
-profile values or evaluates per-user results. Do not implement Catalog, unified
-test/grey/stable resolution, client evaluation/UI, Auth profile calls, test
-clear, Application disable, history-list/rollback APIs or any Publication/
-Profile/Version/OAuth mutation. Required final tier: `make check-full`. Commit
-API inputs and generated outputs before the service gitlink, and keep all
-commits local.
+**UC-APP-023 — resolve a unified launch target.** Design input is
+`../../docs/app-center/briefs/UC-APP-023.md` plus the engineering baseline and
+implements README. Deliver a read-only single-Application resolver with exact-
+major `TEST > GREY > STABLE` selection, optional trusted identity, deterministic
+server-side Grey cohorts, capability-only fallback, persisted-invariant fail-
+closed behavior, one minimal LaunchTargetDescriptor, a reusable Catalog query
+port, MongoDB snapshot consistency, HTTP/gRPC transport and backend acceptance.
+Preserve UC-APP-012 strict Test-only behavior. Do not implement Catalog list or
+detail, Filter distribution/evaluation, OAuth client discovery, test clear,
+Application disable/suspension, frontend launch, sessions, grants or tokens.
+Required final tier: `make check-full`. Commit API inputs and generated outputs
+before the service gitlink, and keep all commits local.
 
 ## Verification entry points
 
