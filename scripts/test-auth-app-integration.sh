@@ -26,7 +26,7 @@ export APP_CENTER_SERVICE_IDENTITY_KID="app-center-e2e"
 export APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64="${private_key_b64}"
 
 docker exec "${container_name}" mongosh --quiet --port 27017 "${AUTH_CENTER_INTEGRATION_DATABASE}" --eval \
-  'db.auth_principals.insertOne({authId:"auth-dual-service-admin",principalType:"USER",accountStatus:"ACTIVE",developerStatus:"SUSPENDED",createdAt:new Date(),updatedAt:new Date()})' >/dev/null
+  'db.auth_principals.insertOne({authId:"auth-dual-service-admin",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"SUSPENDED",createdAt:new Date(),updatedAt:new Date()})' >/dev/null
 
 (
   cd "${auth_dir}"

@@ -146,7 +146,11 @@ func TestApplicationTesterMembershipRepositoryIntegration(t *testing.T) {
 					user = "winner"
 				}
 				input := newIntegrationTesterMembership(t, link, user)
-				competing, started := monitoredMongoClient(t, db.Name(), "findAndModify")
+				command := "findAndModify"
+				if same {
+					command = "update"
+				} // Same-user joins contend first on the account fence.
+				competing, started := monitoredMongoClient(t, db.Name(), command)
 				competitor := NewApplicationTesterMembershipRepository(competing.Database(db.Name()))
 				ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 				defer cancel()
