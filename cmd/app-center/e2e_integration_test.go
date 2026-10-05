@@ -1256,9 +1256,9 @@ func TestE2E_UCAPP005_RealAuthProcessServiceIdentity(t *testing.T) {
 	// Exercise the newly extended real provider using production service signing,
 	// including a minimal CLOSED tombstone with no prior Developer projection.
 	_, err = client.Database(authDatabaseName).Collection("auth_principals").InsertMany(ctx, []any{
-		bson.M{"authId": "lifecycle-owner", "principalType": "USER", "accountStatus": "ACTIVE", "developerStatus": "APPROVED"},
-		bson.M{"authId": "lifecycle-withdrawn", "principalType": "USER", "accountStatus": "ACTIVE", "developerStatus": "WITHDRAWN"},
-		bson.M{"authId": "lifecycle-closed", "principalType": "USER", "accountStatus": "CLOSED"},
+		bson.M{"authId": "lifecycle-owner", "principalType": "USER", "accountStatus": "ACTIVE", "accountRevision": int64(1), "developerRevision": int64(1), "developerStatus": "APPROVED"},
+		bson.M{"authId": "lifecycle-withdrawn", "principalType": "USER", "accountStatus": "ACTIVE", "accountRevision": int64(1), "developerRevision": int64(2), "developerStatus": "WITHDRAWN"},
+		bson.M{"authId": "lifecycle-closed", "principalType": "USER", "accountStatus": "CLOSED", "accountRevision": int64(2), "terminatedAt": time.Now().UTC(), "closureOperationId": "0b42b472-3a5c-4b18-93e0-c4969a8ccbe8"},
 	})
 	if err != nil {
 		t.Fatal(err)
