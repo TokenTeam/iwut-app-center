@@ -101,6 +101,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		provideServiceIdentityConfig,
 		provideServiceIdentityVerifier,
 		provideServerConfig,
-		provideApp,
+		provideAppWithOwnerExit,
+		provideOwnerExitHandlers,
+		provideOwnerExitWorker,
 	))
 }

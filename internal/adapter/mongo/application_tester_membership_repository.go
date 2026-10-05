@@ -79,6 +79,9 @@ func (r *ApplicationTesterMembershipRepository) Join(ctx context.Context, linkID
 }
 
 func (r *ApplicationTesterMembershipRepository) joinTesterTransaction(ctx context.Context, linkID testerdomain.ApplicationTesterJoinLinkID, hash [32]byte, authID shared.AuthID, candidate *testerdomain.ApplicationTesterMembership, limit int32) (*testerdomain.JoinApplicationAsTesterResult, error) {
+	if err := requireOwnerWritable(ctx, r.database, authID.String(), true); err != nil {
+		return nil, err
+	}
 	appID := candidate.ApplicationID()
 	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: appID.String()}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -152,6 +155,9 @@ func (r *ApplicationTesterMembershipRepository) validJoinLink(ctx context.Contex
 // confidential hashes or other users' identities. Business sentinels remain
 // stable while all unexpected persistence details are deliberately discarded.
 func safeTesterMembershipError(err error) error {
+	if errors.Is(err, shared.ErrAccountExitBlocked) {
+		return shared.ErrAccountExitBlocked
+	}
 	if errors.Is(err, testerdomain.ErrApplicationTesterStateInconsistent) {
 		return testerport.ErrApplicationTesterStateInconsistent
 	}

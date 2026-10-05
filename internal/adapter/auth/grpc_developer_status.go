@@ -12,28 +12,29 @@ import (
 	"iwut-app-center/internal/shared"
 )
 
-// GRPCDeveloperSuspensionChecker adapts Auth Developer Status v1 to the
+// GRPCDeveloperApprovalChecker adapts Auth Developer Status v1 to the
 // review capability's narrow suspension gate.
-type GRPCDeveloperSuspensionChecker struct {
+type GRPCDeveloperApprovalChecker struct {
 	client developerstatusv1.DeveloperStatusDirectoryClient
 }
 
-func NewGRPCDeveloperSuspensionChecker(connection *grpc.ClientConn) (*GRPCDeveloperSuspensionChecker, error) {
+func NewGRPCDeveloperApprovalChecker(connection *grpc.ClientConn) (*GRPCDeveloperApprovalChecker, error) {
 	if connection == nil {
 		return nil, errors.New("Auth Developer Status gRPC connection is required")
 	}
-	return &GRPCDeveloperSuspensionChecker{
+	return &GRPCDeveloperApprovalChecker{
 		client: developerstatusv1.NewDeveloperStatusDirectoryClient(connection),
 	}, nil
 }
 
-func (checker *GRPCDeveloperSuspensionChecker) AnySuspended(
+func (checker *GRPCDeveloperApprovalChecker) BlocksApproval(
 	ctx context.Context,
-	authIDs []shared.AuthID,
+	currentAdminID, submittedBy shared.AuthID,
 ) (bool, error) {
 	if checker == nil || checker.client == nil {
 		return false, reviewport.ErrDeveloperStatusUnavailable
 	}
+	authIDs := []shared.AuthID{currentAdminID, submittedBy}
 	values := make([]string, 0, len(authIDs))
 	seen := make(map[shared.AuthID]struct{}, len(authIDs))
 	for _, authID := range authIDs {
@@ -67,17 +68,27 @@ func (checker *GRPCDeveloperSuspensionChecker) AnySuspended(
 		if entry == nil || entry.GetAuthId() != expectedAuthID {
 			return false, fmt.Errorf("%w: misordered Auth Developer Status response", reviewport.ErrDeveloperStatusUnavailable)
 		}
-		switch entry.GetDeveloperStatus() {
-		case developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_PENDING,
-			developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED,
-			developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_REJECTED:
-		case developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_SUSPENDED:
-			suspended = true
-		default:
-			return false, fmt.Errorf("%w: invalid Auth Developer Status value", reviewport.ErrDeveloperStatusUnavailable)
+		account := entry.GetAccountStatus()
+		developer := entry.GetDeveloperStatus()
+		if account == developerstatusv1.AccountStatus_ACCOUNT_STATUS_CLOSED {
+			if developer != developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_UNSPECIFIED {
+				return false, reviewport.ErrDeveloperStatusUnavailable
+			}
+		} else {
+			if account != developerstatusv1.AccountStatus_ACCOUNT_STATUS_ACTIVE && account != developerstatusv1.AccountStatus_ACCOUNT_STATUS_DISABLED {
+				return false, reviewport.ErrDeveloperStatusUnavailable
+			}
+			if developer < developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_PENDING || developer > developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_WITHDRAWN {
+				return false, reviewport.ErrDeveloperStatusUnavailable
+			}
+		}
+		if expectedAuthID == currentAdminID.String() {
+			suspended = suspended || account != developerstatusv1.AccountStatus_ACCOUNT_STATUS_ACTIVE || developer != developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED
+		} else {
+			suspended = suspended || account == developerstatusv1.AccountStatus_ACCOUNT_STATUS_DISABLED || developer == developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_SUSPENDED
 		}
 	}
 	return suspended, nil
 }
 
-var _ reviewport.DeveloperSuspensionChecker = (*GRPCDeveloperSuspensionChecker)(nil)
+var _ reviewport.DeveloperApprovalChecker = (*GRPCDeveloperApprovalChecker)(nil)

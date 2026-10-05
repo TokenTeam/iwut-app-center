@@ -96,7 +96,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationReviewRestorationRepository := mongo.NewApplicationReviewRestorationRepository(database)
 	restoreRejectedApplicationVersionHandler := usecase3.NewRestoreRejectedApplicationVersionHandler(systemClock, applicationReviewRestorationRepository)
 	versionReviewPolicyRepository := mongo.NewVersionReviewPolicyRepository(database)
-	grpcDeveloperSuspensionChecker, err := auth.NewGRPCDeveloperSuspensionChecker(clientConn)
+	grpcDeveloperApprovalChecker, err := auth.NewGRPCDeveloperApprovalChecker(clientConn)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -109,7 +109,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		cleanup()
 		return nil, nil, err
 	}
-	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperSuspensionChecker, reviewScopeCatalog, launchURLSubmissionPolicy, oAuthRedirectPolicy, systemClock, applicationReviewDecisionRepository, grpcSystemPrincipalResolver)
+	decideApplicationVersionReviewHandler := usecase3.NewDecideApplicationVersionReviewHandler(versionReviewPolicyRepository, grpcDeveloperApprovalChecker, reviewScopeCatalog, launchURLSubmissionPolicy, oAuthRedirectPolicy, systemClock, applicationReviewDecisionRepository, grpcSystemPrincipalResolver)
 	applicationReviewService := transport.NewApplicationReviewService(submitApplicationVersionReviewHandler, restoreRejectedApplicationVersionHandler, decideApplicationVersionReviewHandler)
 	publicationScopeCatalog := auth.NewPublicationScopeCatalog(scopeCatalogCache)
 	publicationLaunchURLSubmissionPolicy := preflight.NewPublicationLaunchURLSubmissionPolicy(launchURLSubmissionPolicy)
@@ -182,7 +182,14 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		cleanup()
 		return nil, nil, err
 	}
-	app := provideApp(servers)
+	handlers2 := provideOwnerExitHandlers(database, clientConn)
+	mainOwnerExitWorker, err := provideOwnerExitWorker(configuration, handlers2)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	app := provideAppWithOwnerExit(servers, mainOwnerExitWorker)
 	return app, func() {
 		cleanup2()
 		cleanup()

@@ -61,6 +61,7 @@ type LookupEnv func(key string) (value string, found bool)
 // receive the scalar values they need through constructors and never read the
 // environment themselves.
 type Config struct {
+	OwnerExitEnabled        bool
 	TesterJoinURLPrefix     string
 	InitialApplicationQuota int32
 	ScopeCatalogCacheTTL    time.Duration
@@ -275,6 +276,15 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	configuration.IdentityPublicKeyFiles = publicKeyFiles
 
+	if raw, found := lookup("APP_CENTER_ACCOUNT_OWNER_EXIT_ENABLED"); found {
+		switch raw {
+		case "true":
+			configuration.OwnerExitEnabled = true
+		case "false":
+		default:
+			return Config{}, fmt.Errorf("%w: account owner exit flag must be true or false", ErrInvalidConfiguration)
+		}
+	}
 	return configuration, nil
 }
 

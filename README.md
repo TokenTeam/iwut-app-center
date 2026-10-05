@@ -129,7 +129,7 @@ commit IDs; report dirty-input fingerprints identify pre-commit verification.
 | `APP_CENTER_SERVICE_IDENTITY_AUDIENCE` | no | `iwut-auth-center` | audience for service-call JWS |
 | `APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64` | `serve` | — | strict standard Base64 of a PKCS#1/PKCS#8 RSA private-key PEM |
 | `APP_CENTER_SERVICE_IDENTITY_TTL` | no | `1m` | lifetime of each service-call JWS |
-| `APP_CENTER_SERVICE_CALLERS_B64` | `serve` | — | strict standard Base64 JSON registry of Auth service callers, public keys and the five `app.oauth.*` permissions |
+| `APP_CENTER_SERVICE_CALLERS_B64` | `serve` | — | strict standard Base64 JSON registry of Auth service callers, public keys and the five `app.oauth.*` permissions and explicitly enabled `app.account-owner-exit.*` permissions |
 | `APP_CENTER_SERVICE_IDENTITY_MAX_TTL` | no | `1m` | maximum lifetime accepted for Auth service-call JWS |
 | `APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW` | no | `30s` | clock-skew allowance for Auth service-call JWS |
 | `APP_CENTER_IDENTITY_ISSUER` | `serve` | — | Expected JWS `iss` |
@@ -235,3 +235,24 @@ reads. Pointer, approval snapshot or Filter corruption fails the whole request
 with HTTP 500 / gRPC INTERNAL. Responses use `Cache-Control: private, no-store`.
 Migration `0019_application_catalog_indexes` adds the partial Stable-candidate
 scan index required by the list query.
+
+### Account owner exit coordination (UC-APP-025)
+
+Migration `0020_account_owner_exit` adds permanent account fences and durable
+operations. `APP_CENTER_ACCOUNT_OWNER_EXIT_ENABLED` defaults to `false`. Enable
+only when Auth is ready to provide owner-exit decisions. The incoming
+`iwut-auth-center` registration needs `app.account-owner-exit.prepare`,
+`app.account-owner-exit.finish` and `app.account-owner-exit.read`; the outgoing
+App identity needs Auth's `auth.account-owner-exit.read` permission.
+
+These three provider methods are native gRPC only. All owned applications block
+exit, including unpublished drafts. This package does not transfer or close
+applications. Persistent fences apply to creation even when the provider is
+disabled; account-closure fences also prevent old USER identities from creating
+Tester memberships. Developer withdrawal alone preserves ordinary Tester use.
+
+The process runs a restartable reconciliation worker with five-second RPC
+deadlines, bounded exponential retry, and 500-membership cleanup batches. A
+missing or unavailable Auth decision never unlocks a fence. Closure completion
+removes this account's Tester episodes and empty creation quota, preserving
+other users, application Filters, and historical review attribution.

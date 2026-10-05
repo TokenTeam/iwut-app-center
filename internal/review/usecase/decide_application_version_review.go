@@ -37,7 +37,7 @@ type DecideApplicationVersionReviewCommand struct {
 
 type DecideApplicationVersionReviewHandler struct {
 	reviewPolicyProvider       port.ReviewPolicyProvider
-	developerSuspensionChecker port.DeveloperSuspensionChecker
+	developerSuspensionChecker port.DeveloperApprovalChecker
 	scopeCatalog               port.ScopeCatalog
 	launchPolicy               port.LaunchURLSubmissionPolicy
 	oauthPolicy                port.OAuthRedirectPolicy
@@ -48,7 +48,7 @@ type DecideApplicationVersionReviewHandler struct {
 
 func NewDecideApplicationVersionReviewHandler(
 	reviewPolicyProvider port.ReviewPolicyProvider,
-	developerSuspensionChecker port.DeveloperSuspensionChecker,
+	developerSuspensionChecker port.DeveloperApprovalChecker,
 	scopeCatalog port.ScopeCatalog,
 	launchPolicy port.LaunchURLSubmissionPolicy,
 	oauthPolicy port.OAuthRedirectPolicy,
@@ -159,8 +159,8 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 		return nil, err
 	}
 
-	suspended, err := handler.developerSuspensionChecker.AnySuspended(
-		ctx, []shared.AuthID{candidate.CurrentAdminID(), candidate.Review().SubmittedBy()},
+	suspended, err := handler.developerSuspensionChecker.BlocksApproval(
+		ctx, candidate.CurrentAdminID(), candidate.Review().SubmittedBy(),
 	)
 	if err != nil {
 		return nil, domain.NewDeveloperStatusUnavailableError(err)
@@ -178,7 +178,7 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 			return nil, domain.NewSystemPrincipalUnavailableError(err)
 		}
 		decision, err := candidate.Review().Reject(
-			policyVersion, domain.SystemSuspensionRejectionReason, systemAuthID, decidedAt,
+			policyVersion, domain.SystemEligibilityRejectionReason, systemAuthID, decidedAt,
 		)
 		if err != nil {
 			return nil, err

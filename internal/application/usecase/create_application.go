@@ -79,6 +79,8 @@ func (handler *CreateApplicationHandler) Handle(
 	err = handler.repository.CreateWithinQuota(ctx, application, handler.initialLimit)
 	if err != nil {
 		switch {
+		case errors.Is(err, shared.ErrAccountExitBlocked):
+			return nil, shared.ErrAccountExitBlocked
 		case errors.Is(err, port.ErrApplicationNameAlreadyExists):
 			return nil, domain.ErrApplicationNameAlreadyExists
 		case errors.Is(err, port.ErrApplicationQuotaExceeded):

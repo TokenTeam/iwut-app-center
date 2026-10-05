@@ -85,6 +85,9 @@ func (h *JoinApplicationAsTesterHandler) Handle(ctx context.Context, identity sh
 	return result, nil
 }
 func mapMembershipRepositoryError(err error) error {
+	if errors.Is(err, shared.ErrAccountExitBlocked) {
+		return shared.ErrAccountExitBlocked
+	}
 	for _, pair := range []struct{ source, target error }{
 		{port.ErrTesterJoinLinkInvalid, domain.ErrTesterJoinLinkInvalid},
 		{port.ErrApplicationTesterLimitReached, domain.ErrApplicationTesterLimitReached},

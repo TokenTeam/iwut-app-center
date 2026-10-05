@@ -10,10 +10,10 @@ import (
 	"iwut-app-center/internal/shared"
 )
 
-// SystemSuspensionRejectionReason is the fixed authoritative text used when a
+// SystemEligibilityRejectionReason is the fixed authoritative text used when a
 // suspended current administrator or Review submitter forces a System
 // rejection. It is not user supplied.
-const SystemSuspensionRejectionReason = "当前应用管理员或审核提交者已被暂停，待处理审核已由系统自动拒绝。"
+const SystemEligibilityRejectionReason = "当前应用管理员或审核提交者不满足账号与开发者资格要求，待处理审核已由系统自动拒绝。"
 
 // ReviewAction is the Command-level verb. Persisted status uses ReviewDecision.
 type ReviewAction string

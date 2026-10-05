@@ -77,7 +77,7 @@ func TestApplicationReviewDecision_BR_REV_015_RejectRequiresValidReason(t *testi
 
 func TestApplicationReviewDecision_BR_REV_015_SystemRejectionReasonIsValidAndApproveReasonIsOptional(t *testing.T) {
 	t.Parallel()
-	if err := ValidateReviewReason(SystemSuspensionRejectionReason); err != nil {
+	if err := ValidateReviewReason(SystemEligibilityRejectionReason); err != nil {
 		t.Fatalf("system rejection reason is invalid: %v", err)
 	}
 	review := pendingReviewForDecision(t)

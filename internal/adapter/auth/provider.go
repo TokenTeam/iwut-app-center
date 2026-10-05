@@ -17,8 +17,8 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(port.ScopeCatalog), new(*ScopeCatalogCache)),
 	NewReviewScopeCatalog,
 	wire.Bind(new(reviewport.ScopeCatalog), new(*ReviewScopeCatalog)),
-	NewGRPCDeveloperSuspensionChecker,
-	wire.Bind(new(reviewport.DeveloperSuspensionChecker), new(*GRPCDeveloperSuspensionChecker)),
+	NewGRPCDeveloperApprovalChecker,
+	wire.Bind(new(reviewport.DeveloperApprovalChecker), new(*GRPCDeveloperApprovalChecker)),
 	NewGRPCSystemPrincipalResolver,
 	wire.Bind(new(reviewport.SystemPrincipalResolver), new(*GRPCSystemPrincipalResolver)),
 )

@@ -18,6 +18,7 @@ import (
 	kratostransport "github.com/go-kratos/kratos/v2/transport"
 	"google.golang.org/grpc/codes"
 
+	ownerexitv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/account_owner_exit"
 	oauthclientv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/oauth_client"
 )
 
@@ -101,7 +102,7 @@ func NewServiceIdentityVerifier(configuration ServiceIdentityConfig, clock Clock
 				return nil, fmt.Errorf("service identity verifier: duplicate permission %q", permission)
 			}
 			switch permission {
-			case PermissionOAuthClientRead, PermissionOAuthClientVerify, PermissionOAuthRuntimeResolve, PermissionOAuthContextResolve, PermissionOAuthRedirectsRead:
+			case PermissionOAuthClientRead, PermissionOAuthClientVerify, PermissionOAuthRuntimeResolve, PermissionOAuthContextResolve, PermissionOAuthRedirectsRead, "app.account-owner-exit.prepare", "app.account-owner-exit.finish", "app.account-owner-exit.read":
 				permissions[permission] = struct{}{}
 			default:
 				return nil, fmt.Errorf("service identity verifier: unknown permission %q", permission)
@@ -192,6 +193,12 @@ func strictServiceJSON(data []byte, target any) error {
 
 func providerPermission(operation string) (string, bool) {
 	switch operation {
+	case ownerexitv1.AccountOwnerExitService_PrepareAccountOwnerExit_FullMethodName:
+		return "app.account-owner-exit.prepare", true
+	case ownerexitv1.AccountOwnerExitService_FinishAccountOwnerExit_FullMethodName:
+		return "app.account-owner-exit.finish", true
+	case ownerexitv1.AccountOwnerExitService_GetAccountOwnerExitStatus_FullMethodName:
+		return "app.account-owner-exit.read", true
 	case oauthclientv1.OAuthClientProviderService_GetClientConfiguration_FullMethodName:
 		return PermissionOAuthClientRead, true
 	case oauthclientv1.OAuthClientProviderService_VerifyClientSecret_FullMethodName:
@@ -231,7 +238,7 @@ func authenticationMiddleware(user *IdentityVerifier, service *ServiceIdentityVe
 			if err != nil {
 				return nil, serviceIdentityTransportError(err)
 			}
-			if !identity.HasPermission(permission) {
+			if !identity.HasPermission(permission) || strings.HasPrefix(permission, "app.account-owner-exit.") && identity.ServiceID != "iwut-auth-center" {
 				return nil, serviceIdentityTransportError(errServicePermissionDenied)
 			}
 			return handler(ctx, request)

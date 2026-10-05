@@ -40,10 +40,10 @@ type ReviewPolicyProvider interface {
 	) (*domain.VersionReviewPolicy, error)
 }
 
-// DeveloperSuspensionChecker is a narrow port for the Auth-owned suspension
+// DeveloperApprovalChecker is a narrow port for the Auth-owned suspension
 // fact. It intentionally does not expose Auth transport, tokens or claims.
-type DeveloperSuspensionChecker interface {
-	AnySuspended(ctx context.Context, authIDs []shared.AuthID) (bool, error)
+type DeveloperApprovalChecker interface {
+	BlocksApproval(ctx context.Context, currentAdminID, submittedBy shared.AuthID) (bool, error)
 }
 
 type SystemPrincipalResolver interface {

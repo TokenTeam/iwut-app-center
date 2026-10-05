@@ -52,9 +52,9 @@ func (fake *fakeSystemPrincipalResolver) ResolveReviewAutoRejection(context.Cont
 	return fake.authID, fake.err
 }
 
-func (fake *fakeSuspensionChecker) AnySuspended(_ context.Context, authIDs []shared.AuthID) (bool, error) {
+func (fake *fakeSuspensionChecker) BlocksApproval(_ context.Context, currentAdminID, submittedBy shared.AuthID) (bool, error) {
 	fake.calls++
-	fake.authIDs = append([]shared.AuthID{}, authIDs...)
+	fake.authIDs = []shared.AuthID{currentAdminID, submittedBy}
 	appendEvent(fake.events, "suspension")
 	return fake.suspended, fake.err
 }
@@ -307,7 +307,7 @@ func TestDecideApplicationVersionReview_BR_REV_014_018_SuspendedAutoRejectionUse
 		t.Fatal("auto rejection did not preserve the initiating reviewer and injected System decision actor")
 	}
 	if repository.decidedDecision.Outcome() != domain.ReviewDecisionRejected ||
-		repository.decidedDecision.Reason() != domain.SystemSuspensionRejectionReason ||
+		repository.decidedDecision.Reason() != domain.SystemEligibilityRejectionReason ||
 		repository.decidedDecision.ApprovalValidation() != nil {
 		t.Fatalf("auto decision = %#v", repository.decidedDecision)
 	}
@@ -498,7 +498,7 @@ func approveCommand() DecideApplicationVersionReviewCommand {
 func newDecisionHandler(
 	repository port.ApplicationReviewDecisionRepository,
 	policyProvider port.ReviewPolicyProvider,
-	suspension port.DeveloperSuspensionChecker,
+	suspension port.DeveloperApprovalChecker,
 	catalog port.ScopeCatalog,
 	launchPolicy port.LaunchURLSubmissionPolicy,
 	clock port.Clock,
@@ -509,7 +509,7 @@ func newDecisionHandler(
 func newDecisionHandlerWithSystemID(
 	repository port.ApplicationReviewDecisionRepository,
 	policyProvider port.ReviewPolicyProvider,
-	suspension port.DeveloperSuspensionChecker,
+	suspension port.DeveloperApprovalChecker,
 	catalog port.ScopeCatalog,
 	launchPolicy port.LaunchURLSubmissionPolicy,
 	clock port.Clock,

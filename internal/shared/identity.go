@@ -20,6 +20,7 @@ const (
 	DeveloperStatusApproved  DeveloperStatus = "APPROVED"
 	DeveloperStatusRejected  DeveloperStatus = "REJECTED"
 	DeveloperStatusSuspended DeveloperStatus = "SUSPENDED"
+	DeveloperStatusWithdrawn DeveloperStatus = "WITHDRAWN"
 )
 
 // DeveloperIdentity contains only the trusted identity facts needed by the

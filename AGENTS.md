@@ -40,19 +40,16 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-024 — query the public Application Catalog.** Design input is
-`../../docs/app-center/briefs/UC-APP-024.md` plus the engineering baseline and
-implements README. Deliver Stable-backed public list and detail queries that
-combine the current approved public Profile, UC-APP-023 exact-major unified
-launch target and current Application Filter in one read snapshot. Preserve
-optional trusted identity, client-side Filter evaluation, test-only exclusion,
-ApplicationId keyset pagination, whole-query invariant failure, bounded short
-pages, batch Mongo access, an index-only 0019 migration, HTTP/gRPC transport and
-backend acceptance. Do not implement test-only listings, Filter evaluation,
-search/ranking, OAuth client discovery, Application disable/suspension,
-frontend behavior, sessions, grants or tokens.
-Required final tier: `make check-full`. Commit API inputs and generated outputs
-before the service gitlink, and keep all commits local.
+**UC-APP-025 — coordinate account owner exit and personal-state cleanup.**
+Read `../../docs/app-center/briefs/UC-APP-025.md` plus the engineering baseline
+and implements README. Deliver native gRPC Auth-only Prepare/Finish/GetStatus,
+persistent owner fences, creation and closure-specific Tester write checks,
+restartable decision reconciliation, bounded personal cleanup, WITHDRAWN USER
+identity parsing and role-aware Developer/account lifecycle approval checks.
+Do not implement ownership transfer, application closure or App suspension.
+Required final tier: `make check-auth-app`; the real Auth decision callback
+requires the Auth UC024 provider to be integrated. Commit API inputs and outputs
+before service gitlinks and keep all commits local.
 
 ## Verification entry points
 

@@ -46,9 +46,12 @@ import (
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
 	scopecatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/scope_catalog"
 	systemprincipalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/system_principal"
+	authadapter "iwut-app-center/internal/adapter/auth"
+	"iwut-app-center/internal/adapter/generator"
 	mongoadapter "iwut-app-center/internal/adapter/mongo"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/config"
+	"iwut-app-center/internal/shared"
 )
 
 // mongoIntegrationURIEnv is the same switch the MongoDB adapter integration
@@ -282,7 +285,7 @@ func (server *e2eDeveloperStatusServer) BatchGetDeveloperStatuses(
 		if !exists {
 			return nil, status.Error(codes.NotFound, "developer status not found")
 		}
-		entries = append(entries, &developerstatusv1.DeveloperStatusEntry{AuthId: authID, DeveloperStatus: current})
+		entries = append(entries, &developerstatusv1.DeveloperStatusEntry{AccountStatus: developerstatusv1.AccountStatus_ACCOUNT_STATUS_ACTIVE, AuthId: authID, DeveloperStatus: current})
 	}
 	return &developerstatusv1.BatchGetDeveloperStatusesResponse{Entries: entries}, nil
 }
@@ -1248,6 +1251,40 @@ func TestE2E_UCAPP005_RealAuthProcessServiceIdentity(t *testing.T) {
 		result.GetReview().GetDecision().GetDecidedBy() != systemPrincipal.AuthID ||
 		result.GetVersion().GetUpdatedBy() != systemPrincipal.AuthID {
 		t.Fatalf("real Auth auto-rejection = result:%v system:%q", result, systemPrincipal.AuthID)
+	}
+
+	// Exercise the newly extended real provider using production service signing,
+	// including a minimal CLOSED tombstone with no prior Developer projection.
+	_, err = client.Database(authDatabaseName).Collection("auth_principals").InsertMany(ctx, []any{
+		bson.M{"authId": "lifecycle-owner", "principalType": "USER", "accountStatus": "ACTIVE", "developerStatus": "APPROVED"},
+		bson.M{"authId": "lifecycle-withdrawn", "principalType": "USER", "accountStatus": "ACTIVE", "developerStatus": "WITHDRAWN"},
+		bson.M{"authId": "lifecycle-closed", "principalType": "USER", "accountStatus": "CLOSED"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := provideServiceIdentitySigner(configuration, generator.NewSystemClock())
+	if err != nil {
+		t.Fatal(err)
+	}
+	authConnection, authCleanup, err := provideAuthScopeCatalogConnection(configuration, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authCleanup()
+	approval, err := authadapter.NewGRPCDeveloperApprovalChecker(authConnection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, historic := range []string{"lifecycle-withdrawn", "lifecycle-closed"} {
+		blocked, err := approval.BlocksApproval(ctx, "lifecycle-owner", shared.AuthID(historic))
+		if err != nil || blocked {
+			t.Fatalf("historic %s blocked=%v err=%v", historic, blocked, err)
+		}
+	}
+	blocked, err := approval.BlocksApproval(ctx, "lifecycle-closed", "lifecycle-closed")
+	if err != nil || !blocked {
+		t.Fatalf("closed owner blocked=%v err=%v", blocked, err)
 	}
 }
 

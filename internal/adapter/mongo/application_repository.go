@@ -86,6 +86,9 @@ func (repository *ApplicationRepository) createWithinQuotaTransaction(
 	document applicationDocument,
 	initialLimit int32,
 ) error {
+	if err := requireOwnerWritable(ctx, repository.database, document.AdminID, false); err != nil {
+		return err
+	}
 	applications := repository.database.Collection(applicationsCollectionName)
 	quotas := repository.database.Collection(applicationCreationQuotasCollectionName)
 

@@ -299,7 +299,7 @@ func parseDeveloperStatus(value string) (shared.DeveloperStatus, bool) {
 	case shared.DeveloperStatusPending,
 		shared.DeveloperStatusApproved,
 		shared.DeveloperStatusRejected,
-		shared.DeveloperStatusSuspended:
+		shared.DeveloperStatusSuspended, shared.DeveloperStatusWithdrawn:
 		return status, true
 	default:
 		return "", false

@@ -104,7 +104,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		decision := integrationRejectedDecision(
 			t,
 			"review.v1",
-			reviewdomain.SystemSuspensionRejectionReason,
+			reviewdomain.SystemEligibilityRejectionReason,
 			"auth-system",
 			decidedAt,
 		)

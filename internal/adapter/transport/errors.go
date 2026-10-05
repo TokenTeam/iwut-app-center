@@ -7,6 +7,7 @@ import (
 	filterdomain "iwut-app-center/internal/filter/domain"
 	oauthclientdomain "iwut-app-center/internal/oauthclient/domain"
 	profiledomain "iwut-app-center/internal/profile/domain"
+	"iwut-app-center/internal/shared"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -428,6 +429,9 @@ func reviewErrorCode(err error) reviewdomain.ErrorCode {
 // toTransportError maps any error crossing the transport boundary. Unknown and
 // infrastructure errors collapse to Internal without leaking cause or details.
 func toTransportError(err error) error {
+	if errors.Is(err, shared.ErrAccountExitBlocked) {
+		return transportStatus(codes.FailedPrecondition, "ERROR_REASON_ACCOUNT_OWNER_EXIT_BLOCKED", "account lifecycle prevents new state")
+	}
 	if err == nil {
 		return nil
 	}
