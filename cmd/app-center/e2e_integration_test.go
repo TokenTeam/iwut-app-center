@@ -45,6 +45,7 @@ import (
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
 	applicationclosurev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_closure"
+	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
@@ -1162,6 +1163,7 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	)
 	adminToken := e2eSignIdentity(t, privateKey, adminID, "APPROVED")
 	reviewerToken := e2eSignReviewerIdentity(t, privateKey, reviewerID, "app.version.review")
+	operatorToken := e2eSignReviewerIdentity(t, privateKey, "auth-dual-service-operator", "app.application.suspend", "app.application.restore")
 
 	addresses := e2eReserveAddresses(t, 2)
 	httpAddress, grpcAddress := addresses[0], addresses[1]
@@ -1169,19 +1171,20 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 		"example.edu": {netip.MustParseAddr("8.8.8.8")},
 	}}
 	configuration, err := config.Load(e2eEnvironment(map[string]string{
-		config.MongoURIEnv:                  os.Getenv(mongoIntegrationURIEnv),
-		config.MongoDatabaseEnv:             database.Name(),
-		config.HTTPAddrEnv:                  httpAddress,
-		config.GRPCAddrEnv:                  grpcAddress,
-		config.IdentityIssuerEnv:            e2eIssuer,
-		config.IdentityAudienceEnv:          e2eAudience,
-		config.IdentityPublicKeysEnv:        e2eKeyID + "=" + publicKeyPath + ",auth-close-e2e=" + authIdentityPublicKeyPath,
-		config.AuthScopeCatalogTargetEnv:    authProxy.Address(),
-		config.ScopeCatalogCacheTTLEnv:      "1ns",
-		config.ServiceIdentityIDEnv:         serviceID,
-		config.ServiceIdentityKIDEnv:        serviceKID,
-		config.ServiceIdentityPrivateKeyEnv: servicePrivateKey,
-		config.ApplicationClosureEnabledEnv: "true",
+		config.MongoURIEnv:                     os.Getenv(mongoIntegrationURIEnv),
+		config.MongoDatabaseEnv:                database.Name(),
+		config.HTTPAddrEnv:                     httpAddress,
+		config.GRPCAddrEnv:                     grpcAddress,
+		config.IdentityIssuerEnv:               e2eIssuer,
+		config.IdentityAudienceEnv:             e2eAudience,
+		config.IdentityPublicKeysEnv:           e2eKeyID + "=" + publicKeyPath + ",auth-close-e2e=" + authIdentityPublicKeyPath,
+		config.AuthScopeCatalogTargetEnv:       authProxy.Address(),
+		config.ScopeCatalogCacheTTLEnv:         "1ns",
+		config.ServiceIdentityIDEnv:            serviceID,
+		config.ServiceIdentityKIDEnv:           serviceKID,
+		config.ServiceIdentityPrivateKeyEnv:    servicePrivateKey,
+		config.ApplicationClosureEnabledEnv:    "true",
+		config.ApplicationOperationsEnabledEnv: "true",
 	}))
 	if err != nil {
 		t.Fatalf("load configuration: %v", err)
@@ -1218,6 +1221,25 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	var application applicationv1.CreateApplicationResponse
 	if err := protojson.Unmarshal(applicationBody, &application); err != nil {
 		t.Fatalf("decode application: %v", err)
+	}
+	getStatus, getHeaders, getBody := e2eHTTPAdminTransfer(t, httpAddress, operatorToken, http.MethodGet, "/v1/applications/"+application.GetId()+"/platform-availability", nil)
+	var initialAvailability applicationoperationsv1.GetApplicationPlatformAvailabilityResponse
+	if err := protojson.Unmarshal(getBody, &initialAvailability); getStatus != http.StatusOK || err != nil || initialAvailability.GetAvailability().GetPlatformAvailabilityRevision() != 1 || getHeaders.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("initial availability status=%d cache=%q body=%s error=%v", getStatus, getHeaders.Get("Cache-Control"), getBody, err)
+	}
+	suspendStatus, suspendHeaders, suspendBody := e2eHTTPAdminTransfer(t, httpAddress, operatorToken, http.MethodPost, "/v1/applications/"+application.GetId()+":suspend", []byte(`{"expectedLifecycleRevision":"1","expectedPlatformAvailabilityRevision":"1","reason":"cross-service incident"}`))
+	var suspended applicationoperationsv1.SuspendApplicationResponse
+	if err := protojson.Unmarshal(suspendBody, &suspended); suspendStatus != http.StatusOK || err != nil || suspended.GetAvailability().GetPlatformAvailabilityStatus() != applicationoperationsv1.PlatformAvailabilityStatus_PLATFORM_AVAILABILITY_STATUS_SUSPENDED || suspended.GetAvailability().GetPlatformAvailabilityRevision() != 2 || suspendHeaders.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("suspend status=%d cache=%q body=%s error=%v", suspendStatus, suspendHeaders.Get("Cache-Control"), suspendBody, err)
+	}
+	forbiddenStatus, _, _ := e2eHTTPAdminTransfer(t, httpAddress, adminToken, http.MethodPost, "/v1/applications/"+application.GetId()+":restore", []byte(`{"expectedLifecycleRevision":"1","expectedPlatformAvailabilityRevision":"2","reason":"unauthorized restore"}`))
+	if forbiddenStatus != http.StatusForbidden {
+		t.Fatalf("unprivileged restore status=%d, want 403", forbiddenStatus)
+	}
+	restoreStatus, _, restoreBody := e2eHTTPAdminTransfer(t, httpAddress, operatorToken, http.MethodPost, "/v1/applications/"+application.GetId()+":restore", []byte(`{"expectedLifecycleRevision":"1","expectedPlatformAvailabilityRevision":"2","reason":"incident resolved"}`))
+	var restored applicationoperationsv1.RestoreApplicationResponse
+	if err := protojson.Unmarshal(restoreBody, &restored); restoreStatus != http.StatusOK || err != nil || restored.GetAvailability().GetPlatformAvailabilityStatus() != applicationoperationsv1.PlatformAvailabilityStatus_PLATFORM_AVAILABILITY_STATUS_AVAILABLE || restored.GetAvailability().GetPlatformAvailabilityRevision() != 3 {
+		t.Fatalf("restore status=%d body=%s error=%v", restoreStatus, restoreBody, err)
 	}
 	versionStatus, _, versionBody := e2eHTTPCreateVersion(
 		t, httpAddress, adminToken, application.GetId(), "v1.0.0",

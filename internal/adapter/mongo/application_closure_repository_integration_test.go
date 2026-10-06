@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	applicationdomain "iwut-app-center/internal/application/domain"
 	filterport "iwut-app-center/internal/filter/port"
@@ -281,15 +282,16 @@ func TestApplicationClosureMigrationIntegration_BackfillsStrict0021(t *testing.T
 	if err := NewApplicationRepository(database).CreateWithinQuota(ctx, application, 10); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: applicationsCollectionName}, {Key: "validator", Value: applicationOwnershipValidator()}}).Err(); err != nil {
+	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.M{"id": application.ID().String()}, bson.M{"$unset": bson.M{"lifecycleStatus": "", "lifecycleRevision": "", "platformAvailabilityStatus": "", "platformAvailabilityRevision": "", "lastPlatformOperationEventId": "", "suspendedAt": "", "restoredAt": ""}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.M{"id": application.ID().String()}, bson.M{"$unset": bson.M{"lifecycleStatus": "", "lifecycleRevision": ""}}); err != nil {
+	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: applicationsCollectionName}, {Key: "validator", Value: applicationOwnershipValidator()}}).Err(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.Collection(migrationLedgerCollectionName).DeleteOne(ctx, bson.M{"_id": applicationClosureMigrationID}); err != nil {
 		t.Fatal(err)
 	}
+	_, _ = database.Collection(migrationLedgerCollectionName).DeleteOne(ctx, bson.M{"_id": applicationOperationsMigrationID})
 	if err := NewMigrator(database).Migrate(ctx); err != nil {
 		t.Fatalf("Migrate() = %v", err)
 	}

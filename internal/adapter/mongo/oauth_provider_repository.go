@@ -68,15 +68,15 @@ func (r *OAuthProviderRepository) clientConfiguration(ctx context.Context, clien
 	if err != nil {
 		return nil, oauthport.ErrStateInconsistent
 	}
-	appErr := r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": registration.ApplicationID().String(), "lifecycleStatus": "ACTIVE"}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
-	if errors.Is(appErr, drivermongo.ErrNoDocuments) {
+	gate, appErr := readApplicationAvailabilityGate(ctx, r.database, registration.ApplicationID().String())
+	if appErr != nil {
+		return nil, oauthport.ErrStateInconsistent
+	}
+	if gate != applicationGateAvailable {
 		if hideUnknown {
 			return nil, oauthport.ErrRuntimeUnavailable
 		}
 		return nil, oauthport.ErrApplicationNotFound
-	}
-	if appErr != nil {
-		return nil, appErr
 	}
 	identity := registration.ClientByID(clientID)
 	if identity == nil {
@@ -213,8 +213,15 @@ func (r *OAuthProviderRepository) resolveRuntimeSnapshot(ctx context.Context, cl
 	if configuration.RegistrationRevision != expected {
 		return nil, oauthport.ErrRuntimeVersionChanged
 	}
+	gate, err := readApplicationAvailabilityGate(ctx, r.database, configuration.ApplicationID.String())
+	if err != nil {
+		return nil, oauthport.ErrStateInconsistent
+	}
+	if gate != applicationGateAvailable {
+		return nil, oauthport.ErrRuntimeUnavailable
+	}
 	var app applicationDocument
-	if err = r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": configuration.ApplicationID.String(), "lifecycleStatus": "ACTIVE"}).Decode(&app); errors.Is(err, drivermongo.ErrNoDocuments) {
+	if err = r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": configuration.ApplicationID.String()}).Decode(&app); errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, oauthport.ErrRuntimeUnavailable
 	} else if err != nil {
 		return nil, err
@@ -395,10 +402,12 @@ func (r *OAuthProviderRepository) currentDisplay(ctx context.Context, applicatio
 
 func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, applicationID shared.ApplicationID, observedAt time.Time) (*oauthdomain.PublishedRedirectSnapshot, error) {
 	result, err := r.snapshot(ctx, func(tx context.Context) (any, error) {
-		if err := r.database.Collection(applicationsCollectionName).FindOne(tx, bson.M{"id": applicationID.String(), "lifecycleStatus": "ACTIVE"}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err(); errors.Is(err, drivermongo.ErrNoDocuments) {
+		gate, err := readApplicationAvailabilityGate(tx, r.database, applicationID.String())
+		if err != nil {
+			return nil, oauthport.ErrStateInconsistent
+		}
+		if gate != applicationGateAvailable {
 			return nil, oauthport.ErrApplicationNotFound
-		} else if err != nil {
-			return nil, err
 		}
 		type registrationTypes struct{ public, confidential bool }
 		registrations := map[oauthdomain.Channel]registrationTypes{}

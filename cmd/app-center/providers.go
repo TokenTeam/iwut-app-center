@@ -129,9 +129,10 @@ func provideServiceIdentityVerifier(configuration transport.ServiceIdentityConfi
 
 func provideServerConfig(configuration config.Config) transport.ServerConfig {
 	return transport.ServerConfig{
-		HTTPAddr:                  configuration.HTTPAddr,
-		GRPCAddr:                  configuration.GRPCAddr,
-		ApplicationClosureEnabled: configuration.ApplicationClosureEnabled,
+		HTTPAddr:                     configuration.HTTPAddr,
+		GRPCAddr:                     configuration.GRPCAddr,
+		ApplicationClosureEnabled:    configuration.ApplicationClosureEnabled,
+		ApplicationOperationsEnabled: configuration.ApplicationOperationsEnabled,
 	}
 }
 

@@ -17,28 +17,29 @@ import (
 )
 
 const (
-	TesterJoinURLPrefixEnv       = "APP_CENTER_TESTER_JOIN_URL_PREFIX"
-	InitialApplicationQuotaEnv   = "APP_CENTER_INITIAL_APPLICATION_QUOTA"
-	ScopeCatalogCacheTTLEnv      = "APP_CENTER_SCOPE_CATALOG_CACHE_TTL"
-	HTTPAddrEnv                  = "APP_CENTER_HTTP_ADDR"
-	GRPCAddrEnv                  = "APP_CENTER_GRPC_ADDR"
-	MongoURIEnv                  = "APP_CENTER_MONGO_URI"
-	MongoDatabaseEnv             = "APP_CENTER_MONGO_DATABASE"
-	IdentityIssuerEnv            = "APP_CENTER_IDENTITY_ISSUER"
-	IdentityAudienceEnv          = "APP_CENTER_IDENTITY_AUDIENCE"
-	IdentityMaxTTLEnv            = "APP_CENTER_IDENTITY_MAX_TTL"
-	IdentityClockSkewEnv         = "APP_CENTER_IDENTITY_CLOCK_SKEW"
-	IdentityPublicKeysEnv        = "APP_CENTER_IDENTITY_PUBLIC_KEYS"
-	AuthScopeCatalogTargetEnv    = "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET"
-	ServiceIdentityIDEnv         = "APP_CENTER_SERVICE_IDENTITY_ID"
-	ServiceIdentityKIDEnv        = "APP_CENTER_SERVICE_IDENTITY_KID"
-	ServiceIdentityAudienceEnv   = "APP_CENTER_SERVICE_IDENTITY_AUDIENCE"
-	ServiceIdentityPrivateKeyEnv = "APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64"
-	ServiceIdentityTTLEnv        = "APP_CENTER_SERVICE_IDENTITY_TTL"
-	ServiceCallersEnv            = "APP_CENTER_SERVICE_CALLERS_B64"
-	ServiceMaxTTLEnv             = "APP_CENTER_SERVICE_IDENTITY_MAX_TTL"
-	ServiceClockSkewEnv          = "APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW"
-	ApplicationClosureEnabledEnv = "APP_CENTER_APPLICATION_CLOSURE_ENABLED"
+	TesterJoinURLPrefixEnv          = "APP_CENTER_TESTER_JOIN_URL_PREFIX"
+	InitialApplicationQuotaEnv      = "APP_CENTER_INITIAL_APPLICATION_QUOTA"
+	ScopeCatalogCacheTTLEnv         = "APP_CENTER_SCOPE_CATALOG_CACHE_TTL"
+	HTTPAddrEnv                     = "APP_CENTER_HTTP_ADDR"
+	GRPCAddrEnv                     = "APP_CENTER_GRPC_ADDR"
+	MongoURIEnv                     = "APP_CENTER_MONGO_URI"
+	MongoDatabaseEnv                = "APP_CENTER_MONGO_DATABASE"
+	IdentityIssuerEnv               = "APP_CENTER_IDENTITY_ISSUER"
+	IdentityAudienceEnv             = "APP_CENTER_IDENTITY_AUDIENCE"
+	IdentityMaxTTLEnv               = "APP_CENTER_IDENTITY_MAX_TTL"
+	IdentityClockSkewEnv            = "APP_CENTER_IDENTITY_CLOCK_SKEW"
+	IdentityPublicKeysEnv           = "APP_CENTER_IDENTITY_PUBLIC_KEYS"
+	AuthScopeCatalogTargetEnv       = "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET"
+	ServiceIdentityIDEnv            = "APP_CENTER_SERVICE_IDENTITY_ID"
+	ServiceIdentityKIDEnv           = "APP_CENTER_SERVICE_IDENTITY_KID"
+	ServiceIdentityAudienceEnv      = "APP_CENTER_SERVICE_IDENTITY_AUDIENCE"
+	ServiceIdentityPrivateKeyEnv    = "APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64"
+	ServiceIdentityTTLEnv           = "APP_CENTER_SERVICE_IDENTITY_TTL"
+	ServiceCallersEnv               = "APP_CENTER_SERVICE_CALLERS_B64"
+	ServiceMaxTTLEnv                = "APP_CENTER_SERVICE_IDENTITY_MAX_TTL"
+	ServiceClockSkewEnv             = "APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW"
+	ApplicationClosureEnabledEnv    = "APP_CENTER_APPLICATION_CLOSURE_ENABLED"
+	ApplicationOperationsEnabledEnv = "APP_CENTER_APPLICATION_OPERATIONS_ENABLED"
 
 	DefaultTesterJoinURLPrefix     = "https://app.example/tester/join"
 	DefaultScopeCatalogCacheTTL    = 5 * time.Minute
@@ -62,11 +63,12 @@ type LookupEnv func(key string) (value string, found bool)
 // receive the scalar values they need through constructors and never read the
 // environment themselves.
 type Config struct {
-	OwnerExitEnabled          bool
-	ApplicationClosureEnabled bool
-	TesterJoinURLPrefix       string
-	InitialApplicationQuota   int32
-	ScopeCatalogCacheTTL      time.Duration
+	OwnerExitEnabled             bool
+	ApplicationClosureEnabled    bool
+	ApplicationOperationsEnabled bool
+	TesterJoinURLPrefix          string
+	InitialApplicationQuota      int32
+	ScopeCatalogCacheTTL         time.Duration
 
 	HTTPAddr string
 	GRPCAddr string
@@ -294,6 +296,15 @@ func Load(lookup LookupEnv) (Config, error) {
 		case "false":
 		default:
 			return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalidConfiguration, ApplicationClosureEnabledEnv)
+		}
+	}
+	if raw, found := lookup(ApplicationOperationsEnabledEnv); found {
+		switch raw {
+		case "true":
+			configuration.ApplicationOperationsEnabled = true
+		case "false":
+		default:
+			return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalidConfiguration, ApplicationOperationsEnabledEnv)
 		}
 	}
 	return configuration, nil

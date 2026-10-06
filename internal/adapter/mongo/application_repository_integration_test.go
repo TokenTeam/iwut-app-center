@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 22)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 23)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -358,7 +358,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 22)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 23)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
@@ -446,6 +446,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		accountOwnerExitMigrationID,
 		applicationAdminTransferMigrationID,
 		applicationClosureMigrationID,
+		applicationOperationsMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -494,6 +495,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: accountOwnerExitMigrationID, apply: sequential.applyAccountOwnerExitMigration},
 		{id: applicationAdminTransferMigrationID, apply: sequential.applyApplicationAdminTransferMigration},
 		{id: applicationClosureMigrationID, apply: sequential.applyApplicationClosureMigration},
+		{id: applicationOperationsMigrationID, apply: sequential.applyApplicationOperationsMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)

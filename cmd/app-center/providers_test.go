@@ -49,12 +49,16 @@ func TestProvideServerConfigMapsAddresses(t *testing.T) {
 
 	configuration := validConfig()
 	configuration.ApplicationClosureEnabled = true
+	configuration.ApplicationOperationsEnabled = true
 	serverConfig := provideServerConfig(configuration)
 	if serverConfig.HTTPAddr != "127.0.0.1:0" || serverConfig.GRPCAddr != "127.0.0.1:0" {
 		t.Fatalf("server config = %#v", serverConfig)
 	}
 	if !serverConfig.ApplicationClosureEnabled {
 		t.Fatalf("server config = %#v, want application closure enabled", serverConfig)
+	}
+	if !serverConfig.ApplicationOperationsEnabled {
+		t.Fatalf("server config = %#v, want application operations enabled", serverConfig)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	applicationdomain "iwut-app-center/internal/application/domain"
 	oauthdomain "iwut-app-center/internal/oauthclient/domain"
@@ -20,10 +21,10 @@ func TestApplicationAdminTransferMigrationIntegration_BackfillsAfterCollMod(t *t
 	if err := NewApplicationRepository(database).CreateWithinQuota(ctx, application, 10); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: applicationsCollectionName}, {Key: "validator", Value: applicationValidator()}}).Err(); err != nil {
+	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.D{{Key: "id", Value: application.ID().String()}}, bson.D{{Key: "$unset", Value: bson.D{{Key: "ownershipRevision", Value: ""}, {Key: "lifecycleStatus", Value: ""}, {Key: "lifecycleRevision", Value: ""}, {Key: "platformAvailabilityStatus", Value: ""}, {Key: "platformAvailabilityRevision", Value: ""}, {Key: "lastPlatformOperationEventId", Value: ""}, {Key: "suspendedAt", Value: ""}, {Key: "restoredAt", Value: ""}}}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.D{{Key: "id", Value: application.ID().String()}}, bson.D{{Key: "$unset", Value: bson.D{{Key: "ownershipRevision", Value: ""}, {Key: "lifecycleStatus", Value: ""}, {Key: "lifecycleRevision", Value: ""}}}}); err != nil {
+	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: applicationsCollectionName}, {Key: "validator", Value: applicationValidator()}}).Err(); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: ownerOperations}, {Key: "validator", Value: accountOwnerExitOperationValidator(false)}}).Err(); err != nil {
@@ -42,6 +43,7 @@ func TestApplicationAdminTransferMigrationIntegration_BackfillsAfterCollMod(t *t
 	if _, err := database.Collection(migrationLedgerCollectionName).DeleteOne(ctx, bson.D{{Key: "_id", Value: applicationAdminTransferMigrationID}}); err != nil {
 		t.Fatal(err)
 	}
+	_, _ = database.Collection(migrationLedgerCollectionName).DeleteMany(ctx, bson.M{"_id": bson.M{"$in": bson.A{applicationClosureMigrationID, applicationOperationsMigrationID}}})
 
 	if err := NewMigrator(database).Migrate(ctx); err != nil {
 		t.Fatalf("apply 0021 over strict 0020 validators: %v", err)

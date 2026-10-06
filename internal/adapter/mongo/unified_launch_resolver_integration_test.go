@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
 
+	"iwut-app-center/internal/application/domain"
 	catalogdomain "iwut-app-center/internal/catalog/domain"
 	catalogport "iwut-app-center/internal/catalog/port"
 	publicationdomain "iwut-app-center/internal/publication/domain"
@@ -155,6 +156,19 @@ func TestUnifiedLaunchResolverIntegration_UCAPP023_SelectionFallbackAndPrivacy(t
 	}
 	if descriptor, err := fixture.resolve(t, resolver, fixture.testAuthID, "camera.read.v1", "stable.host.v1"); descriptor != nil || !errors.Is(err, catalogport.ErrApplicationRuntimeStateInconsistent) {
 		t.Fatalf("authorized Test corruption descriptor=%#v error=%v", descriptor, err)
+	}
+}
+
+func TestUnifiedLaunchResolverIntegration_UCAPP028_SuspendedApplicationIsUnavailable(t *testing.T) {
+	fixture := newUnifiedLaunchFixture(t, integrationClient(t))
+	eventID := domain.ApplicationOperationEventID("0199b33c-d040-7abc-8abc-123456789012")
+	_, err := NewApplicationOperationsRepository(fixture.db).Set(t.Context(), fixture.testSeed.applicationID, "platform-operator", domain.PlatformAvailabilitySuspended, 1, 1, "temporary suspension", eventID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor, err := fixture.resolve(t, NewUnifiedLaunchResolver(fixture.db), fixture.testAuthID, "camera.read.v1", "stable.host.v1")
+	if descriptor != nil || !errors.Is(err, catalogport.ErrApplicationNotFound) {
+		t.Fatalf("descriptor=%#v error=%v", descriptor, err)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
+	applicationdomain "iwut-app-center/internal/application/domain"
 	"iwut-app-center/internal/shared"
 	testerdomain "iwut-app-center/internal/tester/domain"
 	testerport "iwut-app-center/internal/tester/port"
@@ -293,6 +294,22 @@ func testerMembershipFixture(t *testing.T, client *drivermongo.Client, name stri
 	app := createVersionTestApplication(t, db, "tester-admin", name)
 	link := createIntegrationTesterJoinLink(t, NewApplicationTesterJoinLinkRepository(db), app.ID(), app.AdminID(), nil, newIntegrationTesterJoinLink(t, app.ID(), app.AdminID())).JoinLink()
 	return db, link
+}
+
+func TestApplicationTesterMembershipRepositoryIntegration_UCAPP028_SuspendedApplicationRejectsNewJoin(t *testing.T) {
+	db, link := testerMembershipFixture(t, integrationClient(t), "tester-suspended")
+	eventID := applicationdomain.ApplicationOperationEventID("0199b33c-d051-7abc-8abc-123456789012")
+	if _, err := NewApplicationOperationsRepository(db).Set(t.Context(), link.ApplicationID(), "platform-operator", applicationdomain.PlatformAvailabilitySuspended, 1, 1, "tester incident", eventID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	candidate := newIntegrationTesterMembership(t, link, "new-tester")
+	result, err := NewApplicationTesterMembershipRepository(db).Join(t.Context(), link.JoinLinkID(), link.TokenHash().Bytes(), candidate.TesterAuthID(), candidate, 100)
+	if result != nil || !errors.Is(err, testerport.ErrTesterJoinLinkInvalid) {
+		t.Fatalf("Join()=(%#v,%v)", result, err)
+	}
+	if count, countErr := db.Collection(applicationTesterMembershipsCollectionName).CountDocuments(t.Context(), bson.M{"applicationId": link.ApplicationID().String()}); countErr != nil || count != 0 {
+		t.Fatalf("memberships=%d error=%v", count, countErr)
+	}
 }
 func newIntegrationTesterMembership(t *testing.T, link *testerdomain.ApplicationTesterJoinLink, user shared.AuthID) *testerdomain.ApplicationTesterMembership {
 	t.Helper()

@@ -20,17 +20,22 @@ var errCorruptApplicationReviewDocument = errors.New("corrupt application review
 // a technical write fence owned only by this adapter; it never enters the
 // Application domain entity.
 type applicationDocument struct {
-	ID                          string    `bson:"id"`
-	Name                        string    `bson:"name"`
-	NameKey                     string    `bson:"nameKey"`
-	AdminID                     string    `bson:"adminId"`
-	OwnershipRevision           int64     `bson:"ownershipRevision"`
-	LifecycleStatus             string    `bson:"lifecycleStatus"`
-	LifecycleRevision           int64     `bson:"lifecycleRevision"`
-	CreatedAt                   time.Time `bson:"createdAt"`
-	NextVersionSequence         int32     `bson:"nextVersionSequence"`
-	NextProfileRevisionSequence int32     `bson:"nextProfileRevisionSequence"`
-	CoordinationRevision        int64     `bson:"coordinationRevision"`
+	ID                           string     `bson:"id"`
+	Name                         string     `bson:"name"`
+	NameKey                      string     `bson:"nameKey"`
+	AdminID                      string     `bson:"adminId"`
+	OwnershipRevision            int64      `bson:"ownershipRevision"`
+	LifecycleStatus              string     `bson:"lifecycleStatus"`
+	LifecycleRevision            int64      `bson:"lifecycleRevision"`
+	PlatformAvailabilityStatus   string     `bson:"platformAvailabilityStatus"`
+	PlatformAvailabilityRevision int64      `bson:"platformAvailabilityRevision"`
+	LastOperationEventID         *string    `bson:"lastPlatformOperationEventId"`
+	SuspendedAt                  *time.Time `bson:"suspendedAt"`
+	RestoredAt                   *time.Time `bson:"restoredAt"`
+	CreatedAt                    time.Time  `bson:"createdAt"`
+	NextVersionSequence          int32      `bson:"nextVersionSequence"`
+	NextProfileRevisionSequence  int32      `bson:"nextProfileRevisionSequence"`
+	CoordinationRevision         int64      `bson:"coordinationRevision"`
 }
 
 type applicationCreationQuotaDocument struct {
@@ -125,23 +130,28 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 	}
 
 	return applicationDocument{
-		ID:                          application.ID().String(),
-		Name:                        application.Name().String(),
-		NameKey:                     application.Name().Key(),
-		AdminID:                     application.AdminID().String(),
-		OwnershipRevision:           1,
-		LifecycleStatus:             string(domain.ApplicationLifecycleActive),
-		LifecycleRevision:           1,
-		CreatedAt:                   application.CreatedAt().UTC(),
-		NextVersionSequence:         1,
-		NextProfileRevisionSequence: 1,
+		ID:                           application.ID().String(),
+		Name:                         application.Name().String(),
+		NameKey:                      application.Name().Key(),
+		AdminID:                      application.AdminID().String(),
+		OwnershipRevision:            1,
+		LifecycleStatus:              string(domain.ApplicationLifecycleActive),
+		LifecycleRevision:            1,
+		PlatformAvailabilityStatus:   string(domain.PlatformAvailabilityAvailable),
+		PlatformAvailabilityRevision: 1,
+		LastOperationEventID:         nil,
+		SuspendedAt:                  nil,
+		RestoredAt:                   nil,
+		CreatedAt:                    application.CreatedAt().UTC(),
+		NextVersionSequence:          1,
+		NextProfileRevisionSequence:  1,
 	}, nil
 }
 
 // applicationFromDocument is deliberately kept inside the persistence
 // adapter. A malformed stored document is corruption, not caller validation.
 func applicationFromDocument(document applicationDocument) (*domain.Application, error) {
-	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 || document.LifecycleRevision < 1 {
+	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 || document.LifecycleRevision < 1 || document.PlatformAvailabilityRevision < 1 {
 		return nil, fmt.Errorf("%w: invalid next sequence", errCorruptApplicationDocument)
 	}
 
@@ -157,7 +167,7 @@ func applicationFromDocument(document applicationDocument) (*domain.Application,
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid admin ID", errCorruptApplicationDocument)
 	}
-	application, err := domain.RestoreApplication(id, name, adminID, domain.ApplicationLifecycleStatus(document.LifecycleStatus), document.LifecycleRevision, document.CreatedAt)
+	application, err := domain.RestoreApplication(id, name, adminID, domain.ApplicationLifecycleStatus(document.LifecycleStatus), document.LifecycleRevision, domain.PlatformAvailabilityStatus(document.PlatformAvailabilityStatus), document.PlatformAvailabilityRevision, document.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid application fields", errCorruptApplicationDocument)
 	}

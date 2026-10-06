@@ -185,8 +185,21 @@ func (r *PublicCatalogRepository) loadCatalogFacts(ctx context.Context, publicat
 	appIDs = uniqueStrings(appIDs)
 	pubIDs = uniqueStrings(pubIDs)
 	versionIDs = uniqueStrings(versionIDs)
-	if err := collect(ctx, r.database.Collection(applicationsCollectionName), bson.M{"id": bson.M{"$in": appIDs}, "lifecycleStatus": "ACTIVE"}, func(d applicationDocument) { f.applications[d.ID] = true }); err != nil {
+	applicationDocuments := make([]applicationDocument, 0, len(appIDs))
+	if err := collect(ctx, r.database.Collection(applicationsCollectionName), bson.M{"id": bson.M{"$in": appIDs}}, func(d applicationDocument) { applicationDocuments = append(applicationDocuments, d) }); err != nil {
 		return nil, err
+	}
+	for _, document := range applicationDocuments {
+		availability, err := availabilityFromDocument(document)
+		if err != nil {
+			return nil, catalogport.ErrApplicationCatalogStateInconsistent
+		}
+		if err := (&ApplicationOperationsRepository{database: r.database}).validateLatestEvent(ctx, document, availability); err != nil {
+			return nil, catalogport.ErrApplicationCatalogStateInconsistent
+		}
+		if availability.LifecycleStatus == "ACTIVE" && availability.Status == "AVAILABLE" {
+			f.applications[document.ID] = true
+		}
 	}
 	if err := collect(ctx, r.database.Collection(applicationProfilesCollectionName), bson.M{"applicationId": bson.M{"$in": appIDs}}, func(d applicationProfileDocument) { f.profiles[d.ApplicationID] = d }); err != nil {
 		return nil, err

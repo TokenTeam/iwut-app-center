@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	applicationdomain "iwut-app-center/internal/application/domain"
 	oauthdomain "iwut-app-center/internal/oauthclient/domain"
 	oauthport "iwut-app-center/internal/oauthclient/port"
 	profiledomain "iwut-app-center/internal/profile/domain"
@@ -199,6 +200,36 @@ func TestOAuthProviderRepositoryIntegration(t *testing.T) {
 			t.Fatalf("disabled identity changed sector redirects=%#v error=%v", afterDisable, err)
 		}
 	})
+}
+
+func TestOAuthProviderRepositoryIntegration_UCAPP028_AllProviderMethodsFailClosedWhileSuspended(t *testing.T) {
+	f := newOAuthProviderFixture(t)
+	repository := NewOAuthProviderRepository(f.db, providerTestSecretVerifier{})
+	at := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+	runtime, err := repository.ResolveRuntime(t.Context(), f.publicID, oauthdomain.ChannelTest, 1, 2, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventID := applicationdomain.ApplicationOperationEventID("0199b33c-d050-7abc-8abc-123456789012")
+	if _, err = NewApplicationOperationsRepository(f.db).Set(t.Context(), f.seed.applicationID, "platform-operator", applicationdomain.PlatformAvailabilitySuspended, 1, 1, "oauth incident", eventID, at.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	if value, err := repository.GetClientConfiguration(t.Context(), f.publicID); value != nil || !errors.Is(err, oauthport.ErrApplicationNotFound) {
+		t.Fatalf("GetClientConfiguration()=(%#v,%v)", value, err)
+	}
+	if verified, revision, err := repository.VerifyClientSecret(t.Context(), f.confidentialID, f.confidentialSecret, 1); err != nil || verified || revision != 0 {
+		t.Fatalf("VerifyClientSecret()=(%t,%d,%v)", verified, revision, err)
+	}
+	if value, err := repository.ResolveRuntime(t.Context(), f.publicID, oauthdomain.ChannelTest, 1, 2, at.Add(2*time.Second)); value != nil || !errors.Is(err, oauthport.ErrRuntimeUnavailable) {
+		t.Fatalf("ResolveRuntime()=(%#v,%v)", value, err)
+	}
+	if value, err := repository.ResolveAuthorizationContext(t.Context(), f.publicID, f.membership.TesterAuthID(), oauthdomain.ChannelTest, 1, 2, runtime.Version(), at.Add(2*time.Second)); value != nil || !errors.Is(err, oauthport.ErrRuntimeUnavailable) {
+		t.Fatalf("ResolveAuthorizationContext()=(%#v,%v)", value, err)
+	}
+	if value, err := repository.GetPublishedRedirects(t.Context(), f.seed.applicationID, at.Add(2*time.Second)); value != nil || !errors.Is(err, oauthport.ErrApplicationNotFound) {
+		t.Fatalf("GetPublishedRedirects()=(%#v,%v)", value, err)
+	}
 }
 
 func TestOAuthProviderRepositoryIntegration_UCAPP020_StableRuntimeAndSharedRevision(t *testing.T) {

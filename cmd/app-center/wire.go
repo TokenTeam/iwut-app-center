@@ -36,6 +36,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		generator.ProviderSet,
 		usecase.NewApplicationAdminTransferHandlers,
 		usecase.NewApplicationClosureHandlers,
+		usecase.NewApplicationOperationsHandlers,
+		wire.Bind(new(transport.ApplicationOperationsHandlers), new(*usecase.ApplicationOperationsHandlers)),
 		wire.Bind(new(transport.ApplicationClosureHandlers), new(*usecase.ApplicationClosureHandlers)),
 		wire.Bind(new(transport.ApplicationAdminTransferHandlers), new(*usecase.ApplicationAdminTransferHandlers)),
 		filterusecase.NewHandlers,

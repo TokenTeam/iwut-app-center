@@ -37,12 +37,12 @@ func (r *ApplicationTesterMembershipRepository) ResolveJoinCandidate(ctx context
 		if err != nil {
 			return nil, err
 		}
-		err = r.database.Collection(applicationsCollectionName).FindOne(tx, bson.D{{Key: "id", Value: link.ApplicationID().String()}}).Err()
-		if errors.Is(err, drivermongo.ErrNoDocuments) {
-			return nil, testerport.ErrTesterJoinLinkInvalid
+		gate, gateErr := readApplicationAvailabilityGate(tx, r.database, link.ApplicationID().String())
+		if gateErr != nil {
+			return nil, testerport.ErrApplicationTesterStateInconsistent
 		}
-		if err != nil {
-			return nil, err
+		if gate != applicationGateAvailable {
+			return nil, testerport.ErrTesterJoinLinkInvalid
 		}
 		return testerdomain.NewTesterJoinCandidate(link.ApplicationID())
 	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
@@ -83,7 +83,14 @@ func (r *ApplicationTesterMembershipRepository) joinTesterTransaction(ctx contex
 		return nil, err
 	}
 	appID := candidate.ApplicationID()
-	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err()
+	gate, gateErr := readApplicationAvailabilityGate(ctx, r.database, appID.String())
+	if gateErr != nil {
+		return nil, testerport.ErrApplicationTesterStateInconsistent
+	}
+	if gate != applicationGateAvailable {
+		return nil, testerport.ErrTesterJoinLinkInvalid
+	}
+	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}, {Key: "platformAvailabilityStatus", Value: "AVAILABLE"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, testerport.ErrTesterJoinLinkInvalid
 	}

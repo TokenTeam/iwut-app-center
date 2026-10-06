@@ -72,33 +72,37 @@ func TestLoad_DefaultsWhenOptionalVariablesAreMissing(t *testing.T) {
 	if configuration.ApplicationClosureEnabled {
 		t.Fatal("ApplicationClosureEnabled = true, want default false")
 	}
+	if configuration.ApplicationOperationsEnabled {
+		t.Fatal("ApplicationOperationsEnabled = true, want default false")
+	}
 }
 
 func TestLoad_UsesExplicitValues(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		InitialApplicationQuotaEnv:   "27",
-		ScopeCatalogCacheTTLEnv:      "90s",
-		HTTPAddrEnv:                  "127.0.0.1:18080",
-		GRPCAddrEnv:                  "127.0.0.1:19090",
-		MongoURIEnv:                  "mongodb://db.internal:27017",
-		MongoDatabaseEnv:             "app_center_test",
-		IdentityIssuerEnv:            "https://issuer.test",
-		IdentityAudienceEnv:          "iwut-app-center",
-		IdentityMaxTTLEnv:            "2m",
-		IdentityClockSkewEnv:         "15s",
-		IdentityPublicKeysEnv:        "k1=/keys/one.pem,k2=/keys/two.pem",
-		AuthScopeCatalogTargetEnv:    "dns:///auth-center.internal:9000",
-		ServiceIdentityIDEnv:         "iwut-app-center-prod",
-		ServiceIdentityKIDEnv:        "app-center-prod-1",
-		ServiceIdentityAudienceEnv:   "auth-prod",
-		ServiceIdentityPrivateKeyEnv: base64.StdEncoding.EncodeToString([]byte("PEM-PROD")),
-		ServiceIdentityTTLEnv:        "45s",
-		ServiceCallersEnv:            testServiceCallersValue("PUBLIC KEY PROD"),
-		ServiceMaxTTLEnv:             "50s",
-		ServiceClockSkewEnv:          "12s",
-		ApplicationClosureEnabledEnv: "true",
+		InitialApplicationQuotaEnv:      "27",
+		ScopeCatalogCacheTTLEnv:         "90s",
+		HTTPAddrEnv:                     "127.0.0.1:18080",
+		GRPCAddrEnv:                     "127.0.0.1:19090",
+		MongoURIEnv:                     "mongodb://db.internal:27017",
+		MongoDatabaseEnv:                "app_center_test",
+		IdentityIssuerEnv:               "https://issuer.test",
+		IdentityAudienceEnv:             "iwut-app-center",
+		IdentityMaxTTLEnv:               "2m",
+		IdentityClockSkewEnv:            "15s",
+		IdentityPublicKeysEnv:           "k1=/keys/one.pem,k2=/keys/two.pem",
+		AuthScopeCatalogTargetEnv:       "dns:///auth-center.internal:9000",
+		ServiceIdentityIDEnv:            "iwut-app-center-prod",
+		ServiceIdentityKIDEnv:           "app-center-prod-1",
+		ServiceIdentityAudienceEnv:      "auth-prod",
+		ServiceIdentityPrivateKeyEnv:    base64.StdEncoding.EncodeToString([]byte("PEM-PROD")),
+		ServiceIdentityTTLEnv:           "45s",
+		ServiceCallersEnv:               testServiceCallersValue("PUBLIC KEY PROD"),
+		ServiceMaxTTLEnv:                "50s",
+		ServiceClockSkewEnv:             "12s",
+		ApplicationClosureEnabledEnv:    "true",
+		ApplicationOperationsEnabledEnv: "true",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -134,6 +138,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	}
 	if !configuration.ApplicationClosureEnabled {
 		t.Fatal("ApplicationClosureEnabled = false, want true")
+	}
+	if !configuration.ApplicationOperationsEnabled {
+		t.Fatal("ApplicationOperationsEnabled = false, want true")
 	}
 }
 
@@ -190,6 +197,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "zero service max TTL", key: ServiceMaxTTLEnv, value: "0s"},
 		{name: "negative service clock skew", key: ServiceClockSkewEnv, value: "-1s"},
 		{name: "invalid application closure flag", key: ApplicationClosureEnabledEnv, value: "TRUE"},
+		{name: "invalid application operations flag", key: ApplicationOperationsEnabledEnv, value: "TRUE"},
 	}
 
 	for _, testCase := range testCases {
