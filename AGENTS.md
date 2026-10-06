@@ -40,18 +40,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-027 — irreversibly close an Application.**
-Read `../../docs/app-center/briefs/UC-APP-027.md` plus the engineering baseline
-and implements README. Deliver ACTIVE→CLOSING→CLOSED, lifecycleRevision OCC,
-the Session-user plus dedicated app.close reauth proof boundary, atomic local
-quarantine and quota/owner-obligation release, transfer/link/client termination,
-durable idempotent Auth Apply/Get convergence, migration 0022, management
-HTTP/gRPC and every required ACTIVE gate across catalog/runtime/review/admin
-writes. Preserve all Version/Profile/Review/Publication/Filter/Membership and
-technical-name history. Do not implement archive, reversible disable, platform
-forced close, physical deletion or recovery. Required final tier:
-`make check-auth-app` against Auth UC026. Commit API inputs and outputs before
-service gitlinks and keep all commits local.
+**UC-APP-028 — suspend and restore an Application.**
+Read `../../docs/app-center/briefs/UC-APP-028.md` plus the engineering baseline
+and implements README. Deliver lifecycle-orthogonal AVAILABLE↔SUSPENDED state,
+platformAvailabilityRevision OCC, exact app.application.suspend/restore USER
+permissions, atomic audit and durable alert outbox, migration 0023, management
+HTTP/gRPC, and common availability gates across UC009 Join, UC012/023/024 reads
+and all five UC019 OAuth provider methods. Preserve ownership, quota, Profile,
+Version, Review, Publication, Filter, Tester and OAuth registration/credential
+facts; management and review writes remain available while suspended. Restore
+only removes the platform gate and must not repair or enable dependent state.
+Do not implement archive, admin self-disable, automatic restore, bulk operations,
+per-request Auth introspection or permanent Auth tombstones. Required final tier:
+`make check-auth-app`. Commit API inputs and outputs before service gitlinks and
+keep all commits local.
 
 ## Verification entry points
 
