@@ -47,9 +47,14 @@ func TestWireApp_FailsClosedOnInvalidIdentityKeyFile(t *testing.T) {
 func TestProvideServerConfigMapsAddresses(t *testing.T) {
 	t.Parallel()
 
-	serverConfig := provideServerConfig(validConfig())
+	configuration := validConfig()
+	configuration.ApplicationClosureEnabled = true
+	serverConfig := provideServerConfig(configuration)
 	if serverConfig.HTTPAddr != "127.0.0.1:0" || serverConfig.GRPCAddr != "127.0.0.1:0" {
 		t.Fatalf("server config = %#v", serverConfig)
+	}
+	if !serverConfig.ApplicationClosureEnabled {
+		t.Fatalf("server config = %#v, want application closure enabled", serverConfig)
 	}
 }
 

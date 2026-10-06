@@ -209,7 +209,7 @@ func lockApplicationFence(ctx context.Context, database *m.Database, application
 func (r *ApplicationAdminTransferRepository) GetOwnership(ctx context.Context, applicationID shared.ApplicationID, adminID shared.AuthID, now time.Time) (applicationdomain.ApplicationOwnership, error) {
 	value, err := r.transaction(ctx, func(tx context.Context) (any, error) {
 		var app applicationDocument
-		if err := r.database.Collection(applicationsCollectionName).FindOne(tx, bson.D{{Key: "id", Value: applicationID.String()}}).Decode(&app); errors.Is(err, m.ErrNoDocuments) {
+		if err := r.database.Collection(applicationsCollectionName).FindOne(tx, bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}).Decode(&app); errors.Is(err, m.ErrNoDocuments) {
 			return nil, applicationdomain.ErrApplicationNotFound
 		} else if err != nil {
 			return nil, err
@@ -259,10 +259,10 @@ func (r *ApplicationAdminTransferRepository) Initiate(ctx context.Context, appli
 		}
 		var app applicationDocument
 		if err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(tx,
-			bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: from.String()}},
+			bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: from.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 			bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&app); errors.Is(err, m.ErrNoDocuments) {
 			var count int64
-			count, _ = r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "id", Value: applicationID.String()}})
+			count, _ = r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}})
 			if count == 0 {
 				return nil, applicationdomain.ErrApplicationNotFound
 			}
@@ -343,6 +343,11 @@ func (r *ApplicationAdminTransferRepository) Accept(ctx context.Context, transfe
 			if caller != transfer.ToAdminID {
 				return nil, applicationdomain.ErrApplicationAdminTransferParticipantRequired
 			}
+			if err = r.database.Collection(applicationsCollectionName).FindOne(tx, bson.D{{Key: "id", Value: transfer.ApplicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err(); errors.Is(err, m.ErrNoDocuments) {
+				return nil, applicationdomain.ErrApplicationNotFound
+			} else if err != nil {
+				return nil, err
+			}
 			if transfer.Status == applicationdomain.ApplicationAdminTransferAccepted {
 				return acceptTransferTransactionResult{result: applicationdomain.AcceptApplicationAdminTransferResult{Transfer: transfer}}, nil
 			}
@@ -363,7 +368,7 @@ func (r *ApplicationAdminTransferRepository) Accept(ctx context.Context, transfe
 			}
 			var app applicationDocument
 			err = r.database.Collection(applicationsCollectionName).FindOneAndUpdate(tx,
-				bson.D{{Key: "id", Value: transfer.ApplicationID.String()}, {Key: "adminId", Value: transfer.FromAdminID.String()}, {Key: "ownershipRevision", Value: transfer.SourceOwnershipRevision}},
+				bson.D{{Key: "id", Value: transfer.ApplicationID.String()}, {Key: "adminId", Value: transfer.FromAdminID.String()}, {Key: "ownershipRevision", Value: transfer.SourceOwnershipRevision}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 				bson.D{{Key: "$set", Value: bson.D{{Key: "adminId", Value: transfer.ToAdminID.String()}}}, {Key: "$inc", Value: bson.D{{Key: "ownershipRevision", Value: int64(1)}, {Key: "coordinationRevision", Value: int64(1)}}}}, options.FindOneAndUpdate().SetReturnDocument(options.Before)).Decode(&app)
 			if errors.Is(err, m.ErrNoDocuments) {
 				return nil, applicationdomain.ErrApplicationOwnershipChanged
@@ -533,6 +538,11 @@ func (r *ApplicationAdminTransferRepository) resolve(ctx context.Context, transf
 		if !allowed {
 			return nil, applicationdomain.ErrApplicationAdminTransferParticipantRequired
 		}
+		if err = r.database.Collection(applicationsCollectionName).FindOne(tx, bson.D{{Key: "id", Value: transfer.ApplicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err(); errors.Is(err, m.ErrNoDocuments) {
+			return nil, applicationdomain.ErrApplicationNotFound
+		} else if err != nil {
+			return nil, err
+		}
 		if transfer.Status == target {
 			return resolveTransferTransactionResult{transfer: transfer}, nil
 		}
@@ -556,7 +566,7 @@ func (r *ApplicationAdminTransferRepository) resolve(ctx context.Context, transf
 			return nil, applicationdomain.ErrApplicationAdminTransferNotPending
 		}
 		var app applicationDocument
-		if err = r.database.Collection(applicationsCollectionName).FindOneAndUpdate(tx, bson.D{{Key: "id", Value: transfer.ApplicationID.String()}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&app); err != nil {
+		if err = r.database.Collection(applicationsCollectionName).FindOneAndUpdate(tx, bson.D{{Key: "id", Value: transfer.ApplicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&app); err != nil {
 			return nil, err
 		}
 		if target == applicationdomain.ApplicationAdminTransferCancelled && app.AdminID != caller.String() {

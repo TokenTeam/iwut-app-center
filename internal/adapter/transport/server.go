@@ -18,6 +18,7 @@ import (
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
 	applicationcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_catalog"
+	applicationclosurev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_closure"
 	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
@@ -138,8 +139,9 @@ const (
 
 // ServerConfig carries the two listen addresses validated at startup.
 type ServerConfig struct {
-	HTTPAddr string
-	GRPCAddr string
+	HTTPAddr                  string
+	GRPCAddr                  string
+	ApplicationClosureEnabled bool
 }
 
 // Servers groups the two Kratos transports that share one ApplicationService.
@@ -189,8 +191,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, filterService, transferService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, filterService, transferService, closureService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -248,6 +250,7 @@ func NewServers(
 	var runtimeResolutionService *RuntimeResolutionService
 	var applicationCatalogService *ApplicationCatalogService
 	var transferService *ApplicationAdminTransferService
+	var closureService *ApplicationClosureService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
 		case *RuntimeResolutionService:
@@ -270,6 +273,11 @@ func NewServers(
 				return nil, errors.New("transport servers: application administrator transfer service is invalid")
 			}
 			transferService = value
+		case *ApplicationClosureService:
+			if value == nil || closureService != nil {
+				return nil, errors.New("transport servers: application closure service is invalid")
+			}
+			closureService = value
 		case *ServiceIdentityVerifier:
 			if value == nil || serviceVerifier != nil {
 				return nil, errors.New("transport servers: service identity verifier is invalid")
@@ -310,10 +318,12 @@ func NewServers(
 	if transferService != nil {
 		applicationadmintransferv1.RegisterApplicationAdminTransferServiceHTTPServer(httpServer, transferService)
 	}
+	if closureService != nil && config.ApplicationClosureEnabled {
+		applicationclosurev1.RegisterApplicationClosureServiceHTTPServer(httpServer, closureService)
+	}
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceHTTPServer(httpServer, filterService)
 	}
-
 	grpcMiddleware := identityMiddleware(verifier)
 	if serviceVerifier != nil {
 		grpcMiddleware = authenticationMiddleware(verifier, serviceVerifier)
@@ -337,6 +347,9 @@ func NewServers(
 	oauthclientv1.RegisterOAuthClientServiceServer(grpcServer, oauthClientService)
 	if transferService != nil {
 		applicationadmintransferv1.RegisterApplicationAdminTransferServiceServer(grpcServer, transferService)
+	}
+	if closureService != nil && config.ApplicationClosureEnabled {
+		applicationclosurev1.RegisterApplicationClosureServiceServer(grpcServer, closureService)
 	}
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceServer(grpcServer, filterService)
@@ -417,6 +430,11 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		*applicationadmintransferv1.RejectApplicationAdminTransferResponse,
 		*applicationadmintransferv1.CancelApplicationAdminTransferResponse:
 		w.Header().Set("Cache-Control", "no-store")
+	case *applicationclosurev1.CloseApplicationResponse:
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusAccepted)
+	case *applicationclosurev1.GetApplicationClosurePreviewResponse, *applicationclosurev1.GetApplicationClosureResponse:
+		w.Header().Set("Cache-Control", "no-store")
 	case *oauthclientv1.GetApplicationOAuthRegistrationResponse,
 		*oauthclientv1.SetOAuthClientStatusResponse,
 		*oauthclientv1.GetOAuthClientCredentialMetadataResponse,
@@ -438,6 +456,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isApplicationClosureRequest(r) {
+		applicationClosureSafeErrorEncoder(w, r, err)
+		return
+	}
 	if isApplicationAdminTransferRequest(r) {
 		applicationAdminTransferSafeErrorEncoder(w, r, err)
 		return
@@ -502,6 +524,41 @@ func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err erro
 				err = toTransportError(testerdomain.NewInternalError(nil))
 			}
 		}
+	}
+	khttp.DefaultErrorEncoder(w, r, err)
+}
+
+func isApplicationClosureRequest(r *http.Request) bool {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 4 && parts[0] == "v1" && parts[1] == "applications" && (parts[3] == "closure" || parts[3] == "closure-preview") {
+		return r.Method == http.MethodGet
+	}
+	return len(parts) == 3 && parts[0] == "v1" && parts[1] == "applications" && strings.HasSuffix(parts[2], ":close") && r.Method == http.MethodPost
+}
+
+func applicationClosureOperation(r *http.Request) string {
+	if strings.HasSuffix(r.URL.Path, ":close") {
+		return applicationclosurev1.OperationApplicationClosureServiceCloseApplication
+	}
+	if strings.HasSuffix(r.URL.Path, "/closure-preview") {
+		return applicationclosurev1.OperationApplicationClosureServiceGetApplicationClosurePreview
+	}
+	return applicationclosurev1.OperationApplicationClosureServiceGetApplicationClosure
+}
+
+func applicationClosureSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Cache-Control", "no-store")
+	converted := kerrors.FromError(err)
+	if _, ok := applicationclosurev1.ErrorReason_value[converted.Reason]; !ok {
+		reason, message := "ERROR_REASON_INVALID_APPLICATION_ID", "application closure request is invalid"
+		if strings.HasSuffix(r.URL.Path, ":close") {
+			reason, message = "ERROR_REASON_INVALID_CLOSE_CONFIRMATION", "application close command is invalid"
+		}
+		if converted.Code != http.StatusBadRequest {
+			reason, message = "ERROR_REASON_INTERNAL", "internal failure"
+		}
+		err = kerrors.New(int(converted.Code), reason, message)
 	}
 	khttp.DefaultErrorEncoder(w, r, err)
 }
@@ -643,7 +700,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -724,6 +781,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					}
 					if isApplicationAdminTransferRequest(r) {
 						operation = applicationAdminTransferOperation(r)
+					}
+					if isApplicationClosureRequest(r) {
+						operation = applicationClosureOperation(r)
 					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
 					return

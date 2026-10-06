@@ -50,7 +50,7 @@ func (resolver *UnifiedLaunchResolver) Resolve(ctx context.Context, applicationI
 }
 
 func (resolver *UnifiedLaunchResolver) resolveSnapshot(ctx context.Context, applicationID shared.ApplicationID, authID shared.AuthID, major int32, host []catalogdomain.CapabilityName) (*catalogdomain.LaunchTargetDescriptor, error) {
-	err := resolver.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": applicationID.String()}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+	err := resolver.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": applicationID.String(), "lifecycleStatus": "ACTIVE"}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, catalogport.ErrApplicationNotFound
 	}

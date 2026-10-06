@@ -44,7 +44,7 @@ func (r *ApplicationProfileRevisionRepository) SubmitDraft(ctx context.Context, 
 func (r *ApplicationProfileRevisionRepository) submitProfileDraftTransaction(ctx context.Context, app shared.ApplicationID, id pd.ApplicationProfileRevisionID, admin shared.AuthID, expected int64, reviewID pd.ApplicationProfileReviewID, at time.Time) (*pd.ApplicationProfileSubmission, error) {
 	// The shared Application write fence serializes submission, editing, creation
 	// and administrator transfer. Retrying the transaction reloads every fact.
-	raw, err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.M{"id": app.String()}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}}).Raw()
+	raw, err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.M{"id": app.String(), "lifecycleStatus": "ACTIVE"}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}}).Raw()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, pp.ErrApplicationProfileRevisionNotFound
 	}

@@ -69,6 +69,9 @@ func TestLoad_DefaultsWhenOptionalVariablesAreMissing(t *testing.T) {
 	if len(configuration.ServiceCallers) != 1 || configuration.ServiceCallers[0].ServiceID != "iwut-auth-center" || configuration.ServiceIdentityMaxTTL != DefaultServiceMaxTTL || configuration.ServiceIdentityClockSkew != DefaultServiceClockSkew {
 		t.Fatalf("service caller configuration = %#v", configuration)
 	}
+	if configuration.ApplicationClosureEnabled {
+		t.Fatal("ApplicationClosureEnabled = true, want default false")
+	}
 }
 
 func TestLoad_UsesExplicitValues(t *testing.T) {
@@ -95,6 +98,7 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 		ServiceCallersEnv:            testServiceCallersValue("PUBLIC KEY PROD"),
 		ServiceMaxTTLEnv:             "50s",
 		ServiceClockSkewEnv:          "12s",
+		ApplicationClosureEnabledEnv: "true",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -127,6 +131,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	}
 	if configuration.ServiceIdentityMaxTTL != 50*time.Second || configuration.ServiceIdentityClockSkew != 12*time.Second || len(configuration.ServiceCallers) != 1 {
 		t.Fatalf("service caller settings = %#v", configuration)
+	}
+	if !configuration.ApplicationClosureEnabled {
+		t.Fatal("ApplicationClosureEnabled = false, want true")
 	}
 }
 
@@ -182,6 +189,7 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "invalid caller registry encoding", key: ServiceCallersEnv, value: "not-base64"},
 		{name: "zero service max TTL", key: ServiceMaxTTLEnv, value: "0s"},
 		{name: "negative service clock skew", key: ServiceClockSkewEnv, value: "-1s"},
+		{name: "invalid application closure flag", key: ApplicationClosureEnabledEnv, value: "TRUE"},
 	}
 
 	for _, testCase := range testCases {

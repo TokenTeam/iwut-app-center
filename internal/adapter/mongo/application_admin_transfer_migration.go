@@ -58,8 +58,9 @@ func applicationAdminTransferValidator() bson.D {
 	rejected := bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$eq", Value: bson.A{"$status", "REJECTED"}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedAt", nil}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedBy", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$resolutionCause", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$confidentialCredentialHandling", nil}}},
 	}}}
+	causes := bson.A{"EXPLICIT", "APPLICATION_CLOSURE"}
 	cancelled := bson.D{{Key: "$and", Value: bson.A{
-		bson.D{{Key: "$eq", Value: bson.A{"$status", "CANCELLED"}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedAt", nil}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedBy", nil}}}, bson.D{{Key: "$in", Value: bson.A{"$resolutionCause", bson.A{"EXPLICIT", "APPLICATION_CLOSURE"}}}}, bson.D{{Key: "$eq", Value: bson.A{"$confidentialCredentialHandling", nil}}},
+		bson.D{{Key: "$eq", Value: bson.A{"$status", "CANCELLED"}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedAt", nil}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedBy", nil}}}, bson.D{{Key: "$in", Value: bson.A{"$resolutionCause", causes}}}, bson.D{{Key: "$eq", Value: bson.A{"$confidentialCredentialHandling", nil}}},
 	}}}
 	expired := bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$eq", Value: bson.A{"$status", "EXPIRED"}}}, bson.D{{Key: "$ne", Value: bson.A{"$resolvedAt", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$resolvedBy", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$resolutionCause", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$confidentialCredentialHandling", nil}}},
@@ -71,7 +72,10 @@ func applicationAdminTransferValidator() bson.D {
 		{Key: "status", Value: bson.D{{Key: "enum", Value: bson.A{"PENDING", "ACCEPTED", "REJECTED", "CANCELLED", "EXPIRED"}}}},
 		{Key: "requestedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}}, {Key: "expiresAt", Value: bson.D{{Key: "bsonType", Value: "date"}}},
 		{Key: "resolvedAt", Value: nullableDate}, {Key: "resolvedBy", Value: nullableString},
-		{Key: "resolutionCause", Value: bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, bson.D{{Key: "enum", Value: bson.A{"EXPLICIT", "APPLICATION_CLOSURE"}}}}}}},
+		{Key: "resolutionCause", Value: bson.D{{Key: "oneOf", Value: bson.A{
+			bson.D{{Key: "bsonType", Value: "null"}},
+			bson.D{{Key: "enum", Value: causes}},
+		}}}},
 		{Key: "confidentialCredentialHandling", Value: bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, bson.D{{Key: "enum", Value: bson.A{"KEEP", "ROTATE"}}}}}}},
 	})
 	expression := bson.D{{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{

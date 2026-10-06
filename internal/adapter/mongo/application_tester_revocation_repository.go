@@ -58,7 +58,7 @@ func (r *ApplicationTesterJoinLinkRepository) Revoke(ctx context.Context, appID 
 func (r *ApplicationTesterJoinLinkRepository) loadTesterRevocationCandidate(ctx context.Context, appID shared.ApplicationID, linkID testerdomain.ApplicationTesterJoinLinkID, adminID shared.AuthID) (*testerdomain.TesterJoinLinkRevocationCandidate, error) {
 	var app applicationDocument
 	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx,
-		bson.D{{Key: "id", Value: appID.String()}},
+		bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 	).Decode(&app)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {

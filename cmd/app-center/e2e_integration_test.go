@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -25,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -40,10 +44,12 @@ import (
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
+	applicationclosurev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_closure"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
+	applicationclosereauthv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/application_close_reauth"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
 	scopecatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/scope_catalog"
 	systemprincipalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/system_principal"
@@ -63,6 +69,7 @@ const mongoIntegrationURIEnv = "MONGODB_INTEGRATION_URI"
 const (
 	authCenterIntegrationTargetEnv   = "AUTH_CENTER_INTEGRATION_TARGET"
 	authCenterIntegrationDatabaseEnv = "AUTH_CENTER_INTEGRATION_DATABASE"
+	authCenterIdentityPublicKeyEnv   = "AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH"
 )
 
 const (
@@ -1129,21 +1136,23 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	}
 }
 
-// TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity is run by
+// TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity is run by
 // scripts/test-auth-app-integration.sh. It composes the real App server in this
 // process, but all three Auth dependencies cross a TCP connection to a separate
 // real Auth Center process protected by its production service-JWS interceptor.
-func TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity(t *testing.T) {
+func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	authTarget := os.Getenv(authCenterIntegrationTargetEnv)
 	authDatabaseName := os.Getenv(authCenterIntegrationDatabaseEnv)
+	authIdentityPublicKeyPath := os.Getenv(authCenterIdentityPublicKeyEnv)
 	serviceID := os.Getenv(config.ServiceIdentityIDEnv)
 	serviceKID := os.Getenv(config.ServiceIdentityKIDEnv)
 	servicePrivateKey := os.Getenv(config.ServiceIdentityPrivateKeyEnv)
-	if authTarget == "" || authDatabaseName == "" || serviceID == "" || serviceKID == "" || servicePrivateKey == "" {
+	if authTarget == "" || authDatabaseName == "" || authIdentityPublicKeyPath == "" || serviceID == "" || serviceKID == "" || servicePrivateKey == "" {
 		t.Skipf("run scripts/test-auth-app-integration.sh for the real Auth+App E2E")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
+	authProxy := e2eStartToggleTCPProxy(t, authTarget)
 
 	client, database := e2eIsolatedDatabase(t, ctx, true)
 	privateKey, publicKeyPath := e2eIdentity(t)
@@ -1166,12 +1175,13 @@ func TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity(t *testing.T) {
 		config.GRPCAddrEnv:                  grpcAddress,
 		config.IdentityIssuerEnv:            e2eIssuer,
 		config.IdentityAudienceEnv:          e2eAudience,
-		config.IdentityPublicKeysEnv:        e2eKeyID + "=" + publicKeyPath,
-		config.AuthScopeCatalogTargetEnv:    authTarget,
+		config.IdentityPublicKeysEnv:        e2eKeyID + "=" + publicKeyPath + ",auth-close-e2e=" + authIdentityPublicKeyPath,
+		config.AuthScopeCatalogTargetEnv:    authProxy.Address(),
 		config.ScopeCatalogCacheTTLEnv:      "1ns",
 		config.ServiceIdentityIDEnv:         serviceID,
 		config.ServiceIdentityKIDEnv:        serviceKID,
 		config.ServiceIdentityPrivateKeyEnv: servicePrivateKey,
+		config.ApplicationClosureEnabledEnv: "true",
 	}))
 	if err != nil {
 		t.Fatalf("load configuration: %v", err)
@@ -1329,6 +1339,181 @@ func TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity(t *testing.T) {
 	var transferred e2eApplicationDocument
 	if err := database.Collection("applications").FindOne(ctx, bson.D{{Key: "id", Value: transferApplication.GetId()}}).Decode(&transferred); err != nil || transferred.AdminID != transferTargetID || transferred.OwnershipRevision != 2 {
 		t.Fatalf("persisted transferred application=%#v err=%v", transferred, err)
+	}
+
+	// UC-APP-027 consumes an exact application-bound high-risk proof, commits
+	// CLOSING locally, then lets the durable worker obtain the real Auth
+	// tombstone receipt before committing CLOSED.
+	createStatus, closeApplicationBody := e2eHTTPCreate(t, httpAddress, transferSourceToken, "Dual_Service_Close_App")
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create close application status = %d; body = %s", createStatus, closeApplicationBody)
+	}
+	var closeApplication applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(closeApplicationBody, &closeApplication); err != nil {
+		t.Fatalf("decode close application: %v", err)
+	}
+	proof := e2eIssueApplicationCloseProofFromAuth(t, ctx, client.Database(authDatabaseName), authTarget, transferSourceID, closeApplication.GetId())
+	closeStatus, closeHeaders, closeBody := e2eHTTPApplicationClosure(t, httpAddress, transferSourceToken, proof, http.MethodPost, "/v1/applications/"+closeApplication.GetId()+":close", []byte(`{"expectedOwnershipRevision":"1","expectedLifecycleRevision":"1","confirmation":"CLOSE_APPLICATION"}`))
+	if closeStatus != http.StatusAccepted || closeHeaders.Get("Cache-Control") != "no-store" {
+		t.Fatalf("close status=%d cache=%q body=%s", closeStatus, closeHeaders.Get("Cache-Control"), closeBody)
+	}
+	var started applicationclosurev1.CloseApplicationResponse
+	if err := protojson.Unmarshal(closeBody, &started); err != nil || started.GetClosure().GetLifecycleStatus() != applicationclosurev1.ApplicationLifecycleStatus_APPLICATION_LIFECYCLE_STATUS_CLOSING {
+		t.Fatalf("decode started closure=%v value=%v", err, &started)
+	}
+	authProxy.SetEnabled(false)
+	outageDeadline := time.Now().Add(5 * time.Second)
+	for {
+		var pending struct {
+			Status  string `bson:"status"`
+			Attempt int64  `bson:"attempt"`
+		}
+		if err := database.Collection("application_closures").FindOne(ctx, bson.M{"closureId": started.GetClosure().GetClosureId()}).Decode(&pending); err != nil {
+			t.Fatal(err)
+		}
+		if pending.Status == "CLOSING" && pending.Attempt > 0 {
+			break
+		}
+		if time.Now().After(outageDeadline) {
+			t.Fatalf("closure did not retain a retryable CLOSING task during Auth outage: %#v", pending)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if count, err := client.Database(authDatabaseName).Collection("application_closure_tombstones").CountDocuments(ctx, bson.M{"applicationId": closeApplication.GetId()}); err != nil || count != 0 {
+		t.Fatalf("Auth outage tombstone count=%d err=%v", count, err)
+	}
+	authProxy.SetEnabled(true)
+	deadline := time.Now().Add(15 * time.Second)
+	var completed applicationclosurev1.GetApplicationClosureResponse
+	for {
+		getStatus, getHeaders, getBody := e2eHTTPApplicationClosure(t, httpAddress, transferSourceToken, "", http.MethodGet, "/v1/applications/"+closeApplication.GetId()+"/closure", nil)
+		if getStatus == http.StatusOK && getHeaders.Get("Cache-Control") == "no-store" {
+			if err := protojson.Unmarshal(getBody, &completed); err == nil && completed.GetClosure().GetLifecycleStatus() == applicationclosurev1.ApplicationLifecycleStatus_APPLICATION_LIFECYCLE_STATUS_CLOSED {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("closure did not reach CLOSED: status=%d body=%s value=%v", getStatus, getBody, &completed)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	var authTombstone struct {
+		ApplicationID string `bson:"applicationId"`
+		ClosureID     string `bson:"closureId"`
+		ReceiptID     string `bson:"receiptId"`
+	}
+	if err := client.Database(authDatabaseName).Collection("application_closure_tombstones").FindOne(ctx, bson.M{"applicationId": closeApplication.GetId(), "closureId": started.GetClosure().GetClosureId()}).Decode(&authTombstone); err != nil || authTombstone.ReceiptID == "" {
+		t.Fatalf("real Auth closure tombstone=%#v err=%v", authTombstone, err)
+	}
+	var closedApp struct {
+		LifecycleStatus   string `bson:"lifecycleStatus"`
+		LifecycleRevision int64  `bson:"lifecycleRevision"`
+	}
+	if err := database.Collection("applications").FindOne(ctx, bson.M{"id": closeApplication.GetId()}).Decode(&closedApp); err != nil || closedApp.LifecycleStatus != "CLOSED" || closedApp.LifecycleRevision != 3 {
+		t.Fatalf("persisted closed application=%#v err=%v", closedApp, err)
+	}
+}
+
+type e2eToggleTCPProxy struct {
+	listener net.Listener
+	target   string
+
+	mu      sync.Mutex
+	enabled bool
+	closed  bool
+	conns   map[net.Conn]struct{}
+}
+
+func e2eStartToggleTCPProxy(t *testing.T, target string) *e2eToggleTCPProxy {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := &e2eToggleTCPProxy{listener: listener, target: target, enabled: true, conns: map[net.Conn]struct{}{}}
+	go proxy.accept()
+	t.Cleanup(proxy.Close)
+	return proxy
+}
+
+func (p *e2eToggleTCPProxy) Address() string { return p.listener.Addr().String() }
+
+func (p *e2eToggleTCPProxy) accept() {
+	for {
+		incoming, err := p.listener.Accept()
+		if err != nil {
+			return
+		}
+		p.mu.Lock()
+		enabled := p.enabled && !p.closed
+		p.mu.Unlock()
+		if !enabled {
+			_ = incoming.Close()
+			continue
+		}
+		go p.forward(incoming)
+	}
+}
+
+func (p *e2eToggleTCPProxy) forward(incoming net.Conn) {
+	outgoing, err := net.DialTimeout("tcp", p.target, time.Second)
+	if err != nil {
+		_ = incoming.Close()
+		return
+	}
+	p.mu.Lock()
+	if !p.enabled || p.closed {
+		p.mu.Unlock()
+		_ = incoming.Close()
+		_ = outgoing.Close()
+		return
+	}
+	p.conns[incoming], p.conns[outgoing] = struct{}{}, struct{}{}
+	p.mu.Unlock()
+
+	done := make(chan struct{}, 2)
+	go func() { _, _ = io.Copy(outgoing, incoming); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(incoming, outgoing); done <- struct{}{} }()
+	<-done
+	_ = incoming.Close()
+	_ = outgoing.Close()
+	<-done
+	p.mu.Lock()
+	delete(p.conns, incoming)
+	delete(p.conns, outgoing)
+	p.mu.Unlock()
+}
+
+func (p *e2eToggleTCPProxy) SetEnabled(enabled bool) {
+	p.mu.Lock()
+	p.enabled = enabled
+	connections := make([]net.Conn, 0, len(p.conns))
+	if !enabled {
+		for connection := range p.conns {
+			connections = append(connections, connection)
+		}
+	}
+	p.mu.Unlock()
+	for _, connection := range connections {
+		_ = connection.Close()
+	}
+}
+
+func (p *e2eToggleTCPProxy) Close() {
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.closed = true
+	connections := make([]net.Conn, 0, len(p.conns))
+	for connection := range p.conns {
+		connections = append(connections, connection)
+	}
+	p.mu.Unlock()
+	_ = p.listener.Close()
+	for _, connection := range connections {
+		_ = connection.Close()
 	}
 }
 
@@ -1615,6 +1800,88 @@ func e2eSignIdentityClaims(t *testing.T, privateKey *rsa.PrivateKey, claims map[
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
+func e2eIssueApplicationCloseProofFromAuth(t *testing.T, ctx context.Context, authDatabase *drivermongo.Database, authTarget, subject, applicationID string) string {
+	t.Helper()
+	deviceKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey := elliptic.Marshal(deviceKey.Curve, deviceKey.X, deviceKey.Y)
+	fingerprint := sha256.Sum256(e2eLengthPrefixedFrame([]byte("iwut-device-public-key-v1"), publicKey))
+	rawSession := make([]byte, 32)
+	if _, err = rand.Read(rawSession); err != nil {
+		t.Fatal(err)
+	}
+	sessionToken := base64.RawURLEncoding.EncodeToString(rawSession)
+	sessionDigest := sha256.Sum256(rawSession)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	credentialID, sessionID := uuid.NewString(), uuid.NewString()
+	if _, err = authDatabase.Collection("auth_credentials").InsertOne(ctx, bson.M{
+		"credentialId": credentialID, "authId": subject, "protocolVersion": "iwut-device-v1", "publicKey": publicKey, "fingerprint": fingerprint[:], "createdAt": now,
+	}); err != nil {
+		t.Fatalf("seed real Auth close credential: %v", err)
+	}
+	if _, err = authDatabase.Collection("auth_sessions").InsertOne(ctx, bson.M{
+		"accountRevision": int64(1), "sessionId": sessionID, "authId": subject, "authenticationMethod": "DEVICE_CREDENTIAL", "credentialId": credentialID,
+		"tokenDigest": sessionDigest[:], "authenticatedAt": now, "createdAt": now, "lastUsedAt": now, "expiresAt": now.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("seed real Auth close session: %v", err)
+	}
+	connection, err := grpc.NewClient(authTarget, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = connection.Close() }()
+	client := applicationclosereauthv1.NewApplicationCloseReauthServiceClient(connection)
+	callContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", sessionToken))
+	challenge, err := client.BeginApplicationCloseReauth(callContext, &applicationclosereauthv1.BeginApplicationCloseReauthRequest{ApplicationId: applicationID})
+	if err != nil {
+		t.Fatalf("real Auth BeginApplicationCloseReauth: %v", err)
+	}
+	operationID, err := uuid.Parse(challenge.GetOperationId())
+	if err != nil {
+		t.Fatalf("parse real Auth close operation: %v", err)
+	}
+	appID, err := uuid.Parse(applicationID)
+	if err != nil {
+		t.Fatalf("parse close application: %v", err)
+	}
+	payload := e2eLengthPrefixedFrame([]byte("iwut-application-close-reauth-v1"), []byte("COMPLETE_APPLICATION_CLOSE_REAUTH"), operationID[:], appID[:], challenge.GetChallenge())
+	digest := sha256.Sum256(payload)
+	signature, err := ecdsa.SignASN1(rand.Reader, deviceKey, digest[:])
+	if err != nil {
+		t.Fatalf("sign real Auth close challenge: %v", err)
+	}
+	completed, err := client.CompleteApplicationCloseReauth(callContext, &applicationclosereauthv1.CompleteApplicationCloseReauthRequest{OperationId: challenge.GetOperationId(), ApplicationId: applicationID, SignatureDer: signature})
+	if err != nil {
+		t.Fatalf("real Auth CompleteApplicationCloseReauth: %v", err)
+	}
+	if completed.GetProofJws() == "" {
+		t.Fatal("real Auth returned an empty application close proof")
+	}
+	var operation struct {
+		ApplicationID   string `bson:"applicationid"`
+		State           string `bson:"state"`
+		JTI             string `bson:"jti"`
+		SignatureDigest []byte `bson:"signaturedigest"`
+	}
+	if err := authDatabase.Collection("application_close_reauth_operations").FindOne(ctx, bson.M{"operationid": challenge.GetOperationId()}).Decode(&operation); err != nil || operation.ApplicationID != applicationID || operation.State != "COMPLETED" || operation.JTI == "" || len(operation.SignatureDigest) != sha256.Size {
+		t.Fatalf("persisted real Auth close proof operation=%#v err=%v", operation, err)
+	}
+	return completed.GetProofJws()
+}
+
+func e2eLengthPrefixedFrame(fields ...[]byte) []byte {
+	var framed []byte
+	for _, field := range fields {
+		var length [4]byte
+		binary.BigEndian.PutUint32(length[:], uint32(len(field)))
+		framed = append(framed, length[:]...)
+		framed = append(framed, field...)
+	}
+	return framed
+}
+
 func e2eEnvironment(values map[string]string) config.LookupEnv {
 	return func(key string) (string, bool) {
 		value, found := values[key]
@@ -1787,6 +2054,31 @@ func e2eHTTPAdminTransfer(t *testing.T, address, token, method, path string, bod
 	payload, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read admin transfer response: %v", err)
+	}
+	return response.StatusCode, response.Header.Clone(), payload
+}
+
+func e2eHTTPApplicationClosure(t *testing.T, address, token, proof, method, path string, body []byte) (int, http.Header, []byte) {
+	t.Helper()
+	request, err := http.NewRequest(method, "http://"+address+path, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build application closure request: %v", err)
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	request.Header.Set(transport.IdentityHeader, token)
+	if proof != "" {
+		request.Header.Set(transport.HighRiskProofHeader, proof)
+	}
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read application closure response: %v", err)
 	}
 	return response.StatusCode, response.Header.Clone(), payload
 }

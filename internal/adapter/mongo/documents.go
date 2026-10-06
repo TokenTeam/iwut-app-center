@@ -25,6 +25,8 @@ type applicationDocument struct {
 	NameKey                     string    `bson:"nameKey"`
 	AdminID                     string    `bson:"adminId"`
 	OwnershipRevision           int64     `bson:"ownershipRevision"`
+	LifecycleStatus             string    `bson:"lifecycleStatus"`
+	LifecycleRevision           int64     `bson:"lifecycleRevision"`
 	CreatedAt                   time.Time `bson:"createdAt"`
 	NextVersionSequence         int32     `bson:"nextVersionSequence"`
 	NextProfileRevisionSequence int32     `bson:"nextProfileRevisionSequence"`
@@ -128,6 +130,8 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 		NameKey:                     application.Name().Key(),
 		AdminID:                     application.AdminID().String(),
 		OwnershipRevision:           1,
+		LifecycleStatus:             string(domain.ApplicationLifecycleActive),
+		LifecycleRevision:           1,
 		CreatedAt:                   application.CreatedAt().UTC(),
 		NextVersionSequence:         1,
 		NextProfileRevisionSequence: 1,
@@ -137,7 +141,7 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 // applicationFromDocument is deliberately kept inside the persistence
 // adapter. A malformed stored document is corruption, not caller validation.
 func applicationFromDocument(document applicationDocument) (*domain.Application, error) {
-	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 {
+	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 || document.LifecycleRevision < 1 {
 		return nil, fmt.Errorf("%w: invalid next sequence", errCorruptApplicationDocument)
 	}
 
@@ -153,7 +157,7 @@ func applicationFromDocument(document applicationDocument) (*domain.Application,
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid admin ID", errCorruptApplicationDocument)
 	}
-	application, err := domain.NewApplication(id, name, adminID, document.CreatedAt)
+	application, err := domain.RestoreApplication(id, name, adminID, domain.ApplicationLifecycleStatus(document.LifecycleStatus), document.LifecycleRevision, document.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid application fields", errCorruptApplicationDocument)
 	}

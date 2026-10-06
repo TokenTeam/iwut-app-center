@@ -45,7 +45,7 @@ func (r *ApplicationPublicationRepository) LoadTestPlacementCandidate(ctx contex
 
 func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, adminID shared.AuthID, expectedRevision *int64, oauthChannel string, lock bool) (*publicationdomain.TestPlacementCandidate, error) {
 	var application applicationDocument
-	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}
 	err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, publicationport.ErrApplicationVersionNotFound
@@ -421,7 +421,7 @@ func (r *ApplicationPublicationRepository) LoadStableClearCandidate(ctx context.
 }
 
 func (r *ApplicationPublicationRepository) loadStableClearCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, adminID shared.AuthID, expectedRevision int64, lock bool) (*publicationdomain.StableClearCandidate, error) {
-	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}
 	var application applicationDocument
 	if err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application); errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, publicationport.ErrApplicationVersionNotFound
@@ -519,7 +519,7 @@ func (r *ApplicationPublicationRepository) LoadGreyPlacementCandidate(ctx contex
 }
 
 func (r *ApplicationPublicationRepository) loadGreyPlacementCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, versionID publicationdomain.ApplicationVersionID, exposure publicationdomain.ExposureBasisPoints, adminID shared.AuthID, expectedRevision int64, lock bool) (*publicationdomain.GreyPlacementCandidate, error) {
-	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}
 	var application applicationDocument
 	if err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application); errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, publicationport.ErrApplicationVersionNotFound
@@ -642,7 +642,7 @@ func (r *ApplicationPublicationRepository) LoadGreyClearCandidate(ctx context.Co
 }
 
 func (r *ApplicationPublicationRepository) loadGreyClearCandidate(ctx context.Context, applicationID shared.ApplicationID, major int32, adminID shared.AuthID, expectedRevision int64, lock bool) (*publicationdomain.GreyClearCandidate, error) {
-	appFilter := bson.D{{Key: "id", Value: applicationID.String()}}
+	appFilter := bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}
 	var application applicationDocument
 	if err := r.database.Collection(applicationsCollectionName).FindOne(ctx, appFilter).Decode(&application); errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, publicationport.ErrApplicationVersionNotFound

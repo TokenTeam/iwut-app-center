@@ -43,7 +43,7 @@ func (r *OAuthClientRepository) inTransaction(ctx context.Context, fn func(conte
 func (r *OAuthClientRepository) fenceApplication(ctx context.Context, appID shared.ApplicationID, adminID shared.AuthID) error {
 	var app applicationDocument
 	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx,
-		bson.D{{Key: "id", Value: appID.String()}},
+		bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 	).Decode(&app)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {

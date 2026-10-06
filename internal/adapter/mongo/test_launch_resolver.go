@@ -46,7 +46,7 @@ func (r *TestLaunchResolver) ResolveForTester(ctx context.Context, appID shared.
 
 func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.ApplicationID, authID shared.AuthID, major int32, host []catalogdomain.CapabilityName) (*catalogdomain.TestLaunchDescriptor, error) {
 	// Authorization precedes every publication/version read, including failures.
-	err := r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.D{{Key: "id", Value: appID.String()}}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
+	err := r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, catalogport.ErrApplicationNotFound
 	}

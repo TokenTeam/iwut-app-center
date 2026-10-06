@@ -23,7 +23,7 @@ func TestApplicationAdminTransferMigrationIntegration_BackfillsAfterCollMod(t *t
 	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: applicationsCollectionName}, {Key: "validator", Value: applicationValidator()}}).Err(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.D{{Key: "id", Value: application.ID().String()}}, bson.D{{Key: "$unset", Value: bson.D{{Key: "ownershipRevision", Value: ""}}}}); err != nil {
+	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.D{{Key: "id", Value: application.ID().String()}}, bson.D{{Key: "$unset", Value: bson.D{{Key: "ownershipRevision", Value: ""}, {Key: "lifecycleStatus", Value: ""}, {Key: "lifecycleRevision", Value: ""}}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: ownerOperations}, {Key: "validator", Value: accountOwnerExitOperationValidator(false)}}).Err(); err != nil {

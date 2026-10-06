@@ -49,7 +49,7 @@ func (r *ApplicationProfileRevisionRepository) DecideReview(ctx context.Context,
 }
 func (r *ApplicationProfileRevisionRepository) decideProfileReviewTransaction(ctx context.Context, in pp.ProfileReviewDecisionInput) (*pd.ApplicationProfileDecisionResult, error) {
 	apps := r.database.Collection(applicationsCollectionName)
-	raw, err := apps.FindOne(ctx, bson.M{"id": in.ApplicationID.String()}).Raw()
+	raw, err := apps.FindOne(ctx, bson.M{"id": in.ApplicationID.String(), "lifecycleStatus": "ACTIVE"}).Raw()
 	if errors.Is(err, dm.ErrNoDocuments) {
 		return nil, pd.ErrApplicationProfileReviewNotFound
 	}
@@ -61,7 +61,7 @@ func (r *ApplicationProfileRevisionRepository) decideProfileReviewTransaction(ct
 	if !ok || !shared.AuthID(admin).IsValid() || !valid || coord < 0 || coord == math.MaxInt64 {
 		return nil, pd.ErrApplicationProfileReviewStateInconsistent
 	}
-	fence, err := apps.UpdateOne(ctx, bson.M{"id": in.ApplicationID.String(), "coordinationRevision": coord}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}})
+	fence, err := apps.UpdateOne(ctx, bson.M{"id": in.ApplicationID.String(), "coordinationRevision": coord, "lifecycleStatus": "ACTIVE"}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}})
 	if err != nil {
 		return nil, err
 	}

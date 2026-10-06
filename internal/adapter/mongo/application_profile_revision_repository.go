@@ -45,7 +45,7 @@ func (r *ApplicationProfileRevisionRepository) CreateDraft(ctx context.Context, 
 }
 func (r *ApplicationProfileRevisionRepository) createProfileDraftTransaction(ctx context.Context, admin shared.AuthID, draft *profiledomain.DraftApplicationProfileRevision) (*profiledomain.ApplicationProfileRevision, error) {
 	apps := r.database.Collection(applicationsCollectionName)
-	filter := bson.D{{Key: "id", Value: draft.ApplicationID().String()}}
+	filter := bson.D{{Key: "id", Value: draft.ApplicationID().String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}
 	// Every profile writer participates in the same Application write fence as
 	// administrator transfers. Transaction retries re-read all protected facts.
 	raw, err := apps.FindOneAndUpdate(ctx, filter, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Raw()

@@ -39,7 +39,7 @@ func (r *ApplicationProfileRevisionRepository) ReplaceDraft(ctx context.Context,
 	return revision, nil
 }
 func (r *ApplicationProfileRevisionRepository) replaceProfileDraftTransaction(ctx context.Context, app shared.ApplicationID, id profiledomain.ApplicationProfileRevisionID, admin shared.AuthID, expected int64, replacement profiledomain.DraftApplicationProfileReplacement, at time.Time) (*profiledomain.ApplicationProfileRevision, error) {
-	raw, err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: app.String()}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Raw()
+	raw, err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: app.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Raw()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, profileport.ErrApplicationProfileRevisionNotFound
 	}

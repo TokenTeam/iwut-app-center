@@ -35,6 +35,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	panic(wire.Build(
 		generator.ProviderSet,
 		usecase.NewApplicationAdminTransferHandlers,
+		usecase.NewApplicationClosureHandlers,
+		wire.Bind(new(transport.ApplicationClosureHandlers), new(*usecase.ApplicationClosureHandlers)),
 		wire.Bind(new(transport.ApplicationAdminTransferHandlers), new(*usecase.ApplicationAdminTransferHandlers)),
 		filterusecase.NewHandlers,
 		wire.Bind(new(transport.ApplicationFilterHandlers), new(*filterusecase.Handlers)),
@@ -106,5 +108,6 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		provideAppWithOwnerExit,
 		provideOwnerExitHandlers,
 		provideOwnerExitWorker,
+		provideApplicationClosureWorker,
 	))
 }

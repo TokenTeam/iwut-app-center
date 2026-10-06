@@ -10,6 +10,8 @@ import (
 )
 
 var ProviderSet = wire.NewSet(
+	NewGRPCApplicationClosure,
+	wire.Bind(new(applicationport.AuthApplicationClosure), new(*GRPCApplicationClosure)),
 	NewGRPCDeveloperLifecycleDirectory,
 	wire.Bind(new(applicationport.DeveloperLifecycleDirectory), new(*GRPCDeveloperLifecycleDirectory)),
 	NewPublicationScopeCatalog,

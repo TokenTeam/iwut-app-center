@@ -16,7 +16,13 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${temporary_d
 openssl pkey -in "${temporary_dir}/app-center.pem" -pubout -out "${temporary_dir}/app-center.pub.pem"
 private_key_b64="$(base64 -w0 < "${temporary_dir}/app-center.pem")"
 public_key_b64="$(base64 -w0 < "${temporary_dir}/app-center.pub.pem")"
-caller_registry="$(printf '{"iwut-app-center":{"status":"ACTIVE","keys":{"app-center-e2e":{"publicKeyPemB64":"%s"}},"permissions":["auth.scope-catalog.read","auth.developer-status.read","auth.system-principal.resolve"],"systemPrincipalPurposes":["app-center.review-auto-rejection"]}}' "${public_key_b64}" | base64 -w0)"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${temporary_dir}/auth-identity.pem" >/dev/null 2>&1
+openssl pkey -in "${temporary_dir}/auth-identity.pem" -pubout -out "${temporary_dir}/auth-identity.pub.pem"
+auth_identity_private_key_b64="$(base64 -w0 < "${temporary_dir}/auth-identity.pem")"
+association_encrypt_key="$(printf 'auth-app-association-encrypt-key' | base64 -w0)"
+association_lookup_key="$(printf 'auth-app-association-lookup-key-' | base64 -w0)"
+printf '{"definitions":[]}' >"${temporary_dir}/profile-catalog.json"
+caller_registry="$(printf '{"iwut-app-center":{"status":"ACTIVE","keys":{"app-center-e2e":{"publicKeyPemB64":"%s"}},"permissions":["auth.scope-catalog.read","auth.developer-status.read","auth.system-principal.resolve","auth.application-closure.apply","auth.application-closure.read"],"systemPrincipalPurposes":["app-center.review-auto-rejection"]}}' "${public_key_b64}" | base64 -w0)"
 
 start_integration_mongo
 export AUTH_CENTER_INTEGRATION_TARGET="127.0.0.1:${auth_port}"
@@ -24,6 +30,7 @@ export AUTH_CENTER_INTEGRATION_DATABASE="iwut_auth_center_dual_e2e"
 export APP_CENTER_SERVICE_IDENTITY_ID="iwut-app-center"
 export APP_CENTER_SERVICE_IDENTITY_KID="app-center-e2e"
 export APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64="${private_key_b64}"
+export AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH="${temporary_dir}/auth-identity.pub.pem"
 
 docker exec "${container_name}" mongosh --quiet --port 27017 "${AUTH_CENTER_INTEGRATION_DATABASE}" --eval \
   'db.auth_principals.insertMany([
@@ -39,6 +46,20 @@ docker exec "${container_name}" mongosh --quiet --port 27017 "${AUTH_CENTER_INTE
   AUTH_CENTER_MONGO_URI="${MONGODB_INTEGRATION_URI}" \
   AUTH_CENTER_MONGO_DATABASE="${AUTH_CENTER_INTEGRATION_DATABASE}" \
   AUTH_CENTER_SERVICE_CALLERS_B64="${caller_registry}" \
+  AUTH_APPLICATION_CLOSURE_ENABLED="true" \
+  AUTH_APPLICATION_CLOSE_REAUTH_ENABLED="true" \
+  AUTH_USER_ENDPOINTS_ENABLED="true" \
+  AUTH_IDENTITY_ISSUANCE_ENABLED="true" \
+  AUTH_AUTHENTICATION_SERVICE_ID="iwut-auth-center:test" \
+  AUTH_SESSION_TTL="24h" \
+  AUTH_ASSOC_KEY_VERSION="v1" \
+  AUTH_ASSOC_ENCRYPT_KEY="${association_encrypt_key}" \
+  AUTH_ASSOC_LOOKUP_KEY="${association_lookup_key}" \
+  AUTH_PROFILE_CATALOG_FILE="${temporary_dir}/profile-catalog.json" \
+  AUTH_USER_IDENTITY_ISSUER="https://auth.e2e.test" \
+  AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON="{\"auth-close-e2e\":\"${temporary_dir}/auth-identity.pub.pem\"}" \
+  AUTH_USER_IDENTITY_SIGNING_KID="auth-close-e2e" \
+  AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64="${auth_identity_private_key_b64}" \
   exec "${temporary_dir}/auth-center" >"${integration_log_dir}/auth-center.log" 2>&1
 ) &
 auth_pid=$!
@@ -59,7 +80,7 @@ do
   sleep 0.2
 done
 cd "${app_dir}"
-if ! go test -count=1 -race -run '^TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity$' ./cmd/app-center; then
+if ! go test -count=1 -race -run '^TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity$' ./cmd/app-center; then
   printf '\nAuth Center output:\n' >&2
   echo "See ${integration_log_dir}/auth-center.log (local diagnostics)" >&2
   exit 1

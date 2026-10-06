@@ -42,7 +42,7 @@ func (r *ApplicationTesterJoinLinkRepository) LoadCurrent(ctx context.Context, a
 
 func (r *ApplicationTesterJoinLinkRepository) loadCurrentTesterJoinLink(ctx context.Context, applicationID shared.ApplicationID, adminID shared.AuthID, lock bool) (*testerdomain.TesterJoinLinkCandidate, error) {
 	var app applicationDocument
-	filter := bson.D{{Key: "id", Value: applicationID.String()}}
+	filter := bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}
 	var err error
 	if lock {
 		// This real write conflicts with administrator transfers even when reads use

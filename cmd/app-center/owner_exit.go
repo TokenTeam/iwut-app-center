@@ -79,9 +79,9 @@ func (w *ownerExitWorker) Stop(context.Context) error {
 	w.wg.Wait()
 	return nil
 }
-func provideAppWithOwnerExit(servers *transport.Servers, w *ownerExitWorker) *kratos.App {
+func provideAppWithOwnerExit(servers *transport.Servers, w *ownerExitWorker, closure *applicationClosureWorker) *kratos.App {
 	if w.enabled {
 		pb.RegisterAccountOwnerExitServiceServer(servers.GRPC, transport.NewAccountOwnerExitService(w.handlers))
 	}
-	return kratos.New(kratos.Name("iwut-app-center"), kratos.Server(servers.HTTP, servers.GRPC, w))
+	return kratos.New(kratos.Name("iwut-app-center"), kratos.Server(servers.HTTP, servers.GRPC, w, closure))
 }

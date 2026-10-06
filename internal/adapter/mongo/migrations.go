@@ -84,6 +84,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationCatalogMigrationID, apply: migrator.applyApplicationCatalogMigration},
 		{id: accountOwnerExitMigrationID, apply: migrator.applyAccountOwnerExitMigration},
 		{id: applicationAdminTransferMigrationID, apply: migrator.applyApplicationAdminTransferMigration},
+		{id: applicationClosureMigrationID, apply: migrator.applyApplicationClosureMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -389,20 +390,24 @@ func versionReviewPolicyValidator() bson.D {
 // equivalent to the validator a fresh 0001 deployment established; the
 // coordinationRevision fence is added by 0003, never by rewriting this stage.
 func applicationInitialValidator() bson.D {
-	return applicationValidatorForCoordination(false, false)
+	return applicationValidatorForCoordination(false, false, false)
 }
 
 // applicationValidator is the 0003 schema. It keeps the 0001 business
 // constraints and adds the adapter-only coordinationRevision write fence.
 func applicationValidator() bson.D {
-	return applicationValidatorForCoordination(true, false)
+	return applicationValidatorForCoordination(true, false, false)
 }
 
 func applicationOwnershipValidator() bson.D {
-	return applicationValidatorForCoordination(true, true)
+	return applicationValidatorForCoordination(true, true, false)
 }
 
-func applicationValidatorForCoordination(includeCoordinationRevision, includeOwnershipRevision bool) bson.D {
+func applicationLifecycleValidator() bson.D {
+	return applicationValidatorForCoordination(true, true, true)
+}
+
+func applicationValidatorForCoordination(includeCoordinationRevision, includeOwnershipRevision, includeLifecycle bool) bson.D {
 	required := bson.A{
 		"id", "name", "nameKey", "adminId", "createdAt",
 		"nextVersionSequence", "nextProfileRevisionSequence",
@@ -448,6 +453,13 @@ func applicationValidatorForCoordination(includeCoordinationRevision, includeOwn
 			{Key: "bsonType", Value: "long"},
 			{Key: "minimum", Value: int64(1)},
 		}})
+	}
+	if includeLifecycle {
+		required = append(required, "lifecycleStatus", "lifecycleRevision")
+		properties = append(properties,
+			bson.E{Key: "lifecycleStatus", Value: bson.D{{Key: "enum", Value: bson.A{"ACTIVE", "CLOSING", "CLOSED"}}}},
+			bson.E{Key: "lifecycleRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
+		)
 	}
 
 	return bson.D{{Key: "$and", Value: bson.A{

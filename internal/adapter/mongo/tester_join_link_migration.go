@@ -39,12 +39,23 @@ func applicationTesterJoinLinkValidator() bson.D {
 }
 
 func applicationTesterJoinLinkValidatorWithAdminTransfer(includeAdminTransfer bool) bson.D {
+	return applicationTesterJoinLinkValidatorSchema(includeAdminTransfer, false)
+}
+
+func applicationTesterJoinLinkValidatorWithClosure() bson.D {
+	return applicationTesterJoinLinkValidatorSchema(true, true)
+}
+
+func applicationTesterJoinLinkValidatorSchema(includeAdminTransfer, includeClosure bool) bson.D {
 	nullable := func(schema bson.D) bson.D {
 		return bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, schema}}}
 	}
 	reasons := bson.A{"ROTATED", "MANUAL"}
 	if includeAdminTransfer {
 		reasons = append(reasons, "ADMIN_TRANSFER")
+	}
+	if includeClosure {
+		reasons = append(reasons, "APPLICATION_CLOSURE")
 	}
 	revokedReasons := bson.A{
 		bson.D{{Key: "$and", Value: bson.A{
@@ -61,6 +72,11 @@ func applicationTesterJoinLinkValidatorWithAdminTransfer(includeAdminTransfer bo
 		revokedReasons = append(revokedReasons, bson.D{{Key: "$and", Value: bson.A{
 			bson.D{{Key: "$eq", Value: bson.A{"$revocationReason", "ADMIN_TRANSFER"}}},
 			bson.D{{Key: "$eq", Value: bson.A{"$replacedByJoinLinkId", nil}}},
+		}}})
+	}
+	if includeClosure {
+		revokedReasons = append(revokedReasons, bson.D{{Key: "$and", Value: bson.A{
+			bson.D{{Key: "$eq", Value: bson.A{"$revocationReason", "APPLICATION_CLOSURE"}}}, bson.D{{Key: "$eq", Value: bson.A{"$replacedByJoinLinkId", nil}}},
 		}}})
 	}
 	return bson.D{{Key: "$and", Value: bson.A{

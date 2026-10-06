@@ -36,8 +36,10 @@ const (
 type RevocationReason string
 
 const (
-	RevocationReasonRotated RevocationReason = "ROTATED"
-	RevocationReasonManual  RevocationReason = "MANUAL"
+	RevocationReasonRotated            RevocationReason = "ROTATED"
+	RevocationReasonManual             RevocationReason = "MANUAL"
+	RevocationReasonAdminTransfer      RevocationReason = "ADMIN_TRANSFER"
+	RevocationReasonApplicationClosure RevocationReason = "APPLICATION_CLOSURE"
 )
 
 type ApplicationTesterJoinLink struct {
@@ -74,7 +76,7 @@ func RestoreTesterJoinLink(id ApplicationTesterJoinLinkID, app shared.Applicatio
 			if replacedBy == nil || !replacedBy.IsValid() || *replacedBy == id {
 				return nil, NewInternalError(nil)
 			}
-		case RevocationReasonManual:
+		case RevocationReasonManual, RevocationReasonAdminTransfer, RevocationReasonApplicationClosure:
 			if replacedBy != nil {
 				return nil, NewInternalError(nil)
 			}

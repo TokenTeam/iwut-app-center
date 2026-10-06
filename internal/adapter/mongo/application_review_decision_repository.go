@@ -280,7 +280,7 @@ func (repository *ApplicationReviewDecisionRepository) readApplicationAdmin(
 	}
 	err := repository.database.Collection(applicationsCollectionName).FindOne(
 		ctx,
-		bson.D{{Key: "id", Value: applicationID.String()}},
+		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		options.FindOne().SetProjection(bson.D{{Key: "adminId", Value: 1}}),
 	).Decode(&document)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -305,7 +305,7 @@ func (repository *ApplicationReviewDecisionRepository) lockAndReadApplicationAdm
 	}
 	err := repository.database.Collection(applicationsCollectionName).FindOneAndUpdate(
 		ctx,
-		bson.D{{Key: "id", Value: applicationID.String()}},
+		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 		options.FindOneAndUpdate().
 			SetProjection(bson.D{{Key: "adminId", Value: 1}}).

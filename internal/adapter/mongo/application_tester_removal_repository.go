@@ -57,7 +57,7 @@ func (r *ApplicationTesterMembershipRepository) Remove(ctx context.Context, appI
 func (r *ApplicationTesterMembershipRepository) loadTesterRemovalCandidate(ctx context.Context, appID shared.ApplicationID, membershipID testerdomain.ApplicationTesterMembershipID, adminID shared.AuthID) (*testerdomain.TesterRemovalCandidate, error) {
 	var app applicationDocument
 	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx,
-		bson.D{{Key: "id", Value: appID.String()}},
+		bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 	).Decode(&app)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {

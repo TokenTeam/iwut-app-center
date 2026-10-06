@@ -765,15 +765,9 @@ func TestApplicationVersionDraftUpdateMigration_UpgradesExisting0002Schema(t *te
 	}
 	application := integrationApplication(t, "auth-migration", "migration-update")
 	insertLegacyApplicationDocument(t, database, application)
-	repository := NewApplicationVersionRepository(database)
-	created, err := repository.CreateDraft(
-		t.Context(), "auth-migration", integrationApplicationVersionDraft(t, application.ID(), "auth-migration", "v1"),
-	)
-	if err != nil {
-		t.Fatalf("create version under 0002 schema: %v", err)
-	}
+	created := insertHistoricalDraftApplicationVersion(t, database, application.ID(), "auth-migration", "v1")
 	versions := database.Collection(applicationVersionsCollectionName)
-	_, err = versions.UpdateOne(
+	_, err := versions.UpdateOne(
 		t.Context(),
 		bson.D{{Key: "versionId", Value: created.ID().String()}},
 		bson.D{
@@ -853,13 +847,7 @@ func TestApplicationReviewMigration_ExtendsLifecycleOnlyToSubmitted(t *testing.T
 	}
 
 	application := createPreOwnershipVersionTestApplication(t, database, "auth-review-migration", "review-migration")
-	repository := NewApplicationVersionRepository(database)
-	created, err := repository.CreateDraft(
-		t.Context(), "auth-review-migration", integrationApplicationVersionDraft(t, application.ID(), "auth-review-migration", "v1"),
-	)
-	if err != nil {
-		t.Fatalf("create version under 0003 schema: %v", err)
-	}
+	created := insertHistoricalDraftApplicationVersion(t, database, application.ID(), "auth-review-migration", "v1")
 	versions := database.Collection(applicationVersionsCollectionName)
 	writeSubmitted := func() error {
 		_, err := versions.UpdateOne(
@@ -924,7 +912,7 @@ func TestApplicationReviewMigration_ExtendsLifecycleOnlyToSubmitted(t *testing.T
 		}
 	}
 	// 0005 still leaves REVOKED to a future migration.
-	_, err = versions.UpdateOne(
+	_, err := versions.UpdateOne(
 		t.Context(),
 		bson.D{{Key: "versionId", Value: created.ID().String()}, {Key: "reviewStatus", Value: "SUBMITTED"}},
 		bson.D{{Key: "$set", Value: bson.D{{Key: "reviewStatus", Value: "REVOKED"}}}},
@@ -945,6 +933,33 @@ func insertLegacyApplicationDocument(t *testing.T, database *drivermongo.Databas
 	if _, err := database.Collection(applicationsCollectionName).InsertOne(t.Context(), legacyApplicationBSON(document)); err != nil {
 		t.Fatalf("insert legacy application document: %v", err)
 	}
+}
+
+// insertHistoricalDraftApplicationVersion seeds the exact 0002/0003 storage
+// shape. Current repositories require the 0022 lifecycle fence and must not be
+// used while a migration test deliberately stops before that schema exists.
+func insertHistoricalDraftApplicationVersion(t *testing.T, database *drivermongo.Database, applicationID shared.ApplicationID, createdBy, label string) *versiondomain.ApplicationVersion {
+	t.Helper()
+	draft := integrationApplicationVersionDraft(t, applicationID, createdBy, label)
+	sequence, err := versiondomain.NewVersionSequence(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := applicationVersionToDocument(draft, sequence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = database.Collection(applicationVersionsCollectionName).InsertOne(t.Context(), document); err != nil {
+		t.Fatalf("insert historical application version: %v", err)
+	}
+	if result, updateErr := database.Collection(applicationsCollectionName).UpdateOne(t.Context(), bson.M{"id": applicationID.String(), "nextVersionSequence": int32(1)}, bson.M{"$inc": bson.M{"nextVersionSequence": int32(1)}}); updateErr != nil || result.MatchedCount != 1 {
+		t.Fatalf("advance historical application sequence: result=%#v err=%v", result, updateErr)
+	}
+	version, err := versiondomain.NewApplicationVersion(draft, sequence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return version
 }
 
 type versionCreationResult struct {

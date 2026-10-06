@@ -38,6 +38,7 @@ const (
 	ServiceCallersEnv            = "APP_CENTER_SERVICE_CALLERS_B64"
 	ServiceMaxTTLEnv             = "APP_CENTER_SERVICE_IDENTITY_MAX_TTL"
 	ServiceClockSkewEnv          = "APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW"
+	ApplicationClosureEnabledEnv = "APP_CENTER_APPLICATION_CLOSURE_ENABLED"
 
 	DefaultTesterJoinURLPrefix     = "https://app.example/tester/join"
 	DefaultScopeCatalogCacheTTL    = 5 * time.Minute
@@ -61,10 +62,11 @@ type LookupEnv func(key string) (value string, found bool)
 // receive the scalar values they need through constructors and never read the
 // environment themselves.
 type Config struct {
-	OwnerExitEnabled        bool
-	TesterJoinURLPrefix     string
-	InitialApplicationQuota int32
-	ScopeCatalogCacheTTL    time.Duration
+	OwnerExitEnabled          bool
+	ApplicationClosureEnabled bool
+	TesterJoinURLPrefix       string
+	InitialApplicationQuota   int32
+	ScopeCatalogCacheTTL      time.Duration
 
 	HTTPAddr string
 	GRPCAddr string
@@ -283,6 +285,15 @@ func Load(lookup LookupEnv) (Config, error) {
 		case "false":
 		default:
 			return Config{}, fmt.Errorf("%w: account owner exit flag must be true or false", ErrInvalidConfiguration)
+		}
+	}
+	if raw, found := lookup(ApplicationClosureEnabledEnv); found {
+		switch raw {
+		case "true":
+			configuration.ApplicationClosureEnabled = true
+		case "false":
+		default:
+			return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalidConfiguration, ApplicationClosureEnabledEnv)
 		}
 	}
 	return configuration, nil

@@ -75,7 +75,7 @@ func (r *ApplicationFilterRepository) LoadForAdmin(ctx context.Context, applicat
 	var application struct {
 		AdminID string `bson:"adminId"`
 	}
-	err := r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.D{{Key: "id", Value: applicationID.String()}}).Decode(&application)
+	err := r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}).Decode(&application)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, filterport.ErrApplicationNotFound
 	}
@@ -146,7 +146,7 @@ func (r *ApplicationFilterRepository) Commit(ctx context.Context, adminID shared
 
 func (r *ApplicationFilterRepository) commitTransaction(ctx context.Context, adminID shared.AuthID, expectedRevision int64, candidate *filterdomain.ApplicationFilter, revision *filterdomain.ApplicationFilterRevision) (*filterdomain.ApplicationFilter, error) {
 	apps := r.database.Collection(applicationsCollectionName)
-	raw, err := apps.FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: candidate.ApplicationID().String()}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Raw()
+	raw, err := apps.FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: candidate.ApplicationID().String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Raw()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, filterport.ErrApplicationNotFound
 	}

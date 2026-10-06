@@ -201,7 +201,7 @@ func (r *AccountOwnerExitRepository) Prepare(ctx context.Context, p d.Prepare, r
 		if e != nil {
 			return nil, e
 		}
-		n, e := r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "adminId", Value: p.AuthID}}, options.Count().SetLimit(1))
+		n, e := r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "adminId", Value: p.AuthID}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, options.Count().SetLimit(1))
 		if e != nil {
 			return nil, e
 		}
@@ -354,7 +354,7 @@ func (r *AccountOwnerExitRepository) CleanupBatch(ctx context.Context, k d.Key, 
 			}
 		}
 		if len(memberships) == 0 {
-			n, err := r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "adminId", Value: k.AuthID}}, options.Count().SetLimit(1))
+			n, err := r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "adminId", Value: k.AuthID}, {Key: "lifecycleStatus", Value: "ACTIVE"}}, options.Count().SetLimit(1))
 			if err != nil {
 				return nil, err
 			}

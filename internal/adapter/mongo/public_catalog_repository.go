@@ -185,7 +185,7 @@ func (r *PublicCatalogRepository) loadCatalogFacts(ctx context.Context, publicat
 	appIDs = uniqueStrings(appIDs)
 	pubIDs = uniqueStrings(pubIDs)
 	versionIDs = uniqueStrings(versionIDs)
-	if err := collect(ctx, r.database.Collection(applicationsCollectionName), bson.M{"id": bson.M{"$in": appIDs}}, func(d applicationDocument) { f.applications[d.ID] = true }); err != nil {
+	if err := collect(ctx, r.database.Collection(applicationsCollectionName), bson.M{"id": bson.M{"$in": appIDs}, "lifecycleStatus": "ACTIVE"}, func(d applicationDocument) { f.applications[d.ID] = true }); err != nil {
 		return nil, err
 	}
 	if err := collect(ctx, r.database.Collection(applicationProfilesCollectionName), bson.M{"applicationId": bson.M{"$in": appIDs}}, func(d applicationProfileDocument) { f.profiles[d.ApplicationID] = d }); err != nil {
@@ -288,7 +288,7 @@ func (r *PublicCatalogRepository) catalogItem(publication applicationPublication
 		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
 	}
 	if !f.applications[publication.ApplicationID] {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		return nil, false, 0, nil
 	}
 	restored, err := applicationPublicationFromDocument(publication)
 	if err != nil || restored.ApplicationID() != applicationID || restored.RPCAPIMajor() != major {

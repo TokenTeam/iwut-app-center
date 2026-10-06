@@ -167,7 +167,7 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 	}
 	err := applications.FindOneAndUpdate(
 		ctx,
-		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: expectedAdminID.String()}},
+		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: expectedAdminID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 		options.FindOneAndUpdate().SetProjection(bson.D{{Key: "id", Value: 1}}),
 	).Decode(&ownedApplication)
@@ -177,7 +177,7 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 		}
 		err = applications.FindOne(
 			ctx,
-			bson.D{{Key: "id", Value: applicationID.String()}},
+			bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 			options.FindOne().SetProjection(bson.D{{Key: "id", Value: 1}}),
 		).Decode(&existing)
 		if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -312,6 +312,7 @@ func (repository *ApplicationVersionRepository) createDraftTransaction(
 		bson.D{
 			{Key: "id", Value: draft.ApplicationID().String()},
 			{Key: "adminId", Value: expectedAdminID.String()},
+			{Key: "lifecycleStatus", Value: "ACTIVE"},
 		},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "nextVersionSequence", Value: int32(1)}}}},
 		options.FindOneAndUpdate().
@@ -324,7 +325,7 @@ func (repository *ApplicationVersionRepository) createDraftTransaction(
 		}
 		err = applications.FindOne(
 			ctx,
-			bson.D{{Key: "id", Value: draft.ApplicationID().String()}},
+			bson.D{{Key: "id", Value: draft.ApplicationID().String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 			options.FindOne().SetProjection(bson.D{{Key: "adminId", Value: 1}}),
 		).Decode(&existing)
 		if errors.Is(err, drivermongo.ErrNoDocuments) {

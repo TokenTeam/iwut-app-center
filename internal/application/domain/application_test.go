@@ -114,11 +114,11 @@ func TestApplication_BR_APP_001_002_007_FieldsAreSetAtCreation(t *testing.T) {
 	}
 }
 
-func TestApplication_BR_APP_004_ContainsOnlyFourBusinessFields(t *testing.T) {
+func TestApplication_BR_APP_020_ContainsLifecycleFields(t *testing.T) {
 	t.Parallel()
 
 	applicationType := reflect.TypeOf(Application{})
-	wantFields := []string{"id", "name", "adminID", "createdAt"}
+	wantFields := []string{"id", "name", "adminID", "lifecycleStatus", "lifecycleRevision", "createdAt"}
 	if applicationType.NumField() != len(wantFields) {
 		t.Fatalf("Application has %d fields, want %d", applicationType.NumField(), len(wantFields))
 	}

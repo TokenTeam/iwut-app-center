@@ -225,7 +225,7 @@ func (repository *ApplicationReviewRepository) lockAdministrator(
 	}
 	err := repository.database.Collection(applicationsCollectionName).FindOneAndUpdate(
 		ctx,
-		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: expectedAdminID.String()}},
+		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "adminId", Value: expectedAdminID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}},
 		options.FindOneAndUpdate().SetProjection(bson.D{{Key: "adminId", Value: 1}}).SetReturnDocument(options.Before),
 	).Decode(&document)
@@ -263,7 +263,7 @@ func (repository *ApplicationReviewRepository) checkAdministrator(
 	}
 	err := repository.database.Collection(applicationsCollectionName).FindOne(
 		ctx,
-		bson.D{{Key: "id", Value: applicationID.String()}},
+		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		options.FindOne().SetProjection(bson.D{{Key: "adminId", Value: 1}}),
 	).Decode(&document)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
@@ -281,7 +281,7 @@ func (repository *ApplicationReviewRepository) checkAdministrator(
 func (repository *ApplicationReviewRepository) classifyMissingAdministrator(ctx context.Context, applicationID shared.ApplicationID) error {
 	err := repository.database.Collection(applicationsCollectionName).FindOne(
 		ctx,
-		bson.D{{Key: "id", Value: applicationID.String()}},
+		bson.D{{Key: "id", Value: applicationID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}},
 		options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}}),
 	).Err()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {

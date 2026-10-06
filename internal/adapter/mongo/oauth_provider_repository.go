@@ -68,6 +68,16 @@ func (r *OAuthProviderRepository) clientConfiguration(ctx context.Context, clien
 	if err != nil {
 		return nil, oauthport.ErrStateInconsistent
 	}
+	appErr := r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": registration.ApplicationID().String(), "lifecycleStatus": "ACTIVE"}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+	if errors.Is(appErr, drivermongo.ErrNoDocuments) {
+		if hideUnknown {
+			return nil, oauthport.ErrRuntimeUnavailable
+		}
+		return nil, oauthport.ErrApplicationNotFound
+	}
+	if appErr != nil {
+		return nil, appErr
+	}
 	identity := registration.ClientByID(clientID)
 	if identity == nil {
 		return nil, oauthport.ErrStateInconsistent
@@ -204,8 +214,10 @@ func (r *OAuthProviderRepository) resolveRuntimeSnapshot(ctx context.Context, cl
 		return nil, oauthport.ErrRuntimeVersionChanged
 	}
 	var app applicationDocument
-	if err = r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": configuration.ApplicationID.String()}).Decode(&app); err != nil {
-		return nil, missingOAuthProviderFact(err)
+	if err = r.database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": configuration.ApplicationID.String(), "lifecycleStatus": "ACTIVE"}).Decode(&app); errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, oauthport.ErrRuntimeUnavailable
+	} else if err != nil {
+		return nil, err
 	}
 	application, restoreErr := applicationFromDocument(app)
 	if restoreErr != nil || application.ID() != configuration.ApplicationID {
@@ -383,7 +395,7 @@ func (r *OAuthProviderRepository) currentDisplay(ctx context.Context, applicatio
 
 func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, applicationID shared.ApplicationID, observedAt time.Time) (*oauthdomain.PublishedRedirectSnapshot, error) {
 	result, err := r.snapshot(ctx, func(tx context.Context) (any, error) {
-		if err := r.database.Collection(applicationsCollectionName).FindOne(tx, bson.M{"id": applicationID.String()}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err(); errors.Is(err, drivermongo.ErrNoDocuments) {
+		if err := r.database.Collection(applicationsCollectionName).FindOne(tx, bson.M{"id": applicationID.String(), "lifecycleStatus": "ACTIVE"}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err(); errors.Is(err, drivermongo.ErrNoDocuments) {
 			return nil, oauthport.ErrApplicationNotFound
 		} else if err != nil {
 			return nil, err

@@ -176,6 +176,10 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationAdminTransferUUIDv7Generator := generator.NewApplicationAdminTransferUUIDv7Generator()
 	applicationAdminTransferHandlers := usecase.NewApplicationAdminTransferHandlers(applicationAdminTransferRepository, grpcDeveloperLifecycleDirectory, applicationAdminTransferUUIDv7Generator, systemClock)
 	applicationAdminTransferService := transport.NewApplicationAdminTransferService(applicationAdminTransferHandlers)
+	applicationClosureRepository := mongo.NewApplicationClosureRepository(database)
+	applicationClosureUUIDv7Generator := generator.NewApplicationClosureUUIDv7Generator()
+	applicationClosureHandlers := usecase.NewApplicationClosureHandlers(applicationClosureRepository, grpcDeveloperLifecycleDirectory, applicationClosureUUIDv7Generator, systemClock)
+	applicationClosureService := transport.NewApplicationClosureService(applicationClosureHandlers, identityVerifier)
 	serviceIdentityConfig := provideServiceIdentityConfig(configuration)
 	serviceIdentityVerifier, err := provideServiceIdentityVerifier(serviceIdentityConfig, systemClock)
 	if err != nil {
@@ -186,7 +190,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	oAuthProviderRepository := mongo.NewOAuthProviderRepository(database, secretFactory)
 	providerHandlers := usecase8.NewProviderHandlers(systemClock, oAuthProviderRepository)
 	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
-	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, applicationAdminTransferService, serviceIdentityVerifier, oAuthClientProviderService)
+	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -199,7 +203,14 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		cleanup()
 		return nil, nil, err
 	}
-	app := provideAppWithOwnerExit(servers, mainOwnerExitWorker)
+	grpcApplicationClosure, err := auth.NewGRPCApplicationClosure(clientConn)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	mainApplicationClosureWorker := provideApplicationClosureWorker(applicationClosureHandlers, grpcApplicationClosure)
+	app := provideAppWithOwnerExit(servers, mainOwnerExitWorker, mainApplicationClosureWorker)
 	return app, func() {
 		cleanup2()
 		cleanup()
