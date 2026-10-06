@@ -63,6 +63,9 @@ func (r *PublicCatalogRepository) ListPublic(ctx context.Context, authID shared.
 		if err = cursor.All(tx, &publications); err != nil {
 			return nil, err
 		}
+		if len(publications) == 0 {
+			return catalogdomain.NewPublicApplicationCatalogPage([]*catalogdomain.PublicApplicationCatalogItem{}, "")
+		}
 		facts, err := r.loadCatalogFacts(tx, publications, authID)
 		if err != nil {
 			return nil, err

@@ -10,6 +10,14 @@ import (
 	catalogport "iwut-app-center/internal/catalog/port"
 )
 
+func TestPublicCatalogRepositoryIntegration_UCAPP024_EmptyCatalog(t *testing.T) {
+	database := migratedIntegrationDatabase(t, integrationClient(t))
+	page, err := NewPublicCatalogRepository(database).ListPublic(t.Context(), "", 1, nil, 20, "")
+	if err != nil || page == nil || len(page.Items()) != 0 || page.NextPageToken() != "" {
+		t.Fatalf("empty catalog page=%#v err=%v", page, err)
+	}
+}
+
 func TestPublicCatalogRepositoryIntegration_UCAPP024_ListDetailIdentityAndEligibility(t *testing.T) {
 	fixture := newUnifiedLaunchFixture(t, integrationClient(t))
 	repository := NewPublicCatalogRepository(fixture.db)
