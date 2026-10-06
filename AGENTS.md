@@ -40,17 +40,18 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-026 — transfer Application administration.**
-Read `../../docs/app-center/briefs/UC-APP-026.md` plus the engineering baseline
-and implements README. Deliver initiate/accept/reject/cancel/expire transfer,
-ownershipRevision OCC, fresh source/target Developer checks, shared owner-exit
-and Application fences, atomic quota/name ownership movement, explicit
-KEEP/ROTATE confidential credential handling, Tester link revocation, migration
-0021, management HTTP/gRPC and deterministic concurrency coverage. Extend the
-UC025 Prepare path with inbound PENDING blockers and expiry convergence. Do not
-implement Application closure, platform takeover, notifications, team roles or
-Auth grant/token movement. Required final tier: `make check-auth-app`. Commit
-API inputs and outputs before service gitlinks and keep all commits local.
+**UC-APP-027 — irreversibly close an Application.**
+Read `../../docs/app-center/briefs/UC-APP-027.md` plus the engineering baseline
+and implements README. Deliver ACTIVE→CLOSING→CLOSED, lifecycleRevision OCC,
+the Session-user plus dedicated app.close reauth proof boundary, atomic local
+quarantine and quota/owner-obligation release, transfer/link/client termination,
+durable idempotent Auth Apply/Get convergence, migration 0022, management
+HTTP/gRPC and every required ACTIVE gate across catalog/runtime/review/admin
+writes. Preserve all Version/Profile/Review/Publication/Filter/Membership and
+technical-name history. Do not implement archive, reversible disable, platform
+forced close, physical deletion or recovery. Required final tier:
+`make check-auth-app` against Auth UC026. Commit API inputs and outputs before
+service gitlinks and keep all commits local.
 
 ## Verification entry points
 
