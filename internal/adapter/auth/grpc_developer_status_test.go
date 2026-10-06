@@ -7,9 +7,13 @@ import (
 	"testing"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
+	applicationport "iwut-app-center/internal/application/port"
 	reviewport "iwut-app-center/internal/review/port"
+	"iwut-app-center/internal/shared"
 )
 
 func TestAuthDeveloperStatusV1_ConsumerContract(t *testing.T) {
@@ -25,6 +29,19 @@ func TestAuthDeveloperStatusV1_ConsumerContract(t *testing.T) {
 	entryFields := (&developerstatusv1.DeveloperStatusEntry{}).ProtoReflect().Descriptor().Fields()
 	if entryFields.Len() != 3 || entryFields.ByName("auth_id").Number() != 1 || entryFields.ByName("developer_status").Number() != 2 {
 		t.Fatalf("entry fields = %v", entryFields)
+	}
+}
+
+func TestGRPCDeveloperLifecycleDirectory_BR_APP_014_DistinguishesNotFound(t *testing.T) {
+	t.Parallel()
+
+	directory := &GRPCDeveloperLifecycleDirectory{client: &fakeDeveloperStatusClient{err: status.Error(codes.NotFound, "missing")}}
+	if _, err := directory.GetFresh(t.Context(), []shared.AuthID{"auth-target"}); !errors.Is(err, applicationport.ErrDeveloperLifecycleNotFound) {
+		t.Fatalf("GetFresh() error = %v, want lifecycle not found", err)
+	}
+	directory.client = &fakeDeveloperStatusClient{err: status.Error(codes.Unavailable, "offline")}
+	if _, err := directory.GetFresh(t.Context(), []shared.AuthID{"auth-target"}); err == nil || errors.Is(err, applicationport.ErrDeveloperLifecycleNotFound) {
+		t.Fatalf("GetFresh() unavailable error = %v", err)
 	}
 }
 

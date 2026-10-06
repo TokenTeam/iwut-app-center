@@ -16,6 +16,8 @@ import (
 // ProviderSet binds the concrete generators to the narrow ports the
 // Application use case consumes.
 var ProviderSet = wire.NewSet(
+	NewApplicationAdminTransferUUIDv7Generator,
+	wire.Bind(new(port.ApplicationAdminTransferIDGenerator), new(*ApplicationAdminTransferUUIDv7Generator)),
 	NewApplicationFilterRevisionUUIDv7Generator,
 	wire.Bind(new(filterport.RevisionIDGenerator), new(*ApplicationFilterRevisionUUIDv7Generator)),
 	wire.Bind(new(filterport.Clock), new(*SystemClock)),

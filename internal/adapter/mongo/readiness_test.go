@@ -32,8 +32,8 @@ func TestSupportsTransactions(t *testing.T) {
 func TestRequiredMigrationRecorded(t *testing.T) {
 	t.Parallel()
 
-	if RequiredMigrationID != "0020_account_owner_exit" {
-		t.Fatalf("RequiredMigrationID = %q, want 0020_account_owner_exit", RequiredMigrationID)
+	if RequiredMigrationID != "0021_application_admin_transfer" {
+		t.Fatalf("RequiredMigrationID = %q, want 0021_application_admin_transfer", RequiredMigrationID)
 	}
 	if requiredMigrationRecorded(nil) {
 		t.Fatal("empty ledger must not satisfy the required migration")

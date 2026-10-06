@@ -83,6 +83,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationFilterMigrationID, apply: migrator.applyApplicationFilterMigration},
 		{id: applicationCatalogMigrationID, apply: migrator.applyApplicationCatalogMigration},
 		{id: accountOwnerExitMigrationID, apply: migrator.applyAccountOwnerExitMigration},
+		{id: applicationAdminTransferMigrationID, apply: migrator.applyApplicationAdminTransferMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -388,16 +389,20 @@ func versionReviewPolicyValidator() bson.D {
 // equivalent to the validator a fresh 0001 deployment established; the
 // coordinationRevision fence is added by 0003, never by rewriting this stage.
 func applicationInitialValidator() bson.D {
-	return applicationValidatorForCoordination(false)
+	return applicationValidatorForCoordination(false, false)
 }
 
 // applicationValidator is the 0003 schema. It keeps the 0001 business
 // constraints and adds the adapter-only coordinationRevision write fence.
 func applicationValidator() bson.D {
-	return applicationValidatorForCoordination(true)
+	return applicationValidatorForCoordination(true, false)
 }
 
-func applicationValidatorForCoordination(includeCoordinationRevision bool) bson.D {
+func applicationOwnershipValidator() bson.D {
+	return applicationValidatorForCoordination(true, true)
+}
+
+func applicationValidatorForCoordination(includeCoordinationRevision, includeOwnershipRevision bool) bson.D {
 	required := bson.A{
 		"id", "name", "nameKey", "adminId", "createdAt",
 		"nextVersionSequence", "nextProfileRevisionSequence",
@@ -435,6 +440,13 @@ func applicationValidatorForCoordination(includeCoordinationRevision bool) bson.
 		properties = append(properties, bson.E{Key: "coordinationRevision", Value: bson.D{
 			{Key: "bsonType", Value: "long"},
 			{Key: "minimum", Value: int64(0)},
+		}})
+	}
+	if includeOwnershipRevision {
+		required = append(required, "ownershipRevision")
+		properties = append(properties, bson.E{Key: "ownershipRevision", Value: bson.D{
+			{Key: "bsonType", Value: "long"},
+			{Key: "minimum", Value: int64(1)},
 		}})
 	}
 

@@ -9,9 +9,11 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
 	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
+	applicationdomain "iwut-app-center/internal/application/domain"
 	d "iwut-app-center/internal/ownerexit/domain"
 	"iwut-app-center/internal/shared"
 	"math"
+	"sort"
 	"time"
 )
 
@@ -34,6 +36,7 @@ type ownerOperation struct {
 	Decision      d.Decision `bson:"decision"`
 	Cleanup       d.Cleanup  `bson:"cleanup"`
 	Blocked       bool       `bson:"blocked"`
+	Blocker       d.Blocker  `bson:"blocker"`
 	Attempt       int        `bson:"attempt"`
 	NextAttemptAt time.Time  `bson:"nextAttemptAt"`
 }
@@ -48,11 +51,11 @@ func (o ownerOperation) valid() bool {
 	validReceipt := (d.Finish{Prepare: o.status().Prepare, ReceiptID: o.ReceiptID, Decision: d.Committed}).Valid()
 	switch o.Decision {
 	case d.Pending:
-		return !o.Blocked && validReceipt && o.Cleanup == d.NotRequired
+		return !o.Blocked && o.Blocker == d.NoBlocker && validReceipt && o.Cleanup == d.NotRequired
 	case d.Committed:
-		return !o.Blocked && validReceipt && ((o.Purpose == d.Withdrawal && o.Cleanup == d.NotRequired) || (o.Purpose == d.Closure && (o.Cleanup == d.CleanupPending || o.Cleanup == d.Complete)))
+		return !o.Blocked && o.Blocker == d.NoBlocker && validReceipt && ((o.Purpose == d.Withdrawal && o.Cleanup == d.NotRequired) || (o.Purpose == d.Closure && (o.Cleanup == d.CleanupPending || o.Cleanup == d.Complete)))
 	case d.Cancelled:
-		return o.Cleanup == d.NotRequired && (o.ReceiptID == "" || validReceipt) && (!o.Blocked || o.ReceiptID == "")
+		return o.Cleanup == d.NotRequired && (o.ReceiptID == "" || validReceipt) && (!o.Blocked || o.ReceiptID == "") && ((!o.Blocked && o.Blocker == d.NoBlocker) || (o.Blocked && (o.Blocker == d.OwnedApplications || o.Blocker == d.PendingOwnershipChange)))
 	default:
 		return false
 	}
@@ -131,9 +134,44 @@ func (r *AccountOwnerExitRepository) read(ctx context.Context, k d.Key) (ownerOp
 }
 func (r *AccountOwnerExitRepository) Prepare(ctx context.Context, p d.Prepare, receipt string, now time.Time) (d.Preparation, error) {
 	v, err := r.transaction(ctx, func(tx context.Context) (any, error) {
-		f, e := lockOwnerFence(tx, r.database, p.AuthID)
+		cursor, e := r.database.Collection(applicationAdminTransfersCollectionName).Find(tx, bson.D{{Key: "toAdminId", Value: p.AuthID}, {Key: "status", Value: "PENDING"}})
 		if e != nil {
 			return nil, e
+		}
+		var inbound []applicationAdminTransferDocument
+		if e = cursor.All(tx, &inbound); e != nil {
+			return nil, e
+		}
+		authIDs := map[string]struct{}{p.AuthID: {}}
+		applicationIDs := make([]string, 0, len(inbound))
+		transferRepository := &ApplicationAdminTransferRepository{database: r.database}
+		for _, document := range inbound {
+			if _, _, e = transferRepository.readTransfer(tx, applicationdomain.ApplicationAdminTransferID(document.TransferID)); e != nil {
+				return nil, e
+			}
+			authIDs[document.FromAdminID] = struct{}{}
+			applicationIDs = append(applicationIDs, document.ApplicationID)
+		}
+		orderedAuthIDs := make([]string, 0, len(authIDs))
+		for authID := range authIDs {
+			orderedAuthIDs = append(orderedAuthIDs, authID)
+		}
+		sort.Strings(orderedAuthIDs)
+		var f ownerFence
+		for _, authID := range orderedAuthIDs {
+			locked, lockErr := lockOwnerFence(tx, r.database, authID)
+			if lockErr != nil {
+				return nil, lockErr
+			}
+			if authID == p.AuthID {
+				f = locked
+			}
+		}
+		sort.Strings(applicationIDs)
+		for _, applicationID := range applicationIDs {
+			if e = lockApplicationFence(tx, r.database, applicationID); e != nil {
+				return nil, e
+			}
 		}
 		var existing ownerOperation
 		e = r.database.Collection(ownerOperations).FindOne(tx, bson.D{{Key: "operationId", Value: p.OperationID}}).Decode(&existing)
@@ -144,7 +182,7 @@ func (r *AccountOwnerExitRepository) Prepare(ctx context.Context, p d.Prepare, r
 			if existing.status().Prepare != p || existing.Decision == d.Cancelled && !existing.Blocked {
 				return nil, d.ErrConflict
 			}
-			return d.Preparation{ReceiptID: existing.ReceiptID, Blocked: existing.Blocked}, nil
+			return d.Preparation{ReceiptID: existing.ReceiptID, Blocker: existing.Blocker, Blocked: existing.Blocked}, nil
 		}
 		if !errors.Is(e, m.ErrNoDocuments) {
 			return nil, e
@@ -152,13 +190,29 @@ func (r *AccountOwnerExitRepository) Prepare(ctx context.Context, p d.Prepare, r
 		if f.PendingOperationID != "" || f.SealedPurpose == d.Closure || f.SealedPurpose == d.Withdrawal && p.Purpose != d.Closure {
 			return nil, d.ErrConflict
 		}
+		for index := range inbound {
+			if !now.Before(inbound[index].ExpiresAt) {
+				if e = (&ApplicationAdminTransferRepository{database: r.database}).expireLocked(tx, &inbound[index], now); e != nil {
+					return nil, e
+				}
+			}
+		}
+		pending, e := r.database.Collection(applicationAdminTransfersCollectionName).CountDocuments(tx, bson.D{{Key: "toAdminId", Value: p.AuthID}, {Key: "status", Value: "PENDING"}}, options.Count().SetLimit(1))
+		if e != nil {
+			return nil, e
+		}
 		n, e := r.database.Collection(applicationsCollectionName).CountDocuments(tx, bson.D{{Key: "adminId", Value: p.AuthID}}, options.Count().SetLimit(1))
 		if e != nil {
 			return nil, e
 		}
 		o := ownerOperation{AuthID: p.AuthID, OperationID: p.OperationID, Purpose: p.Purpose, ReceiptID: receipt, Decision: d.Pending, Cleanup: d.NotRequired, NextAttemptAt: now.Add(time.Second)}
-		if n > 0 {
+		if n > 0 || pending > 0 {
 			o.Blocked = true
+			if pending > 0 {
+				o.Blocker = d.PendingOwnershipChange
+			} else {
+				o.Blocker = d.OwnedApplications
+			}
 			o.ReceiptID = ""
 			o.Decision = d.Cancelled
 		} else {
@@ -168,7 +222,7 @@ func (r *AccountOwnerExitRepository) Prepare(ctx context.Context, p d.Prepare, r
 			}
 		}
 		_, e = r.database.Collection(ownerOperations).InsertOne(tx, o)
-		return d.Preparation{ReceiptID: o.ReceiptID, Blocked: o.Blocked}, e
+		return d.Preparation{ReceiptID: o.ReceiptID, Blocker: o.Blocker, Blocked: o.Blocked}, e
 	})
 	if err != nil {
 		return d.Preparation{}, err

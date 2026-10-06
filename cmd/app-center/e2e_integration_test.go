@@ -39,6 +39,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
@@ -153,11 +154,12 @@ func e2eSignServiceIdentity(t *testing.T, serviceID, audience string) string {
 // to prove the HTTP and gRPC calls crossed the real transaction-capable
 // repository instead of an in-process fake.
 type e2eApplicationDocument struct {
-	ID        string    `bson:"id"`
-	Name      string    `bson:"name"`
-	NameKey   string    `bson:"nameKey"`
-	AdminID   string    `bson:"adminId"`
-	CreatedAt time.Time `bson:"createdAt"`
+	ID                string    `bson:"id"`
+	Name              string    `bson:"name"`
+	NameKey           string    `bson:"nameKey"`
+	AdminID           string    `bson:"adminId"`
+	OwnershipRevision int64     `bson:"ownershipRevision"`
+	CreatedAt         time.Time `bson:"createdAt"`
 }
 
 type e2eQuotaDocument struct {
@@ -1127,11 +1129,11 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	}
 }
 
-// TestE2E_UCAPP005_RealAuthProcessServiceIdentity is run by
+// TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity is run by
 // scripts/test-auth-app-integration.sh. It composes the real App server in this
 // process, but all three Auth dependencies cross a TCP connection to a separate
 // real Auth Center process protected by its production service-JWS interceptor.
-func TestE2E_UCAPP005_RealAuthProcessServiceIdentity(t *testing.T) {
+func TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity(t *testing.T) {
 	authTarget := os.Getenv(authCenterIntegrationTargetEnv)
 	authDatabaseName := os.Getenv(authCenterIntegrationDatabaseEnv)
 	serviceID := os.Getenv(config.ServiceIdentityIDEnv)
@@ -1285,6 +1287,48 @@ func TestE2E_UCAPP005_RealAuthProcessServiceIdentity(t *testing.T) {
 	blocked, err := approval.BlocksApproval(ctx, "lifecycle-closed", "lifecycle-closed")
 	if err != nil || !blocked {
 		t.Fatalf("closed owner blocked=%v err=%v", blocked, err)
+	}
+
+	// UC-APP-026 uses two real ACTIVE+APPROVED Auth principals. Initiation and
+	// acceptance each cross the production service-JWS protected status API.
+	const transferSourceID, transferTargetID = "auth-dual-transfer-source", "auth-dual-transfer-target"
+	transferSourceToken := e2eSignIdentity(t, privateKey, transferSourceID, "APPROVED")
+	transferTargetToken := e2eSignIdentity(t, privateKey, transferTargetID, "APPROVED")
+	createStatus, transferApplicationBody := e2eHTTPCreate(t, httpAddress, transferSourceToken, "Dual_Service_Transfer_App")
+	if createStatus != http.StatusCreated {
+		t.Fatalf("create transfer application status = %d; body = %s", createStatus, transferApplicationBody)
+	}
+	var transferApplication applicationv1.CreateApplicationResponse
+	if err := protojson.Unmarshal(transferApplicationBody, &transferApplication); err != nil {
+		t.Fatalf("decode transfer application: %v", err)
+	}
+	ownershipStatus, ownershipHeaders, ownershipBody := e2eHTTPAdminTransfer(t, httpAddress, transferSourceToken, http.MethodGet, "/v1/applications/"+transferApplication.GetId()+"/ownership", nil)
+	if ownershipStatus != http.StatusOK || ownershipHeaders.Get("Cache-Control") != "no-store" {
+		t.Fatalf("ownership status=%d cache=%q body=%s", ownershipStatus, ownershipHeaders.Get("Cache-Control"), ownershipBody)
+	}
+	var ownership applicationadmintransferv1.GetApplicationOwnershipResponse
+	if err := protojson.Unmarshal(ownershipBody, &ownership); err != nil || ownership.GetOwnership().GetOwnershipRevision() != 1 {
+		t.Fatalf("decode ownership=%v value=%v", err, &ownership)
+	}
+	initiateStatus, initiateHeaders, initiateBody := e2eHTTPAdminTransfer(t, httpAddress, transferSourceToken, http.MethodPost, "/v1/applications/"+transferApplication.GetId()+"/admin-transfers", []byte(`{"toAuthId":"`+transferTargetID+`","expectedOwnershipRevision":"1"}`))
+	if initiateStatus != http.StatusCreated || initiateHeaders.Get("Cache-Control") != "no-store" {
+		t.Fatalf("initiate status=%d cache=%q body=%s", initiateStatus, initiateHeaders.Get("Cache-Control"), initiateBody)
+	}
+	var initiated applicationadmintransferv1.InitiateApplicationAdminTransferResponse
+	if err := protojson.Unmarshal(initiateBody, &initiated); err != nil || initiated.GetTransfer().GetStatus() != applicationadmintransferv1.ApplicationAdminTransferStatus_APPLICATION_ADMIN_TRANSFER_STATUS_PENDING {
+		t.Fatalf("decode initiated=%v value=%v", err, &initiated)
+	}
+	acceptStatus, acceptHeaders, acceptBody := e2eHTTPAdminTransfer(t, httpAddress, transferTargetToken, http.MethodPost, "/v1/application-admin-transfers/"+initiated.GetTransfer().GetTransferId()+":accept", []byte(`{"confidentialCredentialHandling":"CONFIDENTIAL_CREDENTIAL_HANDLING_KEEP"}`))
+	if acceptStatus != http.StatusOK || acceptHeaders.Get("Cache-Control") != "no-store" {
+		t.Fatalf("accept status=%d cache=%q body=%s", acceptStatus, acceptHeaders.Get("Cache-Control"), acceptBody)
+	}
+	var accepted applicationadmintransferv1.AcceptApplicationAdminTransferResponse
+	if err := protojson.Unmarshal(acceptBody, &accepted); err != nil || accepted.GetTransfer().GetStatus() != applicationadmintransferv1.ApplicationAdminTransferStatus_APPLICATION_ADMIN_TRANSFER_STATUS_ACCEPTED || accepted.GetSecretsDisclosed() {
+		t.Fatalf("decode accepted=%v value=%v", err, &accepted)
+	}
+	var transferred e2eApplicationDocument
+	if err := database.Collection("applications").FindOne(ctx, bson.D{{Key: "id", Value: transferApplication.GetId()}}).Decode(&transferred); err != nil || transferred.AdminID != transferTargetID || transferred.OwnershipRevision != 2 {
+		t.Fatalf("persisted transferred application=%#v err=%v", transferred, err)
 	}
 }
 
@@ -1723,6 +1767,28 @@ func e2eHTTPCreate(t *testing.T, address, token, name string) (int, []byte) {
 		t.Fatalf("read HTTP response: %v", err)
 	}
 	return response.StatusCode, payload
+}
+
+func e2eHTTPAdminTransfer(t *testing.T, address, token, method, path string, body []byte) (int, http.Header, []byte) {
+	t.Helper()
+	request, err := http.NewRequest(method, "http://"+address+path, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build admin transfer request: %v", err)
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	request.Header.Set(transport.IdentityHeader, token)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	payload, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read admin transfer response: %v", err)
+	}
+	return response.StatusCode, response.Header.Clone(), payload
 }
 
 func e2eHTTPCreateVersion(

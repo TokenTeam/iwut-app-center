@@ -25,8 +25,8 @@ func (s *AccountOwnerExitService) PrepareAccountOwnerExit(ctx context.Context, r
 	if e != nil {
 		return nil, ownerExitError(e)
 	}
-	if out.Blocked {
-		return &pb.PrepareAccountOwnerExitResponse{Outcome: pb.Outcome_OUTCOME_BLOCKED, Blocker: pb.Blocker_BLOCKER_OWNED_APPLICATIONS}, nil
+	if out.Blocker != d.NoBlocker {
+		return &pb.PrepareAccountOwnerExitResponse{Outcome: pb.Outcome_OUTCOME_BLOCKED, Blocker: pb.Blocker(out.Blocker)}, nil
 	}
 	return &pb.PrepareAccountOwnerExitResponse{Outcome: pb.Outcome_OUTCOME_PREPARED, ReceiptId: out.ReceiptID}, nil
 }

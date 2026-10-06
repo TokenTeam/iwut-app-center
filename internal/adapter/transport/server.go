@@ -1,6 +1,8 @@
 package transport
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	kerrors "github.com/go-kratos/kratos/v2/errors"
@@ -11,8 +13,10 @@ import (
 
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"google.golang.org/grpc/codes"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
 	applicationcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_catalog"
 	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
@@ -185,8 +189,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, filterService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, filterService, transferService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -243,6 +247,7 @@ func NewServers(
 	var filterService *ApplicationFilterService
 	var runtimeResolutionService *RuntimeResolutionService
 	var applicationCatalogService *ApplicationCatalogService
+	var transferService *ApplicationAdminTransferService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
 		case *RuntimeResolutionService:
@@ -260,6 +265,11 @@ func NewServers(
 				return nil, errors.New("transport servers: application filter service is invalid")
 			}
 			filterService = value
+		case *ApplicationAdminTransferService:
+			if value == nil || transferService != nil {
+				return nil, errors.New("transport servers: application administrator transfer service is invalid")
+			}
+			transferService = value
 		case *ServiceIdentityVerifier:
 			if value == nil || serviceVerifier != nil {
 				return nil, errors.New("transport servers: service identity verifier is invalid")
@@ -297,6 +307,9 @@ func NewServers(
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
 	oauthclientv1.RegisterOAuthClientServiceHTTPServer(httpServer, oauthClientService)
+	if transferService != nil {
+		applicationadmintransferv1.RegisterApplicationAdminTransferServiceHTTPServer(httpServer, transferService)
+	}
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceHTTPServer(httpServer, filterService)
 	}
@@ -322,6 +335,9 @@ func NewServers(
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
 	oauthclientv1.RegisterOAuthClientServiceServer(grpcServer, oauthClientService)
+	if transferService != nil {
+		applicationadmintransferv1.RegisterApplicationAdminTransferServiceServer(grpcServer, transferService)
+	}
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceServer(grpcServer, filterService)
 	}
@@ -392,6 +408,15 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 	case *oauthclientv1.RegisterOAuthClientResponse:
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
+	case *applicationadmintransferv1.InitiateApplicationAdminTransferResponse:
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusCreated)
+	case *applicationadmintransferv1.GetApplicationOwnershipResponse,
+		*applicationadmintransferv1.GetApplicationAdminTransferResponse,
+		*applicationadmintransferv1.AcceptApplicationAdminTransferResponse,
+		*applicationadmintransferv1.RejectApplicationAdminTransferResponse,
+		*applicationadmintransferv1.CancelApplicationAdminTransferResponse:
+		w.Header().Set("Cache-Control", "no-store")
 	case *oauthclientv1.GetApplicationOAuthRegistrationResponse,
 		*oauthclientv1.SetOAuthClientStatusResponse,
 		*oauthclientv1.GetOAuthClientCredentialMetadataResponse,
@@ -413,6 +438,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isApplicationAdminTransferRequest(r) {
+		applicationAdminTransferSafeErrorEncoder(w, r, err)
+		return
+	}
 	if isApplicationFilterRequest(r) {
 		applicationFilterSafeErrorEncoder(w, r, err)
 		return
@@ -477,6 +506,102 @@ func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err erro
 	khttp.DefaultErrorEncoder(w, r, err)
 }
 
+func applicationAdminTransferSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Cache-Control", "no-store")
+	converted := kerrors.FromError(err)
+	if _, ok := applicationadmintransferv1.ErrorReason_value[converted.Reason]; !ok {
+		reason := "ERROR_REASON_INVALID_TRANSFER_ID"
+		message := "application administrator transfer request is invalid"
+		if strings.HasSuffix(r.URL.Path, ":accept") {
+			reason = "ERROR_REASON_INVALID_CONFIDENTIAL_CREDENTIAL_HANDLING"
+		} else if strings.HasSuffix(r.URL.Path, "/admin-transfers") {
+			reason = "ERROR_REASON_INVALID_TARGET_AUTH_ID"
+		}
+		if converted.Code != http.StatusBadRequest {
+			reason, message = "ERROR_REASON_INTERNAL", "internal failure"
+		}
+		err = kerrors.New(int(converted.Code), reason, message)
+		converted = kerrors.FromError(err)
+	}
+	switch converted.Reason {
+	case "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED",
+		"ERROR_REASON_APPLICATION_ADMIN_TRANSFER_EXPIRED",
+		"ERROR_REASON_APPLICATION_ADMIN_TRANSFER_NOT_PENDING",
+		"ERROR_REASON_ACCOUNT_OWNER_EXIT_IN_PROGRESS":
+		err = kerrors.New(http.StatusConflict, converted.Reason, converted.Message)
+	case "ERROR_REASON_SOURCE_DEVELOPER_INELIGIBLE", "ERROR_REASON_TARGET_DEVELOPER_INELIGIBLE":
+		err = kerrors.New(http.StatusUnprocessableEntity, converted.Reason, converted.Message)
+	}
+	khttp.DefaultErrorEncoder(w, r, err)
+}
+
+func isApplicationAdminTransferRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if len(parts) == 4 && parts[0] == "v1" && parts[1] == "applications" {
+		return r.Method == http.MethodGet && parts[3] == "ownership" || r.Method == http.MethodPost && parts[3] == "admin-transfers"
+	}
+	if len(parts) != 3 || parts[0] != "v1" || parts[1] != "application-admin-transfers" {
+		return false
+	}
+	return r.Method == http.MethodGet && !strings.Contains(parts[2], ":") ||
+		r.Method == http.MethodPost && (strings.HasSuffix(parts[2], ":accept") || strings.HasSuffix(parts[2], ":reject") || strings.HasSuffix(parts[2], ":cancel"))
+}
+
+func applicationAdminTransferOperation(r *http.Request) string {
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/ownership"):
+		return applicationadmintransferv1.OperationApplicationAdminTransferServiceGetApplicationOwnership
+	case strings.HasSuffix(r.URL.Path, "/admin-transfers"):
+		return applicationadmintransferv1.OperationApplicationAdminTransferServiceInitiateApplicationAdminTransfer
+	case strings.HasSuffix(r.URL.Path, ":accept"):
+		return applicationadmintransferv1.OperationApplicationAdminTransferServiceAcceptApplicationAdminTransfer
+	case strings.HasSuffix(r.URL.Path, ":reject"):
+		return applicationadmintransferv1.OperationApplicationAdminTransferServiceRejectApplicationAdminTransfer
+	case strings.HasSuffix(r.URL.Path, ":cancel"):
+		return applicationadmintransferv1.OperationApplicationAdminTransferServiceCancelApplicationAdminTransfer
+	default:
+		return applicationadmintransferv1.OperationApplicationAdminTransferServiceGetApplicationAdminTransfer
+	}
+}
+
+func validApplicationAdminTransferHTTPInput(r *http.Request) bool {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		return false
+	}
+	if r.Method == http.MethodGet {
+		return validTesterRemovalHTTPInput(r)
+	}
+	if !strings.HasSuffix(r.URL.Path, ":reject") && !strings.HasSuffix(r.URL.Path, ":cancel") {
+		return true
+	}
+	if r.Body == nil {
+		return true
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4097))
+	if err != nil || len(body) > 4096 {
+		return false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	if strings.TrimSpace(string(body)) == "" {
+		return true
+	}
+	var value map[string]json.RawMessage
+	if json.Unmarshal(body, &value) != nil || len(value) > 1 {
+		return false
+	}
+	raw, present := value["transferId"]
+	if !present {
+		return len(value) == 0
+	}
+	var bodyID string
+	if json.Unmarshal(raw, &bodyID) != nil {
+		return false
+	}
+	pathID := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")[2]
+	pathID = strings.TrimSuffix(strings.TrimSuffix(pathID, ":reject"), ":cancel")
+	return bodyID == pathID
+}
+
 func isTesterMembershipRequest(r *http.Request) bool {
 	return r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/tester-join-links/") && strings.HasSuffix(r.URL.Path, "/memberships") && strings.Count(r.URL.Path, "/") == 4
 }
@@ -518,7 +643,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
@@ -597,7 +722,14 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					if isTesterJoinLinkRevocationRequest(r) {
 						operation = RevokeTesterJoinLinkGRPCMethod
 					}
+					if isApplicationAdminTransferRequest(r) {
+						operation = applicationAdminTransferOperation(r)
+					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if isApplicationAdminTransferRequest(r) && !validApplicationAdminTransferHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_TRANSFER_ID", "application administrator transfer request is invalid"))
 					return
 				}
 				if isDecideApplicationProfileReviewRequest(r) && !validProfileDecisionHTTPInput(r) {

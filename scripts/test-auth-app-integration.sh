@@ -26,7 +26,11 @@ export APP_CENTER_SERVICE_IDENTITY_KID="app-center-e2e"
 export APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64="${private_key_b64}"
 
 docker exec "${container_name}" mongosh --quiet --port 27017 "${AUTH_CENTER_INTEGRATION_DATABASE}" --eval \
-  'db.auth_principals.insertOne({authId:"auth-dual-service-admin",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"SUSPENDED",createdAt:new Date(),updatedAt:new Date()})' >/dev/null
+  'db.auth_principals.insertMany([
+    {authId:"auth-dual-service-admin",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"SUSPENDED",createdAt:new Date(),updatedAt:new Date()},
+    {authId:"auth-dual-transfer-source",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"APPROVED",createdAt:new Date(),updatedAt:new Date()},
+    {authId:"auth-dual-transfer-target",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"APPROVED",createdAt:new Date(),updatedAt:new Date()}
+  ])' >/dev/null
 
 (
   cd "${auth_dir}"
@@ -55,7 +59,7 @@ do
   sleep 0.2
 done
 cd "${app_dir}"
-if ! go test -count=1 -race -run '^TestE2E_UCAPP005_RealAuthProcessServiceIdentity$' ./cmd/app-center; then
+if ! go test -count=1 -race -run '^TestE2E_UCAPP005_026_RealAuthProcessServiceIdentity$' ./cmd/app-center; then
   printf '\nAuth Center output:\n' >&2
   echo "See ${integration_log_dir}/auth-center.log (local diagnostics)" >&2
   exit 1

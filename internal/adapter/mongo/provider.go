@@ -18,6 +18,8 @@ import (
 // database and client providers live in the composition root because they need
 // validated configuration.
 var ProviderSet = wire.NewSet(
+	NewApplicationAdminTransferRepository,
+	wire.Bind(new(port.ApplicationAdminTransferRepository), new(*ApplicationAdminTransferRepository)),
 	NewApplicationFilterRepository,
 	wire.Bind(new(filterport.Repository), new(*ApplicationFilterRepository)),
 	NewOAuthProviderRepository,

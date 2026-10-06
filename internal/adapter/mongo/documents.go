@@ -24,6 +24,7 @@ type applicationDocument struct {
 	Name                        string    `bson:"name"`
 	NameKey                     string    `bson:"nameKey"`
 	AdminID                     string    `bson:"adminId"`
+	OwnershipRevision           int64     `bson:"ownershipRevision"`
 	CreatedAt                   time.Time `bson:"createdAt"`
 	NextVersionSequence         int32     `bson:"nextVersionSequence"`
 	NextProfileRevisionSequence int32     `bson:"nextProfileRevisionSequence"`
@@ -126,6 +127,7 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 		Name:                        application.Name().String(),
 		NameKey:                     application.Name().Key(),
 		AdminID:                     application.AdminID().String(),
+		OwnershipRevision:           1,
 		CreatedAt:                   application.CreatedAt().UTC(),
 		NextVersionSequence:         1,
 		NextProfileRevisionSequence: 1,
@@ -135,7 +137,7 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 // applicationFromDocument is deliberately kept inside the persistence
 // adapter. A malformed stored document is corruption, not caller validation.
 func applicationFromDocument(document applicationDocument) (*domain.Application, error) {
-	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 {
+	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 {
 		return nil, fmt.Errorf("%w: invalid next sequence", errCorruptApplicationDocument)
 	}
 

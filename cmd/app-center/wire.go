@@ -34,6 +34,8 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		usecase.NewApplicationAdminTransferHandlers,
+		wire.Bind(new(transport.ApplicationAdminTransferHandlers), new(*usecase.ApplicationAdminTransferHandlers)),
 		filterusecase.NewHandlers,
 		wire.Bind(new(transport.ApplicationFilterHandlers), new(*filterusecase.Handlers)),
 		oauthcredential.ProviderSet,

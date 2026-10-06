@@ -2,6 +2,7 @@ package auth
 
 import (
 	"github.com/goforj/wire"
+	applicationport "iwut-app-center/internal/application/port"
 	publicationport "iwut-app-center/internal/publication/port"
 
 	reviewport "iwut-app-center/internal/review/port"
@@ -9,6 +10,8 @@ import (
 )
 
 var ProviderSet = wire.NewSet(
+	NewGRPCDeveloperLifecycleDirectory,
+	wire.Bind(new(applicationport.DeveloperLifecycleDirectory), new(*GRPCDeveloperLifecycleDirectory)),
 	NewPublicationScopeCatalog,
 	wire.Bind(new(publicationport.ScopeCatalog), new(*PublicationScopeCatalog)),
 	NewGRPCScopeCatalogSnapshotSource,

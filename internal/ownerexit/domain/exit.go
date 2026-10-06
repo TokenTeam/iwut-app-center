@@ -30,6 +30,14 @@ const (
 	Complete       Cleanup = 3
 )
 
+type Blocker int32
+
+const (
+	NoBlocker              Blocker = 0
+	OwnedApplications      Blocker = 1
+	PendingOwnershipChange Blocker = 2
+)
+
 var (
 	ErrInvalid     = errors.New("invalid account owner exit request")
 	ErrConflict    = errors.New("account owner exit conflict")
@@ -72,6 +80,7 @@ type Status struct {
 }
 type Preparation struct {
 	ReceiptID string
+	Blocker   Blocker
 	Blocked   bool
 }
 type Work struct {

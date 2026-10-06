@@ -852,7 +852,7 @@ func TestApplicationReviewMigration_ExtendsLifecycleOnlyToSubmitted(t *testing.T
 		}
 	}
 
-	application := createVersionTestApplication(t, database, "auth-review-migration", "review-migration")
+	application := createPreOwnershipVersionTestApplication(t, database, "auth-review-migration", "review-migration")
 	repository := NewApplicationVersionRepository(database)
 	created, err := repository.CreateDraft(
 		t.Context(), "auth-review-migration", integrationApplicationVersionDraft(t, application.ID(), "auth-review-migration", "v1"),
@@ -957,6 +957,29 @@ func createVersionTestApplication(t *testing.T, database *drivermongo.Database, 
 	application := integrationApplication(t, adminID, name)
 	if err := NewApplicationRepository(database).CreateWithinQuota(t.Context(), application, 100); err != nil {
 		t.Fatalf("create version-test application: %v", err)
+	}
+	return application
+}
+
+// createPreOwnershipVersionTestApplication writes the exact 0003 Application
+// shape. Tests that stop the migration chain before 0021 must not use the
+// current Repository mapper, whose current-schema document includes
+// ownershipRevision.
+func createPreOwnershipVersionTestApplication(t *testing.T, database *drivermongo.Database, adminID, name string) *domain.Application {
+	t.Helper()
+	application := integrationApplication(t, adminID, name)
+	document, err := applicationToDocument(application)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preOwnership := bson.D{
+		{Key: "id", Value: document.ID}, {Key: "name", Value: document.Name}, {Key: "nameKey", Value: document.NameKey},
+		{Key: "adminId", Value: document.AdminID}, {Key: "createdAt", Value: document.CreatedAt},
+		{Key: "nextVersionSequence", Value: document.NextVersionSequence}, {Key: "nextProfileRevisionSequence", Value: document.NextProfileRevisionSequence},
+		{Key: "coordinationRevision", Value: document.CoordinationRevision},
+	}
+	if _, err := database.Collection(applicationsCollectionName).InsertOne(t.Context(), preOwnership); err != nil {
+		t.Fatalf("insert pre-0021 application: %v", err)
 	}
 	return application
 }

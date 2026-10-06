@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 20)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 21)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
 	})
@@ -358,7 +358,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 20)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 21)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
@@ -444,6 +444,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		applicationFilterMigrationID,
 		applicationCatalogMigrationID,
 		accountOwnerExitMigrationID,
+		applicationAdminTransferMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -488,6 +489,9 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: stablePublicationMigrationID, apply: sequential.applyStablePublicationMigration},
 		{id: greyPublicationMigrationID, apply: sequential.applyGreyPublicationMigration},
 		{id: applicationFilterMigrationID, apply: sequential.applyApplicationFilterMigration},
+		{id: applicationCatalogMigrationID, apply: sequential.applyApplicationCatalogMigration},
+		{id: accountOwnerExitMigrationID, apply: sequential.applyAccountOwnerExitMigration},
+		{id: applicationAdminTransferMigrationID, apply: sequential.applyApplicationAdminTransferMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)
@@ -513,6 +517,9 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		applicationVersionOAuthConfigsCollectionName,
 		applicationFiltersCollectionName,
 		applicationFilterRevisionsCollectionName,
+		ownerFences,
+		ownerOperations,
+		applicationAdminTransfersCollectionName,
 	} {
 		freshValidator := collectionValidator(t, freshDatabase, collectionName)
 		sequentialValidator := collectionValidator(t, sequentialDatabase, collectionName)
