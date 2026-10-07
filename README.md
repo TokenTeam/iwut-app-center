@@ -69,7 +69,7 @@ The Python 3 standard-library runner can be called from any directory:
 ```bash
 /path/to/iwut-app-center-ddd/scripts/verify.py backend --doctor
 /path/to/iwut-app-center-ddd/scripts/verify.py backend
-/path/to/iwut-app-center-ddd/scripts/verify.py cross-service --timeout 1200
+/path/to/iwut-app-center-ddd/scripts/verify.py cross-service --timeout 2400
 ```
 
 Prerequisites are checked before gates: Go, Git, Make, Bash, gofmt, Python 3,

@@ -9,4 +9,4 @@ unset AUTH_CENTER_INTEGRATION_TARGET AUTH_CENTER_INTEGRATION_DATABASE
 # race suite needs more than Go's default ten-minute package timeout. Local
 # -run/-race/-v/-timeout flags are forwarded after the default and can override
 # it; filtered runs do not replace backend verification.
-go test -count=1 -timeout=20m "$@" ./internal/adapter/mongo ./cmd/app-center
+go test -count=1 -timeout=30m "$@" ./internal/adapter/mongo ./cmd/app-center

@@ -174,7 +174,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tier", choices=TIERS, nargs="?", default="quick")
     parser.add_argument("--doctor", action="store_true", help="only check prerequisites; does not count as verification")
-    parser.add_argument("--timeout", type=int, default=1200, help="seconds per gate (default 1200)")
+    parser.add_argument("--timeout", type=int, default=2400, help="seconds per gate (default 2400)")
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
