@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -76,6 +77,10 @@ func (r *ApplicationReviewQueryRepository) ListPending(ctx context.Context, revi
 		if err != nil {
 			return nil, err
 		}
+		oauthConfigs, err := r.reviewQueryOAuthConfigs(tx, versionIDs)
+		if err != nil {
+			return nil, err
+		}
 		items := make([]reviewdomain.PendingReviewSummary, 0, pageSize+1)
 		var lastScanned applicationReviewDocument
 		for _, d := range docs {
@@ -90,6 +95,10 @@ func (r *ApplicationReviewQueryRepository) ListPending(ctx context.Context, revi
 			}
 			review, err := applicationReviewFromDocument(d)
 			if err != nil {
+				return nil, reviewport.ErrReviewQueryStateInconsistent
+			}
+			oauth, ok := oauthConfigs[d.VersionID]
+			if !ok || !pendingVersionReviewMatchesVersion(review, version, oauth) {
 				return nil, reviewport.ErrReviewQueryStateInconsistent
 			}
 			if app.LifecycleStatus != "ACTIVE" {
@@ -140,6 +149,12 @@ func (r *ApplicationReviewQueryRepository) Get(ctx context.Context, reviewer sha
 		var version applicationVersionDocument
 		if err = r.database.Collection(applicationVersionsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "versionId": versionID.String()}).Decode(&version); err != nil {
 			return nil, reviewport.ErrReviewQueryStateInconsistent
+		}
+		if review.Status() == reviewdomain.ReviewStatusPending {
+			var oauth applicationVersionOAuthConfigDocument
+			if err = r.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "applicationVersionId": versionID.String()}).Decode(&oauth); err != nil || !pendingVersionReviewMatchesVersion(review, version, oauth) {
+				return nil, reviewport.ErrReviewQueryStateInconsistent
+			}
 		}
 		policy, err := r.loadCurrentReviewPolicy(tx)
 		if err != nil {
@@ -198,6 +213,39 @@ func (r *ApplicationReviewQueryRepository) reviewQueryVersions(ctx context.Conte
 		out[d.VersionID] = d
 	}
 	return out, nil
+}
+
+func (r *ApplicationReviewQueryRepository) reviewQueryOAuthConfigs(ctx context.Context, ids []string) (map[string]applicationVersionOAuthConfigDocument, error) {
+	cur, err := r.database.Collection(applicationVersionOAuthConfigsCollectionName).Find(ctx, bson.M{"applicationVersionId": bson.M{"$in": ids}})
+	if err != nil {
+		return nil, err
+	}
+	var docs []applicationVersionOAuthConfigDocument
+	if err = cur.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make(map[string]applicationVersionOAuthConfigDocument, len(docs))
+	for _, doc := range docs {
+		if _, duplicate := out[doc.ApplicationVersionID]; duplicate {
+			return nil, reviewport.ErrReviewQueryStateInconsistent
+		}
+		out[doc.ApplicationVersionID] = doc
+	}
+	return out, nil
+}
+
+func pendingVersionReviewMatchesVersion(review *reviewdomain.ApplicationReview, version applicationVersionDocument, oauth applicationVersionOAuthConfigDocument) bool {
+	if review == nil || review.Status() != reviewdomain.ReviewStatusPending || version.ReviewStatus != "SUBMITTED" || version.Revision != review.SourceVersionRevision()+1 || oauth.ApplicationVersionID != version.VersionID || oauth.ApplicationID != version.ApplicationID {
+		return false
+	}
+	document, err := applicationReviewToDocument(review)
+	if err != nil {
+		return false
+	}
+	snapshot := document.Snapshot
+	return snapshot.VersionLabel == version.VersionLabel && snapshot.LaunchURL == version.LaunchURL && snapshot.RPCApiMinVersion == version.RPCApiMinVersion && snapshot.RPCApiMaxVersionExclusive == version.RPCApiMaxVersionExclusive &&
+		slices.Equal(snapshot.RequiredCapabilities, version.RequiredCapabilities) && slices.Equal(snapshot.RequiredScopes, version.RequiredScopes) && slices.Equal(snapshot.OptionalScopes, version.OptionalScopes) &&
+		slices.Equal(snapshot.OAuthRedirects.PKCERedirectURIs, oauth.OAuthRedirects.PKCERedirectURIs) && slices.Equal(snapshot.OAuthRedirects.ConfidentialRedirectURIs, oauth.OAuthRedirects.ConfidentialRedirectURIs)
 }
 func (r *ApplicationReviewQueryRepository) loadCurrentReviewPolicy(ctx context.Context) (reviewdomain.ReviewPolicyContext, error) {
 	var d versionReviewPolicyDocument
