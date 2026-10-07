@@ -23,6 +23,7 @@ import (
 	applicationmanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_management"
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
+	applicationprofilereviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review_query"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
@@ -195,8 +196,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -255,6 +256,7 @@ func NewServers(
 	var applicationCatalogService *ApplicationCatalogService
 	var managementService *ApplicationManagementQueryService
 	var reviewQueryService *ApplicationReviewQueryService
+	var profileReviewQueryService *ApplicationProfileReviewQueryService
 	var transferService *ApplicationAdminTransferService
 	var closureService *ApplicationClosureService
 	var operationsService *ApplicationOperationsService
@@ -280,6 +282,11 @@ func NewServers(
 				return nil, errors.New("transport servers: application review query service is invalid")
 			}
 			reviewQueryService = value
+		case *ApplicationProfileReviewQueryService:
+			if value == nil || profileReviewQueryService != nil {
+				return nil, errors.New("transport servers: application profile review query service is invalid")
+			}
+			profileReviewQueryService = value
 		case *ApplicationFilterService:
 			if value == nil || filterService != nil {
 				return nil, errors.New("transport servers: application filter service is invalid")
@@ -322,6 +329,9 @@ func NewServers(
 		khttp.ErrorEncoder(credentialSafeErrorEncoder),
 	)
 	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)
+	if profileReviewQueryService != nil {
+		applicationprofilereviewqueryv1.RegisterApplicationProfileReviewQueryServiceHTTPServer(httpServer, profileReviewQueryService)
+	}
 	profilev1.RegisterApplicationProfileRevisionHTTPServer(httpServer, profileService)
 	catalogv1.RegisterCatalogHTTPServer(httpServer, catalogService)
 	if runtimeResolutionService != nil {
@@ -361,6 +371,9 @@ func NewServers(
 	}
 	grpcServer := kgrpc.NewServer(kgrpc.Address(config.GRPCAddr), kgrpc.Middleware(grpcMiddleware))
 	profilereviewv1.RegisterApplicationProfileReviewServer(grpcServer, profileReviewService)
+	if profileReviewQueryService != nil {
+		applicationprofilereviewqueryv1.RegisterApplicationProfileReviewQueryServiceServer(grpcServer, profileReviewQueryService)
+	}
 	profilev1.RegisterApplicationProfileRevisionServer(grpcServer, profileService)
 	catalogv1.RegisterCatalogServer(grpcServer, catalogService)
 	if runtimeResolutionService != nil {
@@ -426,6 +439,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 	case *applicationmanagementv1.OwnedApplicationPage, *applicationmanagementv1.OwnedApplicationManagementDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationreviewqueryv1.PendingApplicationVersionReviewPage, *applicationreviewqueryv1.ApplicationVersionReviewDetail:
+		w.Header().Set("Cache-Control", "private, no-store")
+	case *applicationprofilereviewqueryv1.PendingApplicationProfileReviewPage, *applicationprofilereviewqueryv1.ApplicationProfileReviewDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
 		w.Header().Set("Cache-Control", "no-store")

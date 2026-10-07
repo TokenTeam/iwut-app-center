@@ -40,11 +40,11 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-030 — query ApplicationVersion review queue and detail.**
-Read `../../docs/app-center/briefs/UC-APP-030.md` plus the engineering baseline
-and implements README. Deliver exact `app.version.review` authorization, PENDING
-ACTIVE-Application queue semantics, SUSPENDED inclusion, immutable review snapshot
-detail, conflict hints, current policy metadata, bound ascending keyset pagination,
+**UC-APP-031 — query ApplicationProfileRevision review queue and detail.**
+Read `../../docs/app-center/briefs/UC-APP-031.md` plus the engineering baseline
+and implements README. Deliver exact `app.profile.review` authorization, PENDING
+ACTIVE-Application queue semantics, SUSPENDED inclusion, immutable profile-review
+snapshot detail, conflict hints, current policy metadata, bound ascending keyset pagination,
 HTTP/gRPC and real MongoDB acceptance. Do not implement assignment, locking, SLA,
 notifications or decisions. Required final tier: `make check-full`. Commit API
 inputs and outputs before service gitlinks and keep all commits local.

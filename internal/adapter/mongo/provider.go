@@ -34,6 +34,8 @@ var ProviderSet = wire.NewSet(
 	NewOAuthClientRepository,
 	wire.Bind(new(oauthclientport.Repository), new(*OAuthClientRepository)),
 	NewApplicationProfileRevisionRepository,
+	NewApplicationProfileReviewQueryRepository,
+	wire.Bind(new(profileport.ProfileReviewQueryRepository), new(*ApplicationProfileReviewQueryRepository)),
 	wire.Bind(new(profileport.ApplicationProfileReviewDecisionRepository), new(*ApplicationProfileRevisionRepository)),
 	wire.Bind(new(profileport.ApplicationProfileReviewRepository), new(*ApplicationProfileRevisionRepository)),
 	wire.Bind(new(profileport.DraftApplicationProfileRevisionRepository), new(*ApplicationProfileRevisionRepository)),

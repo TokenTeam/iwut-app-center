@@ -164,6 +164,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	submitApplicationProfileRevisionReviewHandler := usecase8.NewSubmitApplicationProfileRevisionReviewHandler(applicationProfileReviewUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
 	decideApplicationProfileRevisionReviewHandler := usecase8.NewDecideApplicationProfileRevisionReviewHandler(systemClock, applicationProfileRevisionRepository)
 	applicationProfileReviewService := transport.NewApplicationProfileReviewService(submitApplicationProfileRevisionReviewHandler, decideApplicationProfileRevisionReviewHandler)
+	applicationProfileReviewQueryRepository := mongo.NewApplicationProfileReviewQueryRepository(database)
+	profileReviewQuery := usecase8.NewProfileReviewQuery(applicationProfileReviewQueryRepository)
+	applicationProfileReviewQueryService := transport.NewApplicationProfileReviewQueryService(profileReviewQuery)
 	oAuthClientUUIDv4Generator := generator.NewOAuthClientUUIDv4Generator()
 	secretFactory := oauthcredential.NewSecretFactory()
 	oAuthClientRepository := mongo.NewOAuthClientRepository(database)
@@ -201,7 +204,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	oAuthProviderRepository := mongo.NewOAuthProviderRepository(database, secretFactory)
 	providerHandlers := usecase9.NewProviderHandlers(systemClock, oAuthProviderRepository)
 	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
-	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationReviewQueryService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationManagementQueryService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, serviceIdentityVerifier, oAuthClientProviderService)
+	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationReviewQueryService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationManagementQueryService, applicationProfileRevisionService, applicationProfileReviewService, applicationProfileReviewQueryService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
 		cleanup2()
 		cleanup()

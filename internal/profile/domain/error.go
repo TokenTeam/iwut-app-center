@@ -95,6 +95,8 @@ const (
 	ErrorCodeProfileReviewPolicyUnavailable             ErrorCode = "ProfileReviewPolicyUnavailable"
 	ErrorCodeProfileReviewChecksIncomplete              ErrorCode = "ProfileReviewChecksIncomplete"
 	ErrorCodeInvalidProfileReviewReason                 ErrorCode = "InvalidProfileReviewReason"
+	ErrorCodeInvalidApplicationProfileReviewQuery       ErrorCode = "InvalidApplicationProfileReviewQuery"
+	ErrorCodeInvalidApplicationProfileReviewPageToken   ErrorCode = "InvalidApplicationProfileReviewPageToken"
 )
 
 var (
@@ -110,4 +112,6 @@ var (
 	ErrProfileReviewPolicyUnavailable             = newError(ErrorCategoryConflict, ErrorCodeProfileReviewPolicyUnavailable, "ProfileReviewPolicyUnavailable", nil)
 	ErrProfileReviewChecksIncomplete              = newError(ErrorCategoryValidation, ErrorCodeProfileReviewChecksIncomplete, "ProfileReviewChecksIncomplete", nil)
 	ErrInvalidProfileReviewReason                 = newError(ErrorCategoryValidation, ErrorCodeInvalidProfileReviewReason, "InvalidProfileReviewReason", nil)
+	ErrInvalidApplicationProfileReviewQuery       = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileReviewQuery, "invalid application profile review query", nil)
+	ErrInvalidApplicationProfileReviewPageToken   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileReviewPageToken, "invalid application profile review page token", nil)
 )

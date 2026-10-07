@@ -22,6 +22,7 @@ var ProviderSet = wire.NewSet(
 	NewApplicationCatalogService,
 	NewApplicationProfileRevisionService,
 	NewApplicationProfileReviewService,
+	NewApplicationProfileReviewQueryService,
 	NewApplicationFilterService,
 	NewOAuthClientService,
 	NewOAuthClientProviderService,

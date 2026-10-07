@@ -25,7 +25,7 @@ func TestProfileReviewMigrationIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("BR-PRF-019 identity attempt source and pending unique indexes", func(t *testing.T) {
-		assertIndexNames(t, collection, []string{"_id_", profileReviewIDUniqueIndexName, profileReviewAttemptUniqueIndexName, profileReviewSourceUniqueIndexName, profileReviewPendingUniqueIndexName})
+		assertIndexNames(t, collection, []string{"_id_", profileReviewIDUniqueIndexName, profileReviewAttemptUniqueIndexName, profileReviewSourceUniqueIndexName, profileReviewPendingUniqueIndexName, profileReviewQueueIndexName})
 		for _, test := range []struct {
 			name   string
 			mutate func(*applicationProfileReviewDocument)

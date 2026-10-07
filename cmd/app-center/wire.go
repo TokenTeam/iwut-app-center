@@ -51,6 +51,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		oauthclientusecase.NewProviderHandlers,
 		wire.Bind(new(transport.OAuthClientProviderHandlers), new(*oauthclientusecase.ProviderHandlers)),
 		profileusecase.NewCreateApplicationProfileRevisionHandler,
+		profileusecase.NewProfileReviewQuery,
+		wire.Bind(new(transport.ApplicationProfileReviewQueryHandler), new(*profileusecase.ProfileReviewQuery)),
 		profileusecase.NewDecideApplicationProfileRevisionReviewHandler,
 		wire.Bind(new(transport.DecideApplicationProfileRevisionReviewHandler), new(*profileusecase.DecideApplicationProfileRevisionReviewHandler)),
 		profileusecase.NewSubmitApplicationProfileRevisionReviewHandler,

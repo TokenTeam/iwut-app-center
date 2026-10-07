@@ -302,9 +302,9 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 23)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 25)
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
-		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName,
+		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName, applicationManagementIndexName,
 	})
 	assertIndexNames(t, database.Collection(applicationTesterMembershipsCollectionName), []string{
 		"_id_", testerMembershipIDUniqueIndexName, testerMembershipActiveUniqueIndexName, testerMembershipApplicationAuditIndexName, testerMembershipUserAuditIndexName,
@@ -358,7 +358,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 23)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, 25)
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName,
@@ -447,6 +447,8 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		applicationAdminTransferMigrationID,
 		applicationClosureMigrationID,
 		applicationOperationsMigrationID,
+		applicationManagementMigrationID,
+		applicationProfileReviewQueryMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -496,6 +498,8 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: applicationAdminTransferMigrationID, apply: sequential.applyApplicationAdminTransferMigration},
 		{id: applicationClosureMigrationID, apply: sequential.applyApplicationClosureMigration},
 		{id: applicationOperationsMigrationID, apply: sequential.applyApplicationOperationsMigration},
+		{id: applicationManagementMigrationID, apply: sequential.applyApplicationManagementMigration},
+		{id: applicationProfileReviewQueryMigrationID, apply: sequential.applyApplicationProfileReviewQueryMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)

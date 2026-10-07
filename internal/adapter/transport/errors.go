@@ -27,6 +27,8 @@ import (
 // mechanically by API contract tests.
 const (
 	ReasonInvalidProfileReviewReason                     = "ERROR_REASON_INVALID_PROFILE_REVIEW_REASON"
+	ReasonInvalidApplicationProfileReviewQuery           = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_QUERY"
+	ReasonInvalidApplicationProfileReviewPageToken       = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_PAGE_TOKEN"
 	ReasonProfileReviewChecksIncomplete                  = "ERROR_REASON_PROFILE_REVIEW_CHECKS_INCOMPLETE"
 	ReasonProfileReviewPolicyUnavailable                 = "ERROR_REASON_PROFILE_REVIEW_POLICY_UNAVAILABLE"
 	ReasonApplicationProfileReviewStateInconsistent      = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_STATE_INCONSISTENT"
@@ -417,6 +419,8 @@ var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
 	profiledomain.ErrorCodeProfileReviewPolicyUnavailable:              {code: codes.Aborted, reason: ReasonProfileReviewPolicyUnavailable, message: "profile review policy is unavailable"},
 	profiledomain.ErrorCodeProfileReviewChecksIncomplete:               {code: codes.InvalidArgument, reason: ReasonProfileReviewChecksIncomplete, message: "profile review checks are incomplete"},
 	profiledomain.ErrorCodeInvalidProfileReviewReason:                  {code: codes.InvalidArgument, reason: ReasonInvalidProfileReviewReason, message: "profile review reason is invalid"},
+	profiledomain.ErrorCodeInvalidApplicationProfileReviewQuery:        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewQuery, message: "profile review query is invalid"},
+	profiledomain.ErrorCodeInvalidApplicationProfileReviewPageToken:    {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewPageToken, message: "profile review page token is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileReviewSubmission:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewSubmission, message: "application profile review submission is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileContent:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileContent, message: "application profile content is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileRevisionID:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileRevisionID, message: "application profile revision ID is invalid"},
