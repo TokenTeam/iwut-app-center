@@ -136,6 +136,8 @@ const (
 	ReasonApplicationReviewChecksIncomplete      = "ERROR_REASON_APPLICATION_REVIEW_CHECKS_INCOMPLETE"
 	ReasonInvalidApplicationReviewChecks         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
 	ReasonInvalidApplicationReviewReason         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
+	ReasonInvalidApplicationReviewQuery          = "ERROR_REASON_INVALID_APPLICATION_REVIEW_QUERY"
+	ReasonInvalidApplicationReviewPageToken      = "ERROR_REASON_INVALID_APPLICATION_REVIEW_PAGE_TOKEN"
 	ReasonDeveloperStatusUnavailable             = "ERROR_REASON_DEVELOPER_STATUS_UNAVAILABLE"
 	ReasonSystemPrincipalUnavailable             = "ERROR_REASON_SYSTEM_PRINCIPAL_UNAVAILABLE"
 	ReasonInternal                               = "ERROR_REASON_INTERNAL"
@@ -299,36 +301,39 @@ var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{
 }
 
 var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
-	reviewdomain.ErrorCodeDeveloperIdentityRequired:             {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
-	reviewdomain.ErrorCodeDeveloperApprovalRequired:             {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
-	reviewdomain.ErrorCodeApplicationVersionRevisionRequired:    {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
-	reviewdomain.ErrorCodeApplicationVersionNotFound:            {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
-	reviewdomain.ErrorCodeApplicationAdminRequired:              {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
-	reviewdomain.ErrorCodeApplicationVersionNotDraft:            {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
-	reviewdomain.ErrorCodeApplicationVersionNotRejected:         {code: codes.Aborted, reason: ReasonApplicationVersionNotRejected, message: "application version is not rejected"},
-	reviewdomain.ErrorCodeApplicationVersionRevisionConflict:    {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
-	reviewdomain.ErrorCodeApplicationReviewNotFound:             {code: codes.NotFound, reason: ReasonApplicationReviewNotFound, message: "application review not found"},
-	reviewdomain.ErrorCodeApplicationReviewNotLatest:            {code: codes.Aborted, reason: ReasonApplicationReviewNotLatest, message: "application review is not the latest attempt"},
-	reviewdomain.ErrorCodeApplicationReviewAlreadyRestored:      {code: codes.Aborted, reason: ReasonApplicationReviewAlreadyRestored, message: "application review is already restored"},
-	reviewdomain.ErrorCodeApplicationReviewStateInconsistent:    {code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent, message: "application review state is inconsistent"},
-	reviewdomain.ErrorCodeApplicationLaunchURLNotReviewable:     {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
-	reviewdomain.ErrorCodeInvalidOAuthRedirectConfiguration:     {code: codes.InvalidArgument, reason: ReasonInvalidOAuthRedirectConfiguration, message: "OAuth redirect configuration is invalid"},
-	reviewdomain.ErrorCodeLaunchURLInspectionUnavailable:        {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
-	reviewdomain.ErrorCodeInvalidApplicationScope:               {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
-	reviewdomain.ErrorCodeScopeCatalogUnavailable:               {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
-	reviewdomain.ErrorCodeReviewerIdentityRequired:              {code: codes.Unauthenticated, reason: ReasonReviewerIdentityRequired, message: "reviewer identity is required"},
-	reviewdomain.ErrorCodeApplicationReviewPermissionRequired:   {code: codes.PermissionDenied, reason: ReasonApplicationReviewPermissionRequired, message: "application version review permission is required"},
-	reviewdomain.ErrorCodeApplicationReviewAlreadyDecided:       {code: codes.Aborted, reason: ReasonApplicationReviewAlreadyDecided, message: "application review is already decided"},
-	reviewdomain.ErrorCodeApplicationReviewConflictOfInterest:   {code: codes.PermissionDenied, reason: ReasonApplicationReviewConflictOfInterest, message: "reviewer has a conflict of interest"},
-	reviewdomain.ErrorCodeInvalidApplicationReviewOutcome:       {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewOutcome, message: "application review outcome is invalid"},
-	reviewdomain.ErrorCodeInvalidApplicationReviewPolicyVersion: {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewPolicyVersion, message: "application review policy version is invalid"},
-	reviewdomain.ErrorCodeApplicationReviewPolicyChanged:        {code: codes.Aborted, reason: ReasonApplicationReviewPolicyChanged, message: "application review policy is no longer usable"},
-	reviewdomain.ErrorCodeApplicationReviewChecksIncomplete:     {code: codes.InvalidArgument, reason: ReasonApplicationReviewChecksIncomplete, message: "application review confirmation is incomplete"},
-	reviewdomain.ErrorCodeInvalidApplicationReviewChecks:        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewChecks, message: "application review confirmation is invalid"},
-	reviewdomain.ErrorCodeInvalidApplicationReviewReason:        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewReason, message: "application review reason is invalid"},
-	reviewdomain.ErrorCodeDeveloperStatusUnavailable:            {code: codes.Unavailable, reason: ReasonDeveloperStatusUnavailable, message: "developer status is unavailable"},
-	reviewdomain.ErrorCodeSystemPrincipalUnavailable:            {code: codes.Unavailable, reason: ReasonSystemPrincipalUnavailable, message: "system principal is unavailable"},
-	reviewdomain.ErrorCodeInternal:                              internalSpec,
+	reviewdomain.ErrorCodeDeveloperIdentityRequired:               {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	reviewdomain.ErrorCodeDeveloperApprovalRequired:               {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	reviewdomain.ErrorCodeApplicationVersionRevisionRequired:      {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
+	reviewdomain.ErrorCodeApplicationVersionNotFound:              {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
+	reviewdomain.ErrorCodeApplicationAdminRequired:                {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	reviewdomain.ErrorCodeApplicationVersionNotDraft:              {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
+	reviewdomain.ErrorCodeApplicationVersionNotRejected:           {code: codes.Aborted, reason: ReasonApplicationVersionNotRejected, message: "application version is not rejected"},
+	reviewdomain.ErrorCodeApplicationVersionRevisionConflict:      {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
+	reviewdomain.ErrorCodeApplicationReviewNotFound:               {code: codes.NotFound, reason: ReasonApplicationReviewNotFound, message: "application review not found"},
+	reviewdomain.ErrorCodeApplicationReviewNotLatest:              {code: codes.Aborted, reason: ReasonApplicationReviewNotLatest, message: "application review is not the latest attempt"},
+	reviewdomain.ErrorCodeApplicationReviewAlreadyRestored:        {code: codes.Aborted, reason: ReasonApplicationReviewAlreadyRestored, message: "application review is already restored"},
+	reviewdomain.ErrorCodeApplicationReviewStateInconsistent:      {code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent, message: "application review state is inconsistent"},
+	reviewdomain.ErrorCodeApplicationLaunchURLNotReviewable:       {code: codes.InvalidArgument, reason: ReasonApplicationLaunchURLNotReviewable, message: "application launch URL is not reviewable"},
+	reviewdomain.ErrorCodeInvalidOAuthRedirectConfiguration:       {code: codes.InvalidArgument, reason: ReasonInvalidOAuthRedirectConfiguration, message: "OAuth redirect configuration is invalid"},
+	reviewdomain.ErrorCodeLaunchURLInspectionUnavailable:          {code: codes.Unavailable, reason: ReasonLaunchURLInspectionUnavailable, message: "launch URL inspection is unavailable"},
+	reviewdomain.ErrorCodeInvalidApplicationScope:                 {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
+	reviewdomain.ErrorCodeScopeCatalogUnavailable:                 {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	reviewdomain.ErrorCodeReviewerIdentityRequired:                {code: codes.Unauthenticated, reason: ReasonReviewerIdentityRequired, message: "reviewer identity is required"},
+	reviewdomain.ErrorCodeApplicationReviewPermissionRequired:     {code: codes.PermissionDenied, reason: ReasonApplicationReviewPermissionRequired, message: "application version review permission is required"},
+	reviewdomain.ErrorCodeApplicationReviewAlreadyDecided:         {code: codes.Aborted, reason: ReasonApplicationReviewAlreadyDecided, message: "application review is already decided"},
+	reviewdomain.ErrorCodeApplicationReviewConflictOfInterest:     {code: codes.PermissionDenied, reason: ReasonApplicationReviewConflictOfInterest, message: "reviewer has a conflict of interest"},
+	reviewdomain.ErrorCodeInvalidApplicationReviewOutcome:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewOutcome, message: "application review outcome is invalid"},
+	reviewdomain.ErrorCodeInvalidApplicationReviewPolicyVersion:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewPolicyVersion, message: "application review policy version is invalid"},
+	reviewdomain.ErrorCodeApplicationReviewPolicyChanged:          {code: codes.Aborted, reason: ReasonApplicationReviewPolicyChanged, message: "application review policy is no longer usable"},
+	reviewdomain.ErrorCodeApplicationReviewChecksIncomplete:       {code: codes.InvalidArgument, reason: ReasonApplicationReviewChecksIncomplete, message: "application review confirmation is incomplete"},
+	reviewdomain.ErrorCodeInvalidApplicationReviewChecks:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewChecks, message: "application review confirmation is invalid"},
+	reviewdomain.ErrorCodeInvalidApplicationReviewReason:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewReason, message: "application review reason is invalid"},
+	reviewdomain.ErrorCodeDeveloperStatusUnavailable:              {code: codes.Unavailable, reason: ReasonDeveloperStatusUnavailable, message: "developer status is unavailable"},
+	reviewdomain.ErrorCodeSystemPrincipalUnavailable:              {code: codes.Unavailable, reason: ReasonSystemPrincipalUnavailable, message: "system principal is unavailable"},
+	reviewdomain.ErrorCodeInvalidApplicationReviewQuery:           {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewQuery, message: "application review query is invalid"},
+	reviewdomain.ErrorCodeInvalidApplicationReviewPageToken:       {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewPageToken, message: "application review page token is invalid"},
+	reviewdomain.ErrorCodeApplicationReviewQueryStateInconsistent: {code: codes.Internal, reason: ReasonApplicationReviewStateInconsistent, message: "application review query state is inconsistent"},
+	reviewdomain.ErrorCodeInternal:                                internalSpec,
 }
 
 var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{

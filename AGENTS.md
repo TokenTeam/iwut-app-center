@@ -40,14 +40,14 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-029 — query owned Application list and management detail.**
-Read `../../docs/app-center/briefs/UC-APP-029.md` plus the engineering baseline
-and implements README. Deliver current-admin private list/detail queries, bound
-keyset pagination, batched counts, snapshot-composed dependent-state summaries,
-strict existence hiding, migration 0024, HTTP/gRPC and real MongoDB acceptance.
-Do not expose OAuth secrets, Tester identities, complete child histories, audit
-logs or public Catalog behavior. Required final tier: `make check-full`. Commit
-API inputs and outputs before service gitlinks and keep all commits local.
+**UC-APP-030 — query ApplicationVersion review queue and detail.**
+Read `../../docs/app-center/briefs/UC-APP-030.md` plus the engineering baseline
+and implements README. Deliver exact `app.version.review` authorization, PENDING
+ACTIVE-Application queue semantics, SUSPENDED inclusion, immutable review snapshot
+detail, conflict hints, current policy metadata, bound ascending keyset pagination,
+HTTP/gRPC and real MongoDB acceptance. Do not implement assignment, locking, SLA,
+notifications or decisions. Required final tier: `make check-full`. Commit API
+inputs and outputs before service gitlinks and keep all commits local.
 
 ## Verification entry points
 

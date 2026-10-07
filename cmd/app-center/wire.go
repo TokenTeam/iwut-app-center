@@ -82,6 +82,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		versionusecase.NewCreateApplicationVersionHandler,
 		versionusecase.NewUpdateDraftApplicationVersionHandler,
 		reviewusecase.NewSubmitApplicationVersionReviewHandler,
+		reviewusecase.NewReviewQuery,
+		wire.Bind(new(transport.ApplicationReviewQueryHandler), new(*reviewusecase.ReviewQuery)),
 		publicationusecase.NewPlaceApprovedVersionInTestSlotHandler,
 		wire.Bind(new(transport.PlaceApprovedVersionInTestSlotHandler), new(*publicationusecase.PlaceApprovedVersionInTestSlotHandler)),
 		publicationusecase.NewSetApprovedVersionInStableSlotHandler,
