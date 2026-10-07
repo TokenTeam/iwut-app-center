@@ -340,6 +340,10 @@ func NewServers(
 		khttp.Middleware(serverMiddleware...),
 		khttp.ResponseEncoder(createdResponseEncoder),
 		khttp.ErrorEncoder(credentialSafeErrorEncoder),
+		khttp.NotFoundHandler(http.NotFoundHandler()),
+		khttp.MethodNotAllowedHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		})),
 	)
 	registerHTTPHealth(httpServer, config.ReadinessCheck, config.ReadinessTimeout)
 	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)

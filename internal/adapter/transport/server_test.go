@@ -3,13 +3,16 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -22,6 +25,8 @@ import (
 	"iwut-app-center/internal/shared"
 	versiondomain "iwut-app-center/internal/version/domain"
 )
+
+var defaultServeMuxProbeSequence atomic.Uint64
 
 func newTestServers(
 	t *testing.T,
@@ -94,6 +99,41 @@ func TestServers_HealthIsUnauthenticatedAndDependencySafe(t *testing.T) {
 	response, err := healthpb.NewHealthClient(connection).Check(t.Context(), &healthpb.HealthCheckRequest{})
 	if err != nil || response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
 		t.Fatalf("gRPC health = %v, %v", response, err)
+	}
+}
+
+func TestServers_HTTPFallbacksDoNotUseDefaultServeMux(t *testing.T) {
+	servers := newTestServers(t, &fakeCreateApplicationHandler{})
+	probeID := defaultServeMuxProbeSequence.Add(1)
+	notFoundPath := fmt.Sprintf("/__default_mux_not_found_probe_%d", probeID)
+	methodNotAllowedPath := fmt.Sprintf("/__default_mux_method_probe_%d", probeID)
+	defaultMuxStatus := http.StatusTeapot
+
+	http.DefaultServeMux.HandleFunc(notFoundPath, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(defaultMuxStatus)
+	})
+	http.DefaultServeMux.HandleFunc(methodNotAllowedPath, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(defaultMuxStatus)
+	})
+	servers.HTTP.Route("/").POST(methodNotAllowedPath, func(khttp.Context) error { return nil })
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+	}{
+		{name: "unmatched path", method: http.MethodGet, path: notFoundPath, wantStatus: http.StatusNotFound},
+		{name: "unsupported method", method: http.MethodGet, path: methodNotAllowedPath, wantStatus: http.StatusMethodNotAllowed},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			servers.HTTP.ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, nil))
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("response status = %d, want %d; DefaultServeMux fallback status is %d", recorder.Code, test.wantStatus, defaultMuxStatus)
+			}
+		})
 	}
 }
 
