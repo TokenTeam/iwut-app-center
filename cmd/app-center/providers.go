@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kratos/kratos/v2"
@@ -59,6 +60,29 @@ func provideMongoDatabase(client *drivermongo.Client, configuration config.Confi
 	return database, nil
 }
 
+type readinessState struct {
+	database atomic.Pointer[drivermongo.Database]
+}
+
+func provideReadinessState() *readinessState { return &readinessState{} }
+
+func provideMongoDatabaseWithReadiness(client *drivermongo.Client, configuration config.Config, readiness *readinessState) (*drivermongo.Database, error) {
+	database, err := provideMongoDatabase(client, configuration)
+	if err != nil {
+		return nil, err
+	}
+	readiness.database.Store(database)
+	return database, nil
+}
+
+func (state *readinessState) check(ctx context.Context) error {
+	database := state.database.Load()
+	if database == nil {
+		return fmt.Errorf("mongo deployment is not initialized")
+	}
+	return mongo.VerifyDeploymentReadiness(ctx, database)
+}
+
 func provideInitialApplicationQuota(configuration config.Config) int32 {
 	return configuration.InitialApplicationQuota
 }
@@ -79,10 +103,23 @@ func provideServiceIdentitySigner(configuration config.Config, clock port.Clock)
 }
 
 func provideAuthScopeCatalogConnection(configuration config.Config, signer *authadapter.ServiceIdentitySigner) (*grpc.ClientConn, func(), error) {
+	return newAuthScopeCatalogConnection(configuration, signer, nil)
+}
+
+func provideAuthScopeCatalogConnectionWithObservability(configuration config.Config, signer *authadapter.ServiceIdentitySigner, observability *observabilityRuntime) (*grpc.ClientConn, func(), error) {
+	return newAuthScopeCatalogConnection(configuration, signer, observability.clientInterceptor)
+}
+
+func newAuthScopeCatalogConnection(configuration config.Config, signer *authadapter.ServiceIdentitySigner, tracing grpc.UnaryClientInterceptor) (*grpc.ClientConn, func(), error) {
+	interceptors := []grpc.UnaryClientInterceptor{}
+	if tracing != nil {
+		interceptors = append(interceptors, tracing)
+	}
+	interceptors = append(interceptors, signer.UnaryClientInterceptor)
 	connection, err := grpc.NewClient(
 		configuration.AuthScopeCatalogTarget,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(signer.UnaryClientInterceptor),
+		grpc.WithChainUnaryInterceptor(interceptors...),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create Auth Scope Catalog gRPC client: %w", err)
@@ -134,6 +171,15 @@ func provideServerConfig(configuration config.Config) transport.ServerConfig {
 		ApplicationClosureEnabled:    configuration.ApplicationClosureEnabled,
 		ApplicationOperationsEnabled: configuration.ApplicationOperationsEnabled,
 	}
+}
+
+func provideServerConfigWithObservability(configuration config.Config, observability *observabilityRuntime, readiness *readinessState) transport.ServerConfig {
+	serverConfig := provideServerConfig(configuration)
+	serverConfig.ObservabilityMiddleware = observability.serverMiddleware
+	serverConfig.RegisterObservableOperations = observability.operations.register
+	serverConfig.ReadinessCheck = readiness.check
+	serverConfig.ReadinessTimeout = 2 * time.Second
+	return serverConfig
 }
 
 func provideApp(servers *transport.Servers) *kratos.App {

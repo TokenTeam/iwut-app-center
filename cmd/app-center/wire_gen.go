@@ -36,23 +36,32 @@ import (
 //
 // Do not hand-edit the generated file.
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
-	serverConfig := provideServerConfig(configuration)
+	mainObservabilityRuntime, cleanup, err := provideObservability(configuration)
+	if err != nil {
+		return nil, nil, err
+	}
+	mainReadinessState := provideReadinessState()
+	serverConfig := provideServerConfigWithObservability(configuration, mainObservabilityRuntime, mainReadinessState)
 	systemClock := generator.NewSystemClock()
 	identityConfig, err := provideIdentityConfig(configuration, systemClock)
 	if err != nil {
+		cleanup()
 		return nil, nil, err
 	}
 	identityVerifier, err := transport.NewIdentityVerifier(identityConfig)
 	if err != nil {
+		cleanup()
 		return nil, nil, err
 	}
 	uuiDv7Generator := generator.NewUUIDv7Generator()
-	client, cleanup, err := provideMongoClient(configuration)
+	client, cleanup2, err := provideMongoClient(configuration)
 	if err != nil {
+		cleanup()
 		return nil, nil, err
 	}
-	database, err := provideMongoDatabase(client, configuration)
+	database, err := provideMongoDatabaseWithReadiness(client, configuration, mainReadinessState)
 	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
@@ -62,16 +71,19 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationService := transport.NewApplicationService(createApplicationHandler)
 	serviceIdentitySigner, err := provideServiceIdentitySigner(configuration, systemClock)
 	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	clientConn, cleanup2, err := provideAuthScopeCatalogConnection(configuration, serviceIdentitySigner)
+	clientConn, cleanup3, err := provideAuthScopeCatalogConnectionWithObservability(configuration, serviceIdentitySigner, mainObservabilityRuntime)
 	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	grpcScopeCatalogSnapshotSource, err := auth.NewGRPCScopeCatalogSnapshotSource(clientConn)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -79,6 +91,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	duration := provideScopeCatalogCacheTTL(configuration)
 	scopeCatalogCache, err := auth.NewScopeCatalogCache(grpcScopeCatalogSnapshotSource, systemClock, duration)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -99,6 +112,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	versionReviewPolicyRepository := mongo.NewVersionReviewPolicyRepository(database)
 	grpcDeveloperApprovalChecker, err := auth.NewGRPCDeveloperApprovalChecker(clientConn)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -106,6 +120,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationReviewDecisionRepository := mongo.NewApplicationReviewDecisionRepository(database)
 	grpcSystemPrincipalResolver, err := auth.NewGRPCSystemPrincipalResolver(clientConn)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -130,6 +145,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	string2 := provideTesterJoinURLPrefix(configuration)
 	testerJoinURLBuilder, err := testercredential.NewTesterJoinURLBuilder(string2)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -179,6 +195,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationAdminTransferRepository := mongo.NewApplicationAdminTransferRepository(database, secretFactory, int32_2)
 	grpcDeveloperLifecycleDirectory, err := auth.NewGRPCDeveloperLifecycleDirectory(clientConn)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -197,6 +214,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	serviceIdentityConfig := provideServiceIdentityConfig(configuration)
 	serviceIdentityVerifier, err := provideServiceIdentityVerifier(serviceIdentityConfig, systemClock)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -206,6 +224,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
 	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationReviewQueryService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationManagementQueryService, applicationProfileRevisionService, applicationProfileReviewService, applicationProfileReviewQueryService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -213,12 +232,14 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	handlers2 := provideOwnerExitHandlers(database, clientConn)
 	mainOwnerExitWorker, err := provideOwnerExitWorker(configuration, handlers2)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	grpcApplicationClosure, err := auth.NewGRPCApplicationClosure(clientConn)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -226,6 +247,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	mainApplicationClosureWorker := provideApplicationClosureWorker(applicationClosureHandlers, grpcApplicationClosure)
 	app := provideAppWithOwnerExit(servers, mainOwnerExitWorker, mainApplicationClosureWorker)
 	return app, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

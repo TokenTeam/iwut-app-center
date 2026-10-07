@@ -51,6 +51,9 @@ func TestLoad_DefaultsWhenOptionalVariablesAreMissing(t *testing.T) {
 	if configuration.HTTPAddr != DefaultHTTPAddr || configuration.GRPCAddr != DefaultGRPCAddr {
 		t.Fatalf("addresses = %q/%q, want %q/%q", configuration.HTTPAddr, configuration.GRPCAddr, DefaultHTTPAddr, DefaultGRPCAddr)
 	}
+	if configuration.LogLevel != DefaultLogLevel || configuration.OTLPGRPCEndpoint != "" || configuration.OTLPInsecure || configuration.TraceSampleRatio != DefaultTraceSampleRatio || configuration.MetricExportInterval != DefaultMetricExportInterval {
+		t.Fatalf("observability defaults = %#v", configuration)
+	}
 	if configuration.MongoDatabase != DefaultMongoDatabase {
 		t.Fatalf("MongoDatabase = %q, want %q", configuration.MongoDatabase, DefaultMongoDatabase)
 	}
@@ -103,6 +106,11 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 		ServiceClockSkewEnv:             "12s",
 		ApplicationClosureEnabledEnv:    "true",
 		ApplicationOperationsEnabledEnv: "true",
+		LogLevelEnv:                     "DEBUG",
+		OTLPGRPCEndpointEnv:             "otel-collector.internal:4317",
+		OTLPInsecureEnv:                 "true",
+		TraceSampleRatioEnv:             "0.25",
+		MetricExportIntervalEnv:         "15s",
 	}
 	configuration, err := Load(lookupFrom(values))
 	if err != nil {
@@ -141,6 +149,9 @@ func TestLoad_UsesExplicitValues(t *testing.T) {
 	}
 	if !configuration.ApplicationOperationsEnabled {
 		t.Fatal("ApplicationOperationsEnabled = false, want true")
+	}
+	if configuration.LogLevel != "DEBUG" || configuration.OTLPGRPCEndpoint != "otel-collector.internal:4317" || !configuration.OTLPInsecure || configuration.TraceSampleRatio != 0.25 || configuration.MetricExportInterval != 15*time.Second {
+		t.Fatalf("observability settings = %#v", configuration)
 	}
 }
 
@@ -198,6 +209,13 @@ func TestLoad_RejectsExplicitInvalidValues(t *testing.T) {
 		{name: "negative service clock skew", key: ServiceClockSkewEnv, value: "-1s"},
 		{name: "invalid application closure flag", key: ApplicationClosureEnabledEnv, value: "TRUE"},
 		{name: "invalid application operations flag", key: ApplicationOperationsEnabledEnv, value: "TRUE"},
+		{name: "invalid log level", key: LogLevelEnv, value: "TRACE"},
+		{name: "empty OTLP endpoint", key: OTLPGRPCEndpointEnv, value: ""},
+		{name: "OTLP endpoint with scheme", key: OTLPGRPCEndpointEnv, value: "https://collector:4317"},
+		{name: "invalid OTLP insecure", key: OTLPInsecureEnv, value: "TRUE"},
+		{name: "negative trace ratio", key: TraceSampleRatioEnv, value: "-0.1"},
+		{name: "trace ratio above one", key: TraceSampleRatioEnv, value: "1.1"},
+		{name: "short metric interval", key: MetricExportIntervalEnv, value: "500ms"},
 	}
 
 	for _, testCase := range testCases {

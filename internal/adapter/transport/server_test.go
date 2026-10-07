@@ -12,6 +12,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -62,6 +63,38 @@ func newTestServersWithUpdate(
 		t.Fatalf("NewServers() error = %v", err)
 	}
 	return servers
+}
+
+func TestServers_HealthIsUnauthenticatedAndDependencySafe(t *testing.T) {
+	t.Parallel()
+	servers := newTestServers(t, &fakeCreateApplicationHandler{})
+
+	liveness := httptest.NewRecorder()
+	servers.HTTP.ServeHTTP(liveness, httptest.NewRequest(http.MethodGet, "/livez", nil))
+	if liveness.Code != http.StatusOK || liveness.Body.String() != "ok\n" {
+		t.Fatalf("liveness = status %d body %q", liveness.Code, liveness.Body.String())
+	}
+	readiness := httptest.NewRecorder()
+	servers.HTTP.ServeHTTP(readiness, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if readiness.Code != http.StatusServiceUnavailable || readiness.Body.String() != "not ready\n" {
+		t.Fatalf("readiness = status %d body %q", readiness.Code, readiness.Body.String())
+	}
+
+	listener := bufconn.Listen(1 << 20)
+	go func() { _ = servers.GRPC.Server.Serve(listener) }()
+	t.Cleanup(servers.GRPC.Server.Stop)
+	connection, err := grpc.DialContext(t.Context(), "bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("dial health server: %v", err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	response, err := healthpb.NewHealthClient(connection).Check(t.Context(), &healthpb.HealthCheckRequest{})
+	if err != nil || response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		t.Fatalf("gRPC health = %v, %v", response, err)
+	}
 }
 
 func TestServers_UCAPP003_HTTPIfMatchWinsBodyAndReturnsETag(t *testing.T) {

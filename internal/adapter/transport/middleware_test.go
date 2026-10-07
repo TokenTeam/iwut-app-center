@@ -214,6 +214,8 @@ func TestIdentityMiddleware_AllowsInfrastructureRPCsWithoutIdentity(t *testing.T
 		"/grpc.health.v1.Health/Check",
 		"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo",
 		"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
+		"/livez",
+		"/readyz",
 	} {
 		ctx := transport.NewServerContext(context.Background(), fakeTransporter{
 			kind:      transport.KindGRPC,

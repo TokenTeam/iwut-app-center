@@ -40,6 +40,11 @@ const (
 	ServiceClockSkewEnv             = "APP_CENTER_SERVICE_IDENTITY_CLOCK_SKEW"
 	ApplicationClosureEnabledEnv    = "APP_CENTER_APPLICATION_CLOSURE_ENABLED"
 	ApplicationOperationsEnabledEnv = "APP_CENTER_APPLICATION_OPERATIONS_ENABLED"
+	LogLevelEnv                     = "APP_CENTER_LOG_LEVEL"
+	OTLPGRPCEndpointEnv             = "APP_CENTER_OTLP_GRPC_ENDPOINT"
+	OTLPInsecureEnv                 = "APP_CENTER_OTLP_INSECURE"
+	TraceSampleRatioEnv             = "APP_CENTER_TRACE_SAMPLE_RATIO"
+	MetricExportIntervalEnv         = "APP_CENTER_METRIC_EXPORT_INTERVAL"
 
 	DefaultTesterJoinURLPrefix     = "https://app.example/tester/join"
 	DefaultScopeCatalogCacheTTL    = 5 * time.Minute
@@ -53,6 +58,9 @@ const (
 	DefaultServiceIdentityTTL      = time.Minute
 	DefaultServiceMaxTTL           = time.Minute
 	DefaultServiceClockSkew        = 30 * time.Second
+	DefaultLogLevel                = "INFO"
+	DefaultTraceSampleRatio        = 0.1
+	DefaultMetricExportInterval    = 30 * time.Second
 )
 
 var ErrInvalidConfiguration = errors.New("invalid application configuration")
@@ -72,6 +80,12 @@ type Config struct {
 
 	HTTPAddr string
 	GRPCAddr string
+	LogLevel string
+
+	OTLPGRPCEndpoint     string
+	OTLPInsecure         bool
+	TraceSampleRatio     float64
+	MetricExportInterval time.Duration
 
 	MongoURI      string
 	MongoDatabase string
@@ -155,6 +169,9 @@ func Load(lookup LookupEnv) (Config, error) {
 		ScopeCatalogCacheTTL:     DefaultScopeCatalogCacheTTL,
 		HTTPAddr:                 DefaultHTTPAddr,
 		GRPCAddr:                 DefaultGRPCAddr,
+		LogLevel:                 DefaultLogLevel,
+		TraceSampleRatio:         DefaultTraceSampleRatio,
+		MetricExportInterval:     DefaultMetricExportInterval,
 		MongoDatabase:            DefaultMongoDatabase,
 		IdentityAudience:         DefaultIdentityAudience,
 		IdentityMaxTTL:           DefaultIdentityMaxTTL,
@@ -194,6 +211,43 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	if configuration.GRPCAddr, err = optionalNonEmpty(lookup, GRPCAddrEnv, DefaultGRPCAddr); err != nil {
 		return Config{}, err
+	}
+	if raw, found := lookup(LogLevelEnv); found {
+		level := strings.ToUpper(strings.TrimSpace(raw))
+		switch level {
+		case "DEBUG", "INFO", "WARN", "ERROR":
+			configuration.LogLevel = level
+		default:
+			return Config{}, fmt.Errorf("%w: %s must be DEBUG, INFO, WARN or ERROR", ErrInvalidConfiguration, LogLevelEnv)
+		}
+	}
+	if raw, found := lookup(OTLPGRPCEndpointEnv); found {
+		configuration.OTLPGRPCEndpoint = strings.TrimSpace(raw)
+		if configuration.OTLPGRPCEndpoint == "" || strings.ContainsAny(configuration.OTLPGRPCEndpoint, " \t\r\n/?#") {
+			return Config{}, fmt.Errorf("%w: %s must be a non-empty gRPC target without scheme, path, query, fragment or whitespace", ErrInvalidConfiguration, OTLPGRPCEndpointEnv)
+		}
+	}
+	if raw, found := lookup(OTLPInsecureEnv); found {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed != "true" && trimmed != "false" {
+			return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalidConfiguration, OTLPInsecureEnv)
+		}
+		configuration.OTLPInsecure = trimmed == "true"
+		if configuration.OTLPGRPCEndpoint == "" {
+			return Config{}, fmt.Errorf("%w: %s requires %s", ErrInvalidConfiguration, OTLPInsecureEnv, OTLPGRPCEndpointEnv)
+		}
+	}
+	if raw, found := lookup(TraceSampleRatioEnv); found {
+		configuration.TraceSampleRatio, err = strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if err != nil || configuration.TraceSampleRatio < 0 || configuration.TraceSampleRatio > 1 {
+			return Config{}, fmt.Errorf("%w: %s must be a number from 0 through 1", ErrInvalidConfiguration, TraceSampleRatioEnv)
+		}
+	}
+	if raw, found := lookup(MetricExportIntervalEnv); found {
+		configuration.MetricExportInterval, err = time.ParseDuration(strings.TrimSpace(raw))
+		if err != nil || configuration.MetricExportInterval < time.Second {
+			return Config{}, fmt.Errorf("%w: %s must be a Go duration of at least 1s", ErrInvalidConfiguration, MetricExportIntervalEnv)
+		}
 	}
 	mongoConfiguration, mongoErr := LoadMongo(lookup)
 	if mongoErr != nil {

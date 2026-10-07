@@ -120,6 +120,11 @@ commit IDs; report dirty-input fingerprints identify pre-commit verification.
 | `APP_CENTER_MONGO_DATABASE` | no | `iwut_app_center` | Target database name |
 | `APP_CENTER_HTTP_ADDR` | no | `:8080` | HTTP listen address |
 | `APP_CENTER_GRPC_ADDR` | no | `:9090` | gRPC listen address |
+| `APP_CENTER_LOG_LEVEL` | no | `INFO` | JSON log threshold: `DEBUG`, `INFO`, `WARN` or `ERROR` |
+| `APP_CENTER_OTLP_GRPC_ENDPOINT` | no | disabled | OTLP gRPC collector target as `host:port`; when absent trace and metric export are disabled |
+| `APP_CENTER_OTLP_INSECURE` | no | `false` | use plaintext OTLP; only valid when an endpoint is configured |
+| `APP_CENTER_TRACE_SAMPLE_RATIO` | no | `0.1` | parent-based trace sampling ratio from `0` through `1` |
+| `APP_CENTER_METRIC_EXPORT_INTERVAL` | no | `30s` | OTLP metric export interval, minimum `1s` |
 | `APP_CENTER_INITIAL_APPLICATION_QUOTA` | no | `10` | Initial per-admin creation quota; only used to lazily create a missing quota record |
 | `APP_CENTER_TESTER_JOIN_URL_PREFIX` | no | `https://app.example/tester/join` | Mock or deployed HTTP(S) join entrance, with optional path and no userinfo, query or fragment |
 | `APP_CENTER_SCOPE_CATALOG_CACHE_TTL` | no | `5m` | Scope Catalog cache TTL |
@@ -142,6 +147,11 @@ commit IDs; report dirty-input fingerprints identify pre-commit verification.
 tokens or credentials. User-identity public keys remain file references;
 service private-key PEM is Base64-wrapped for ENV transport and should be
 injected by the deployment secret mechanism.
+
+The HTTP listener exposes unauthenticated `GET /livez` and `GET /readyz` probes.
+Readiness revalidates MongoDB transaction topology and the latest migration with
+a two-second deadline. The gRPC listener exposes the standard
+`grpc.health.v1.Health` service. Probe responses never include dependency errors.
 
 ## Tests
 

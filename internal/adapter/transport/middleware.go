@@ -30,6 +30,8 @@ var legacyIdentityHeaders = []string{
 var unauthenticatedOperationPrefixes = []string{
 	"/grpc.health.v1.Health/",
 	"/grpc.reflection.",
+	"/livez",
+	"/readyz",
 }
 
 func isUnauthenticatedOperation(operation string) bool {

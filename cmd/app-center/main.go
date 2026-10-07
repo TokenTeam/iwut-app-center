@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"iwut-app-center/internal/config"
@@ -14,6 +14,7 @@ const (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("service.name", serviceName))
 	command := commandServe
 	if len(os.Args) > 1 {
 		command = os.Args[1]
@@ -22,14 +23,17 @@ func main() {
 	switch command {
 	case commandServe:
 		if err := runServe(); err != nil {
-			log.Fatalf("app-center serve: %v", err)
+			slog.Error("app-center serve failed", "error.type", "startup")
+			os.Exit(1)
 		}
 	case commandMigrate:
 		if err := runMigrate(); err != nil {
-			log.Fatalf("app-center migrate: %v", err)
+			slog.Error("app-center migrate failed", "error.type", "migration")
+			os.Exit(1)
 		}
 	default:
-		log.Fatalf("app-center: unknown command %q; want %q or %q", command, commandServe, commandMigrate)
+		slog.Error("app-center command invalid", "command", command)
+		os.Exit(2)
 	}
 }
 

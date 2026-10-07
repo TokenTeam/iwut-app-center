@@ -2,18 +2,22 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	kerrors "github.com/go-kratos/kratos/v2/errors"
 	"io"
-	testerdomain "iwut-app-center/internal/tester/domain"
 	"net/http"
 	"strings"
+	"time"
 
+	kerrors "github.com/go-kratos/kratos/v2/errors"
+	"github.com/go-kratos/kratos/v2/middleware"
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"google.golang.org/grpc/codes"
+
+	testerdomain "iwut-app-center/internal/tester/domain"
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
@@ -147,6 +151,10 @@ type ServerConfig struct {
 	GRPCAddr                     string
 	ApplicationClosureEnabled    bool
 	ApplicationOperationsEnabled bool
+	ObservabilityMiddleware      middleware.Middleware
+	ReadinessCheck               func(context.Context) error
+	ReadinessTimeout             time.Duration
+	RegisterObservableOperations func(kind string, operations []string)
 }
 
 // Servers groups the two Kratos transports that share one ApplicationService.
@@ -321,13 +329,19 @@ func NewServers(
 			return nil, errors.New("transport servers: invalid optional runtime")
 		}
 	}
+	serverMiddleware := []middleware.Middleware{}
+	if config.ObservabilityMiddleware != nil {
+		serverMiddleware = append(serverMiddleware, config.ObservabilityMiddleware)
+	}
+	serverMiddleware = append(serverMiddleware, identityMiddleware(verifier))
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Filter(testerMembershipCredentialFilter(verifier)),
-		khttp.Middleware(identityMiddleware(verifier)),
+		khttp.Middleware(serverMiddleware...),
 		khttp.ResponseEncoder(createdResponseEncoder),
 		khttp.ErrorEncoder(credentialSafeErrorEncoder),
 	)
+	registerHTTPHealth(httpServer, config.ReadinessCheck, config.ReadinessTimeout)
 	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)
 	if profileReviewQueryService != nil {
 		applicationprofilereviewqueryv1.RegisterApplicationProfileReviewQueryServiceHTTPServer(httpServer, profileReviewQueryService)
@@ -365,11 +379,16 @@ func NewServers(
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceHTTPServer(httpServer, filterService)
 	}
-	grpcMiddleware := identityMiddleware(verifier)
+	grpcIdentityMiddleware := identityMiddleware(verifier)
 	if serviceVerifier != nil {
-		grpcMiddleware = authenticationMiddleware(verifier, serviceVerifier)
+		grpcIdentityMiddleware = authenticationMiddleware(verifier, serviceVerifier)
 	}
-	grpcServer := kgrpc.NewServer(kgrpc.Address(config.GRPCAddr), kgrpc.Middleware(grpcMiddleware))
+	grpcMiddleware := []middleware.Middleware{}
+	if config.ObservabilityMiddleware != nil {
+		grpcMiddleware = append(grpcMiddleware, config.ObservabilityMiddleware)
+	}
+	grpcMiddleware = append(grpcMiddleware, grpcIdentityMiddleware)
+	grpcServer := kgrpc.NewServer(kgrpc.Address(config.GRPCAddr), kgrpc.Middleware(grpcMiddleware...))
 	profilereviewv1.RegisterApplicationProfileReviewServer(grpcServer, profileReviewService)
 	if profileReviewQueryService != nil {
 		applicationprofilereviewqueryv1.RegisterApplicationProfileReviewQueryServiceServer(grpcServer, profileReviewQueryService)
@@ -410,6 +429,7 @@ func NewServers(
 	if oauthProviderService != nil {
 		oauthclientv1.RegisterOAuthClientProviderServiceServer(grpcServer, oauthProviderService)
 	}
+	registerObservableOperations(config.RegisterObservableOperations, httpServer, grpcServer)
 
 	return &Servers{HTTP: httpServer, GRPC: grpcServer}, nil
 }

@@ -40,14 +40,14 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-031 — query ApplicationProfileRevision review queue and detail.**
-Read `../../docs/app-center/briefs/UC-APP-031.md` plus the engineering baseline
-and implements README. Deliver exact `app.profile.review` authorization, PENDING
-ACTIVE-Application queue semantics, SUSPENDED inclusion, immutable profile-review
-snapshot detail, conflict hints, current policy metadata, bound ascending keyset pagination,
-HTTP/gRPC and real MongoDB acceptance. Do not implement assignment, locking, SLA,
-notifications or decisions. Required final tier: `make check-full`. Commit API
-inputs and outputs before service gitlinks and keep all commits local.
+**Engineering — App Center observability baseline (ADR-007).**
+Read the engineering baseline and implements README. Deliver JSON structured logs
+with trace correlation, W3C context propagation across HTTP/gRPC and the native
+Auth client, OTLP gRPC trace/metric export, low-cardinality request metrics, and
+HTTP plus standard gRPC health checks. Telemetry must not contain credentials,
+request bodies, user KV/profile content, full URL/scope lists or free-form reasons.
+Do not change business APIs, domain models, persistence schemas or audit semantics.
+Required final tier: `make check-full`. Keep all commits local.
 
 ## Verification entry points
 
