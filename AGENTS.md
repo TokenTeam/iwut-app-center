@@ -40,20 +40,14 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-028 — suspend and restore an Application.**
-Read `../../docs/app-center/briefs/UC-APP-028.md` plus the engineering baseline
-and implements README. Deliver lifecycle-orthogonal AVAILABLE↔SUSPENDED state,
-platformAvailabilityRevision OCC, exact app.application.suspend/restore USER
-permissions, atomic audit and durable alert outbox, migration 0023, management
-HTTP/gRPC, and common availability gates across UC009 Join, UC012/023/024 reads
-and all five UC019 OAuth provider methods. Preserve ownership, quota, Profile,
-Version, Review, Publication, Filter, Tester and OAuth registration/credential
-facts; management and review writes remain available while suspended. Restore
-only removes the platform gate and must not repair or enable dependent state.
-Do not implement archive, admin self-disable, automatic restore, bulk operations,
-per-request Auth introspection or permanent Auth tombstones. Required final tier:
-`make check-auth-app`. Commit API inputs and outputs before service gitlinks and
-keep all commits local.
+**UC-APP-029 — query owned Application list and management detail.**
+Read `../../docs/app-center/briefs/UC-APP-029.md` plus the engineering baseline
+and implements README. Deliver current-admin private list/detail queries, bound
+keyset pagination, batched counts, snapshot-composed dependent-state summaries,
+strict existence hiding, migration 0024, HTTP/gRPC and real MongoDB acceptance.
+Do not expose OAuth secrets, Tester identities, complete child histories, audit
+logs or public Catalog behavior. Required final tier: `make check-full`. Commit
+API inputs and outputs before service gitlinks and keep all commits local.
 
 ## Verification entry points
 

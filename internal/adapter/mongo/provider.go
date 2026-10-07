@@ -4,6 +4,7 @@ import (
 	"github.com/goforj/wire"
 	catalogport "iwut-app-center/internal/catalog/port"
 	filterport "iwut-app-center/internal/filter/port"
+	managementport "iwut-app-center/internal/management/port"
 	oauthclientport "iwut-app-center/internal/oauthclient/port"
 	profileport "iwut-app-center/internal/profile/port"
 	publicationport "iwut-app-center/internal/publication/port"
@@ -18,6 +19,8 @@ import (
 // database and client providers live in the composition root because they need
 // validated configuration.
 var ProviderSet = wire.NewSet(
+	NewApplicationManagementRepository,
+	wire.Bind(new(managementport.Repository), new(*ApplicationManagementRepository)),
 	NewApplicationOperationsRepository,
 	wire.Bind(new(port.ApplicationOperationsRepository), new(*ApplicationOperationsRepository)),
 	NewApplicationClosureRepository,

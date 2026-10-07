@@ -5,6 +5,7 @@ import (
 	"errors"
 	catalogdomain "iwut-app-center/internal/catalog/domain"
 	filterdomain "iwut-app-center/internal/filter/domain"
+	managementdomain "iwut-app-center/internal/management/domain"
 	oauthclientdomain "iwut-app-center/internal/oauthclient/domain"
 	profiledomain "iwut-app-center/internal/profile/domain"
 	"iwut-app-center/internal/shared"
@@ -96,48 +97,52 @@ const (
 	ReasonApplicationPublicationStateInconsistent = "ERROR_REASON_APPLICATION_PUBLICATION_STATE_INCONSISTENT"
 	ReasonGreyStableBaselineRequired              = "ERROR_REASON_GREY_STABLE_BASELINE_REQUIRED"
 
-	ReasonInvalidApplicationName                = "ERROR_REASON_INVALID_APPLICATION_NAME"
-	ReasonDeveloperIdentityRequired             = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
-	ReasonInvalidDeveloperIdentity              = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
-	ReasonDeveloperApprovalRequired             = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
-	ReasonApplicationNameAlreadyExists          = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
-	ReasonApplicationQuotaExceeded              = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
-	ReasonInvalidApplicationID                  = "ERROR_REASON_INVALID_APPLICATION_ID"
-	ReasonInvalidVersionLabel                   = "ERROR_REASON_INVALID_VERSION_LABEL"
-	ReasonInvalidApplicationLaunchURL           = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
-	ReasonInvalidRPCApiRange                    = "ERROR_REASON_INVALID_RPC_API_RANGE"
-	ReasonInvalidRequiredCapability             = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
-	ReasonInvalidApplicationScope               = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
-	ReasonInvalidOAuthRedirectConfiguration     = "ERROR_REASON_INVALID_OAUTH_REDIRECT_CONFIGURATION"
-	ReasonApplicationNotFound                   = "ERROR_REASON_APPLICATION_NOT_FOUND"
-	ReasonApplicationAdminRequired              = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
-	ReasonApplicationVersionLabelExists         = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
-	ReasonScopeCatalogUnavailable               = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
-	ReasonApplicationVersionRevisionRequired    = "ERROR_REASON_APPLICATION_VERSION_REVISION_REQUIRED"
-	ReasonApplicationVersionNotFound            = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
-	ReasonApplicationVersionNotDraft            = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
-	ReasonApplicationVersionNotRejected         = "ERROR_REASON_APPLICATION_VERSION_NOT_REJECTED"
-	ReasonApplicationVersionRevisionConflict    = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
-	ReasonApplicationReviewNotFound             = "ERROR_REASON_APPLICATION_REVIEW_NOT_FOUND"
-	ReasonApplicationReviewNotLatest            = "ERROR_REASON_APPLICATION_REVIEW_NOT_LATEST"
-	ReasonApplicationReviewAlreadyRestored      = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_RESTORED"
-	ReasonApplicationReviewStateInconsistent    = "ERROR_REASON_APPLICATION_REVIEW_STATE_INCONSISTENT"
-	ReasonApplicationLaunchURLNotReviewable     = "ERROR_REASON_APPLICATION_LAUNCH_URL_NOT_REVIEWABLE"
-	ReasonLaunchURLInspectionUnavailable        = "ERROR_REASON_LAUNCH_URL_INSPECTION_UNAVAILABLE"
-	ReasonReviewerIdentityRequired              = "ERROR_REASON_REVIEWER_IDENTITY_REQUIRED"
-	ReasonInvalidReviewerIdentity               = "ERROR_REASON_INVALID_REVIEWER_IDENTITY"
-	ReasonApplicationReviewPermissionRequired   = "ERROR_REASON_APPLICATION_REVIEW_PERMISSION_REQUIRED"
-	ReasonApplicationReviewAlreadyDecided       = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_DECIDED"
-	ReasonApplicationReviewConflictOfInterest   = "ERROR_REASON_APPLICATION_REVIEW_CONFLICT_OF_INTEREST"
-	ReasonInvalidApplicationReviewOutcome       = "ERROR_REASON_INVALID_APPLICATION_REVIEW_OUTCOME"
-	ReasonInvalidApplicationReviewPolicyVersion = "ERROR_REASON_INVALID_APPLICATION_REVIEW_POLICY_VERSION"
-	ReasonApplicationReviewPolicyChanged        = "ERROR_REASON_APPLICATION_REVIEW_POLICY_CHANGED"
-	ReasonApplicationReviewChecksIncomplete     = "ERROR_REASON_APPLICATION_REVIEW_CHECKS_INCOMPLETE"
-	ReasonInvalidApplicationReviewChecks        = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
-	ReasonInvalidApplicationReviewReason        = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
-	ReasonDeveloperStatusUnavailable            = "ERROR_REASON_DEVELOPER_STATUS_UNAVAILABLE"
-	ReasonSystemPrincipalUnavailable            = "ERROR_REASON_SYSTEM_PRINCIPAL_UNAVAILABLE"
-	ReasonInternal                              = "ERROR_REASON_INTERNAL"
+	ReasonInvalidApplicationName                 = "ERROR_REASON_INVALID_APPLICATION_NAME"
+	ReasonDeveloperIdentityRequired              = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
+	ReasonInvalidDeveloperIdentity               = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
+	ReasonDeveloperApprovalRequired              = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
+	ReasonApplicationNameAlreadyExists           = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
+	ReasonApplicationQuotaExceeded               = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
+	ReasonInvalidApplicationID                   = "ERROR_REASON_INVALID_APPLICATION_ID"
+	ReasonInvalidVersionLabel                    = "ERROR_REASON_INVALID_VERSION_LABEL"
+	ReasonInvalidApplicationLaunchURL            = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
+	ReasonInvalidRPCApiRange                     = "ERROR_REASON_INVALID_RPC_API_RANGE"
+	ReasonInvalidRequiredCapability              = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
+	ReasonInvalidApplicationScope                = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
+	ReasonInvalidOAuthRedirectConfiguration      = "ERROR_REASON_INVALID_OAUTH_REDIRECT_CONFIGURATION"
+	ReasonApplicationNotFound                    = "ERROR_REASON_APPLICATION_NOT_FOUND"
+	ReasonApplicationAdminRequired               = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
+	ReasonApplicationVersionLabelExists          = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
+	ReasonScopeCatalogUnavailable                = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
+	ReasonApplicationVersionRevisionRequired     = "ERROR_REASON_APPLICATION_VERSION_REVISION_REQUIRED"
+	ReasonApplicationVersionNotFound             = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
+	ReasonApplicationVersionNotDraft             = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
+	ReasonApplicationVersionNotRejected          = "ERROR_REASON_APPLICATION_VERSION_NOT_REJECTED"
+	ReasonApplicationVersionRevisionConflict     = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
+	ReasonApplicationReviewNotFound              = "ERROR_REASON_APPLICATION_REVIEW_NOT_FOUND"
+	ReasonApplicationReviewNotLatest             = "ERROR_REASON_APPLICATION_REVIEW_NOT_LATEST"
+	ReasonApplicationReviewAlreadyRestored       = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_RESTORED"
+	ReasonApplicationReviewStateInconsistent     = "ERROR_REASON_APPLICATION_REVIEW_STATE_INCONSISTENT"
+	ReasonApplicationLaunchURLNotReviewable      = "ERROR_REASON_APPLICATION_LAUNCH_URL_NOT_REVIEWABLE"
+	ReasonLaunchURLInspectionUnavailable         = "ERROR_REASON_LAUNCH_URL_INSPECTION_UNAVAILABLE"
+	ReasonReviewerIdentityRequired               = "ERROR_REASON_REVIEWER_IDENTITY_REQUIRED"
+	ReasonInvalidReviewerIdentity                = "ERROR_REASON_INVALID_REVIEWER_IDENTITY"
+	ReasonApplicationReviewPermissionRequired    = "ERROR_REASON_APPLICATION_REVIEW_PERMISSION_REQUIRED"
+	ReasonApplicationReviewAlreadyDecided        = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_DECIDED"
+	ReasonApplicationReviewConflictOfInterest    = "ERROR_REASON_APPLICATION_REVIEW_CONFLICT_OF_INTEREST"
+	ReasonInvalidApplicationReviewOutcome        = "ERROR_REASON_INVALID_APPLICATION_REVIEW_OUTCOME"
+	ReasonInvalidApplicationReviewPolicyVersion  = "ERROR_REASON_INVALID_APPLICATION_REVIEW_POLICY_VERSION"
+	ReasonApplicationReviewPolicyChanged         = "ERROR_REASON_APPLICATION_REVIEW_POLICY_CHANGED"
+	ReasonApplicationReviewChecksIncomplete      = "ERROR_REASON_APPLICATION_REVIEW_CHECKS_INCOMPLETE"
+	ReasonInvalidApplicationReviewChecks         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
+	ReasonInvalidApplicationReviewReason         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
+	ReasonDeveloperStatusUnavailable             = "ERROR_REASON_DEVELOPER_STATUS_UNAVAILABLE"
+	ReasonSystemPrincipalUnavailable             = "ERROR_REASON_SYSTEM_PRINCIPAL_UNAVAILABLE"
+	ReasonInternal                               = "ERROR_REASON_INTERNAL"
+	ReasonInvalidApplicationManagementRequest    = "ERROR_REASON_INVALID_APPLICATION_MANAGEMENT_REQUEST"
+	ReasonInvalidApplicationManagementPageToken  = "ERROR_REASON_INVALID_APPLICATION_MANAGEMENT_PAGE_TOKEN"
+	ReasonApplicationManagementNotFound          = "ERROR_REASON_APPLICATION_MANAGEMENT_NOT_FOUND"
+	ReasonApplicationManagementStateInconsistent = "ERROR_REASON_APPLICATION_MANAGEMENT_STATE_INCONSISTENT"
 
 	ReasonInvalidOAuthChannel              = "ERROR_REASON_INVALID_OAUTH_CHANNEL"
 	ReasonOAuthChannelNotEnabled           = "ERROR_REASON_OAUTH_CHANNEL_NOT_ENABLED"
@@ -220,6 +225,15 @@ var internalSpec = errorSpec{
 	code:    codes.Internal,
 	reason:  ReasonInternal,
 	message: "internal failure",
+}
+
+var managementDomainErrorSpecs = map[managementdomain.ErrorCode]errorSpec{
+	managementdomain.ErrorCodeAuthenticatedUserRequired:              {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
+	managementdomain.ErrorCodeInvalidApplicationManagementRequest:    {code: codes.InvalidArgument, reason: ReasonInvalidApplicationManagementRequest, message: "application management request is invalid"},
+	managementdomain.ErrorCodeInvalidApplicationManagementPageToken:  {code: codes.InvalidArgument, reason: ReasonInvalidApplicationManagementPageToken, message: "application management page token is invalid"},
+	managementdomain.ErrorCodeApplicationManagementNotFound:          {code: codes.NotFound, reason: ReasonApplicationManagementNotFound, message: "application management resource not found"},
+	managementdomain.ErrorCodeApplicationManagementStateInconsistent: {code: codes.Internal, reason: ReasonApplicationManagementStateInconsistent, message: "application management state is inconsistent"},
+	managementdomain.ErrorCodeInternal:                               internalSpec,
 }
 
 var filterDomainErrorSpecs = map[filterdomain.ErrorCode]errorSpec{
@@ -440,6 +454,14 @@ func toTransportError(err error) error {
 	}
 	if errors.Is(err, errIdentityInvalid) {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidDeveloperIdentity, "developer identity is invalid")
+	}
+	var managementError *managementdomain.Error
+	if errors.As(err, &managementError) {
+		spec, ok := managementDomainErrorSpecs[managementError.Code()]
+		if !ok {
+			spec = internalSpec
+		}
+		return transportStatus(spec.code, spec.reason, spec.message)
 	}
 	var filterError *filterdomain.Error
 	if errors.As(err, &filterError) {

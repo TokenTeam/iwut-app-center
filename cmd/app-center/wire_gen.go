@@ -18,9 +18,10 @@ import (
 	"iwut-app-center/internal/application/usecase"
 	usecase6 "iwut-app-center/internal/catalog/usecase"
 	"iwut-app-center/internal/config"
-	usecase9 "iwut-app-center/internal/filter/usecase"
-	usecase8 "iwut-app-center/internal/oauthclient/usecase"
-	usecase7 "iwut-app-center/internal/profile/usecase"
+	usecase10 "iwut-app-center/internal/filter/usecase"
+	usecase7 "iwut-app-center/internal/management/usecase"
+	usecase9 "iwut-app-center/internal/oauthclient/usecase"
+	usecase8 "iwut-app-center/internal/profile/usecase"
 	usecase4 "iwut-app-center/internal/publication/usecase"
 	usecase3 "iwut-app-center/internal/review/usecase"
 	usecase5 "iwut-app-center/internal/tester/usecase"
@@ -148,23 +149,26 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	publicCatalogRepository := mongo.NewPublicCatalogRepository(database)
 	publicCatalog := usecase6.NewPublicCatalog(publicCatalogRepository)
 	applicationCatalogService := transport.NewApplicationCatalogService(publicCatalog)
+	applicationManagementRepository := mongo.NewApplicationManagementRepository(database)
+	query := usecase7.NewQuery(applicationManagementRepository)
+	applicationManagementQueryService := transport.NewApplicationManagementQueryService(query)
 	applicationProfileRevisionUUIDv7Generator := generator.NewApplicationProfileRevisionUUIDv7Generator()
 	applicationProfileRevisionRepository := mongo.NewApplicationProfileRevisionRepository(database)
-	createApplicationProfileRevisionHandler := usecase7.NewCreateApplicationProfileRevisionHandler(applicationProfileRevisionUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
-	updateDraftApplicationProfileRevisionHandler := usecase7.NewUpdateDraftApplicationProfileRevisionHandler(systemClock, applicationProfileRevisionRepository)
+	createApplicationProfileRevisionHandler := usecase8.NewCreateApplicationProfileRevisionHandler(applicationProfileRevisionUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
+	updateDraftApplicationProfileRevisionHandler := usecase8.NewUpdateDraftApplicationProfileRevisionHandler(systemClock, applicationProfileRevisionRepository)
 	applicationProfileRevisionService := transport.NewApplicationProfileRevisionService(createApplicationProfileRevisionHandler, updateDraftApplicationProfileRevisionHandler)
 	applicationProfileReviewUUIDv7Generator := generator.NewApplicationProfileReviewUUIDv7Generator()
-	submitApplicationProfileRevisionReviewHandler := usecase7.NewSubmitApplicationProfileRevisionReviewHandler(applicationProfileReviewUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
-	decideApplicationProfileRevisionReviewHandler := usecase7.NewDecideApplicationProfileRevisionReviewHandler(systemClock, applicationProfileRevisionRepository)
+	submitApplicationProfileRevisionReviewHandler := usecase8.NewSubmitApplicationProfileRevisionReviewHandler(applicationProfileReviewUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
+	decideApplicationProfileRevisionReviewHandler := usecase8.NewDecideApplicationProfileRevisionReviewHandler(systemClock, applicationProfileRevisionRepository)
 	applicationProfileReviewService := transport.NewApplicationProfileReviewService(submitApplicationProfileRevisionReviewHandler, decideApplicationProfileRevisionReviewHandler)
 	oAuthClientUUIDv4Generator := generator.NewOAuthClientUUIDv4Generator()
 	secretFactory := oauthcredential.NewSecretFactory()
 	oAuthClientRepository := mongo.NewOAuthClientRepository(database)
-	handlers := usecase8.NewHandlers(oAuthClientUUIDv4Generator, secretFactory, systemClock, oAuthClientRepository)
+	handlers := usecase9.NewHandlers(oAuthClientUUIDv4Generator, secretFactory, systemClock, oAuthClientRepository)
 	oAuthClientService := transport.NewOAuthClientService(handlers)
 	applicationFilterRevisionUUIDv7Generator := generator.NewApplicationFilterRevisionUUIDv7Generator()
 	applicationFilterRepository := mongo.NewApplicationFilterRepository(database)
-	usecaseHandlers := usecase9.NewHandlers(applicationFilterRevisionUUIDv7Generator, systemClock, applicationFilterRepository)
+	usecaseHandlers := usecase10.NewHandlers(applicationFilterRevisionUUIDv7Generator, systemClock, applicationFilterRepository)
 	applicationFilterService := transport.NewApplicationFilterService(usecaseHandlers)
 	applicationAdminTransferRepository := mongo.NewApplicationAdminTransferRepository(database, secretFactory, int32_2)
 	grpcDeveloperLifecycleDirectory, err := auth.NewGRPCDeveloperLifecycleDirectory(clientConn)
@@ -192,9 +196,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		return nil, nil, err
 	}
 	oAuthProviderRepository := mongo.NewOAuthProviderRepository(database, secretFactory)
-	providerHandlers := usecase8.NewProviderHandlers(systemClock, oAuthProviderRepository)
+	providerHandlers := usecase9.NewProviderHandlers(systemClock, oAuthProviderRepository)
 	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
-	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, serviceIdentityVerifier, oAuthClientProviderService)
+	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationManagementQueryService, applicationProfileRevisionService, applicationProfileReviewService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
 		cleanup2()
 		cleanup()

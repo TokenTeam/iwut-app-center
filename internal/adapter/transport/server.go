@@ -20,6 +20,7 @@ import (
 	applicationcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_catalog"
 	applicationclosurev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_closure"
 	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
+	applicationmanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_management"
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
@@ -193,8 +194,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, filterService, transferService, closureService, operationsService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -251,6 +252,7 @@ func NewServers(
 	var filterService *ApplicationFilterService
 	var runtimeResolutionService *RuntimeResolutionService
 	var applicationCatalogService *ApplicationCatalogService
+	var managementService *ApplicationManagementQueryService
 	var transferService *ApplicationAdminTransferService
 	var closureService *ApplicationClosureService
 	var operationsService *ApplicationOperationsService
@@ -266,6 +268,11 @@ func NewServers(
 				return nil, errors.New("transport servers: application catalog service is invalid")
 			}
 			applicationCatalogService = value
+		case *ApplicationManagementQueryService:
+			if value == nil || managementService != nil {
+				return nil, errors.New("transport servers: application management query service is invalid")
+			}
+			managementService = value
 		case *ApplicationFilterService:
 			if value == nil || filterService != nil {
 				return nil, errors.New("transport servers: application filter service is invalid")
@@ -316,6 +323,9 @@ func NewServers(
 	if applicationCatalogService != nil {
 		applicationcatalogv1.RegisterApplicationCatalogServiceHTTPServer(httpServer, applicationCatalogService)
 	}
+	if managementService != nil {
+		applicationmanagementv1.RegisterApplicationManagementQueryServiceHTTPServer(httpServer, managementService)
+	}
 	testermembershipv1.RegisterTesterMembershipHTTPServer(httpServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
@@ -348,6 +358,9 @@ func NewServers(
 	}
 	if applicationCatalogService != nil {
 		applicationcatalogv1.RegisterApplicationCatalogServiceServer(grpcServer, applicationCatalogService)
+	}
+	if managementService != nil {
+		applicationmanagementv1.RegisterApplicationManagementQueryServiceServer(grpcServer, managementService)
 	}
 	testermembershipv1.RegisterTesterMembershipServer(grpcServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
@@ -396,6 +409,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 	case *runtimev1.LaunchTargetDescriptor:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationcatalogv1.PublicApplicationCatalogPage, *applicationcatalogv1.PublicApplicationCatalogItem:
+		w.Header().Set("Cache-Control", "private, no-store")
+	case *applicationmanagementv1.OwnedApplicationPage, *applicationmanagementv1.OwnedApplicationManagementDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
 		w.Header().Set("Cache-Control", "no-store")
