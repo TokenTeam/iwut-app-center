@@ -25,6 +25,33 @@ make migrate                              # schema changes: explicit deploy step
 make run                                  # HTTP + gRPC; never migrates automatically
 ```
 
+## Container image
+
+Build the production image from the repository root:
+
+```bash
+docker build -t iwut-app-center .
+```
+
+The image uses an Alpine Go builder and a separate Alpine runtime. App Center is
+built with `CGO_ENABLED=0`, so the executable is static and does not depend on
+glibc or musl at runtime. The runtime contains CA certificates for MongoDB,
+Auth and OTLP TLS connections, runs as the unprivileged UID/GID `10001`, and
+exposes the default HTTP and gRPC ports `8080` and `9090`.
+
+Run migrations as an explicit deployment step, then start the service with the
+same environment and mounted public-key files:
+
+```bash
+docker run --rm --env-file app-center.env iwut-app-center migrate
+docker run --rm --env-file app-center.env -p 8080:8080 -p 9090:9090 \
+  iwut-app-center
+```
+
+The default command is `serve`; passing `migrate` selects the migration command.
+Health probes should call HTTP `GET /livez` and `GET /readyz`, or the standard
+gRPC health service, from the container orchestrator.
+
 `migrate` loads only Mongo configuration and exits. `serve` (the default when no
 subcommand is given) validates at startup, before serving, that the topology
 supports transactions and that the latest migration is already recorded. It is
