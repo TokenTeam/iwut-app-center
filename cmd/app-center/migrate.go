@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/signal"
 	"syscall"
 
@@ -43,6 +44,6 @@ func runMigrate() error {
 		return err
 	}
 
-	fmt.Printf("app-center migrate: applied migrations to database %q\n", configuration.Database)
+	slog.Info("app-center migrations applied", "component", "migration")
 	return nil
 }

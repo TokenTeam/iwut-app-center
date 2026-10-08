@@ -176,6 +176,8 @@ func provideServerConfig(configuration config.Config) transport.ServerConfig {
 func provideServerConfigWithObservability(configuration config.Config, observability *observabilityRuntime, readiness *readinessState) transport.ServerConfig {
 	serverConfig := provideServerConfig(configuration)
 	serverConfig.ObservabilityMiddleware = observability.serverMiddleware
+	serverConfig.HTTPNotFoundHandler = observability.httpNotFoundHandler
+	serverConfig.HTTPMethodNotAllowedHandler = observability.httpMethodNotAllowedHandler
 	serverConfig.RegisterObservableOperations = observability.operations.register
 	serverConfig.ReadinessCheck = readiness.check
 	serverConfig.ReadinessTimeout = 2 * time.Second

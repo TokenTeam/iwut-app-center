@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -39,10 +40,12 @@ const (
 )
 
 type observabilityRuntime struct {
-	serverMiddleware  middleware.Middleware
-	clientInterceptor grpc.UnaryClientInterceptor
-	operations        *observableOperationRegistry
-	shutdown          func(context.Context) error
+	serverMiddleware            middleware.Middleware
+	clientInterceptor           grpc.UnaryClientInterceptor
+	httpNotFoundHandler         http.Handler
+	httpMethodNotAllowedHandler http.Handler
+	operations                  *observableOperationRegistry
+	shutdown                    func(context.Context) error
 }
 
 type observableOperationRegistry struct {
@@ -147,10 +150,14 @@ func provideObservability(configuration config.Config) (*observabilityRuntime, f
 	}
 	operations := newObservableOperationRegistry()
 	runtime := &observabilityRuntime{
-		serverMiddleware:  newServerObservabilityMiddleware(tracerProvider, propagator, requestCount, requestDuration, operations.normalize),
-		clientInterceptor: newClientTracingInterceptor(tracerProvider, propagator),
-		operations:        operations,
-		shutdown:          shutdown,
+		serverMiddleware:    newServerObservabilityMiddleware(tracerProvider, propagator, requestCount, requestDuration, operations.normalize),
+		clientInterceptor:   newClientTracingInterceptor(tracerProvider, propagator),
+		httpNotFoundHandler: newHTTPFallbackObservabilityHandler(tracerProvider, propagator, requestCount, requestDuration, http.StatusNotFound, "NOT_FOUND", http.NotFoundHandler()),
+		httpMethodNotAllowedHandler: newHTTPFallbackObservabilityHandler(tracerProvider, propagator, requestCount, requestDuration, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		})),
+		operations: operations,
+		shutdown:   shutdown,
 	}
 	cleanup := func() {
 		shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
@@ -160,6 +167,49 @@ func provideObservability(configuration config.Config) (*observabilityRuntime, f
 		}
 	}
 	return runtime, cleanup, nil
+}
+
+func newHTTPFallbackObservabilityHandler(
+	provider trace.TracerProvider,
+	propagator propagation.TextMapPropagator,
+	requestCount metric.Int64Counter,
+	requestDuration metric.Float64Histogram,
+	statusCode int,
+	reason string,
+	next http.Handler,
+) http.Handler {
+	const operation = "http.unmatched"
+	tracer := provider.Tracer(telemetryInstrumentationKey)
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		ctx := propagator.Extract(request.Context(), propagation.HeaderCarrier(request.Header))
+		ctx, span := tracer.Start(ctx, operation, trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(
+			attribute.String("rpc.system", "http"),
+			attribute.String("rpc.operation", operation),
+		))
+		defer span.End()
+		started := time.Now()
+		next.ServeHTTP(writer, request.WithContext(ctx))
+		duration := time.Since(started).Seconds()
+		attrs := []attribute.KeyValue{
+			attribute.String("transport", "http"),
+			attribute.String("operation", operation),
+			attribute.Int("code", statusCode),
+			attribute.String("reason", reason),
+		}
+		requestCount.Add(ctx, 1, metric.WithAttributes(attrs...))
+		requestDuration.Record(ctx, duration, metric.WithAttributes(attrs[:2]...))
+		span.SetAttributes(attribute.Int("rpc.status_code", statusCode), attribute.String("error.type", reason))
+		if statusCode >= http.StatusInternalServerError {
+			span.SetStatus(otelcodes.Error, reason)
+		}
+		slog.InfoContext(ctx, "request completed",
+			"transport", "http",
+			"operation", operation,
+			"code", statusCode,
+			"reason", reason,
+			"duration_ms", duration*1000,
+		)
+	})
 }
 
 func parseSlogLevel(raw string) (slog.Level, error) {

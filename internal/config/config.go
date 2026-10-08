@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -223,8 +224,8 @@ func Load(lookup LookupEnv) (Config, error) {
 	}
 	if raw, found := lookup(OTLPGRPCEndpointEnv); found {
 		configuration.OTLPGRPCEndpoint = strings.TrimSpace(raw)
-		if configuration.OTLPGRPCEndpoint == "" || strings.ContainsAny(configuration.OTLPGRPCEndpoint, " \t\r\n/?#") {
-			return Config{}, fmt.Errorf("%w: %s must be a non-empty gRPC target without scheme, path, query, fragment or whitespace", ErrInvalidConfiguration, OTLPGRPCEndpointEnv)
+		if !validHostPort(configuration.OTLPGRPCEndpoint) {
+			return Config{}, fmt.Errorf("%w: %s must be host:port with a numeric port from 1 through 65535", ErrInvalidConfiguration, OTLPGRPCEndpointEnv)
 		}
 	}
 	if raw, found := lookup(OTLPInsecureEnv); found {
@@ -362,6 +363,18 @@ func Load(lookup LookupEnv) (Config, error) {
 		}
 	}
 	return configuration, nil
+}
+
+func validHostPort(raw string) bool {
+	if raw == "" || strings.ContainsAny(raw, " \t\r\n/?#") {
+		return false
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil || host == "" || port == "" {
+		return false
+	}
+	number, err := strconv.Atoi(port)
+	return err == nil && number >= 1 && number <= 65535
 }
 
 func parseServiceCallers(raw string) ([]ServiceCallerRegistration, error) {

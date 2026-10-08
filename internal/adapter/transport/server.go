@@ -152,6 +152,8 @@ type ServerConfig struct {
 	ApplicationClosureEnabled    bool
 	ApplicationOperationsEnabled bool
 	ObservabilityMiddleware      middleware.Middleware
+	HTTPNotFoundHandler          http.Handler
+	HTTPMethodNotAllowedHandler  http.Handler
 	ReadinessCheck               func(context.Context) error
 	ReadinessTimeout             time.Duration
 	RegisterObservableOperations func(kind string, operations []string)
@@ -334,16 +336,24 @@ func NewServers(
 		serverMiddleware = append(serverMiddleware, config.ObservabilityMiddleware)
 	}
 	serverMiddleware = append(serverMiddleware, identityMiddleware(verifier))
+	notFoundHandler := config.HTTPNotFoundHandler
+	if notFoundHandler == nil {
+		notFoundHandler = http.NotFoundHandler()
+	}
+	methodNotAllowedHandler := config.HTTPMethodNotAllowedHandler
+	if methodNotAllowedHandler == nil {
+		methodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		})
+	}
 	httpServer := khttp.NewServer(
 		khttp.Address(config.HTTPAddr),
 		khttp.Filter(testerMembershipCredentialFilter(verifier)),
 		khttp.Middleware(serverMiddleware...),
 		khttp.ResponseEncoder(createdResponseEncoder),
 		khttp.ErrorEncoder(credentialSafeErrorEncoder),
-		khttp.NotFoundHandler(http.NotFoundHandler()),
-		khttp.MethodNotAllowedHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		})),
+		khttp.NotFoundHandler(notFoundHandler),
+		khttp.MethodNotAllowedHandler(methodNotAllowedHandler),
 	)
 	registerHTTPHealth(httpServer, config.ReadinessCheck, config.ReadinessTimeout)
 	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)
