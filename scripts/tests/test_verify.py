@@ -58,6 +58,13 @@ class VerificationTests(unittest.TestCase):
             if name in ("docs-tests", "brief-freshness", "registry"):
                 self.assertEqual(cwd, self.root / "docs")
 
+    def test_docs_are_cloned_from_a_git_ref(self):
+        branch = self.call_git("branch", "--show-current").decode().strip()
+        checkout, docs = verify.checkout_docs(str(self.root), branch)
+        self.addCleanup(checkout.cleanup)
+        self.assertEqual((docs / "source.txt").read_text(), "original\n")
+        self.assertEqual(verify.git(docs, "rev-parse", "HEAD"), verify.git(self.root, "rev-parse", "HEAD"))
+
     def test_stage_failure_and_timeout_are_not_passes(self):
         failure = verify.run_stage("failure", self.root, [sys.executable, "-c", "print('diagnostic'); raise SystemExit(7)"],
                                    self.root / "failed.log", 5, os.environ.copy())
@@ -70,13 +77,16 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(expired["status"], "timeout")
 
     def run_main(self, plan, *args, doctor_error=None):
+        docs_checkout = mock.Mock()
         with mock.patch.object(verify, "ROOT", self.root), \
+             mock.patch.object(verify, "checkout_docs", return_value=(docs_checkout, self.root)), \
              mock.patch.object(verify, "preflight", side_effect=doctor_error, return_value={}), \
              mock.patch.object(verify, "source_paths", return_value={"service": self.root}), \
              mock.patch.object(verify, "stages", return_value=plan):
             code = verify.main(["quick", *args])
         paths = sorted((self.root / ".artifacts/verification").glob("*/report.json"))
         self.assertEqual(len(paths), 1)
+        docs_checkout.cleanup.assert_called_once_with()
         return code, json.loads(paths[0].read_text())
 
     def test_failure_stops_pipeline_and_records_unrun_stages(self):

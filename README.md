@@ -1,7 +1,7 @@
 # iWUT App Center — new implementation
 
 This repository is the App Center implementation from the authoritative design
-in `../../docs/app-center/`. Read `AGENTS.md` and the active work package brief
+in [`TokenTeam/iwut-docs`](https://github.com/TokenTeam/iwut-docs/tree/main/app-center). Read `AGENTS.md` and the active work package brief
 before changing code.
 
 ## Prerequisites
@@ -91,12 +91,12 @@ Changes involving Auth consumers or shared Auth identity/contracts also require
 The real Auth/App check currently covers the named UC005 service-JWS scenario;
 it is not proof of every Auth UC, production Gateway or frontend flow.
 
-The Python 3 standard-library runner can be called from any directory:
+From the repository root, run the Python 3 standard-library runner directly:
 
 ```bash
-/path/to/iwut-app-center-ddd/scripts/verify.py backend --doctor
-/path/to/iwut-app-center-ddd/scripts/verify.py backend
-/path/to/iwut-app-center-ddd/scripts/verify.py cross-service --timeout 2400
+./scripts/verify.py backend --doctor
+./scripts/verify.py backend
+./scripts/verify.py cross-service --timeout 2400
 ```
 
 Prerequisites are checked before gates: Go, Git, Make, Bash, gofmt, Python 3,
@@ -105,7 +105,10 @@ and the pinned Proto toolchain; integration tiers also need Docker and GNU
 `make -C api proto-tools` prints/checks availability; it does not install tools.
 Missing tools or inaccessible Docker fail rather than skip the tier.
 
-- `APP_CENTER_DOCS_DIR`: override the docs repository (default `../../docs`).
+- `IWUT_DOCS_GIT_URL`: override the docs Git repository URL
+  (default `https://github.com/TokenTeam/iwut-docs.git`).
+- `IWUT_DOCS_GIT_REF`: override the branch or tag cloned for verification
+  (default `main`).
 - `AUTH_CENTER_SOURCE_DIR`: override the Auth worktree (default sibling
   `iwut-auth-center-ddd`). Prefer absolute paths for overrides.
 - `MONGODB_INTEGRATION_PORT`: optional fixed host port. By default Docker assigns

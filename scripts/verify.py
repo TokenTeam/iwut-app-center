@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 TIERS = ("quick", "backend", "cross-service")
+DEFAULT_DOCS_GIT_URL = "https://github.com/TokenTeam/iwut-docs.git"
+DEFAULT_DOCS_GIT_REF = "main"
 
 
 def utc_now():
@@ -23,6 +25,22 @@ def utc_now():
 
 def git(root, *args):
     return subprocess.check_output(["git", "-C", str(root), *args], timeout=30)
+
+
+def checkout_docs(repository, ref):
+    """Clone the selected docs revision without depending on workspace layout."""
+    checkout = tempfile.TemporaryDirectory(prefix="iwut-docs-")
+    path = Path(checkout.name)
+    try:
+        subprocess.run(
+            ["git", "clone", "--quiet", "--depth", "1", "--single-branch", "--branch", ref, repository, str(path)],
+            check=True,
+            timeout=120,
+        )
+    except BaseException:
+        checkout.cleanup()
+        raise
+    return checkout, path
 
 
 def fingerprint(root):
@@ -179,22 +197,29 @@ def main(argv=None):
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
     os.umask(0o077)
-    docs = Path(os.environ.get("APP_CENTER_DOCS_DIR", ROOT / "../../docs")).resolve()
+    docs_repository = os.environ.get("IWUT_DOCS_GIT_URL", DEFAULT_DOCS_GIT_URL).strip()
+    docs_ref = os.environ.get("IWUT_DOCS_GIT_REF", DEFAULT_DOCS_GIT_REF).strip()
+    if not docs_repository or not docs_ref:
+        parser.error("IWUT_DOCS_GIT_URL and IWUT_DOCS_GIT_REF must not be empty")
     auth = Path(os.environ.get("AUTH_CENTER_SOURCE_DIR", ROOT / "../iwut-auth-center-ddd")).resolve()
     artifacts = ROOT / ".artifacts/verification"
     artifacts.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-"), dir=artifacts))
     report_path = directory / "report.json"
     report = {"tier": args.tier, "doctor_only": args.doctor, "started_at": utc_now(), "status": "running", "stages": [],
+              "docs_git_ref": docs_ref,
               "not_in_scope": (["race", "MongoDB/HTTP/gRPC E2E", "real Auth+App E2E"] if args.tier == "quick" else
                                ["real Auth+App E2E"] if args.tier == "backend" else [])}
     write_report(report_path, report)
     print(f"Verification report: {report_path}", flush=True)
-    paths = source_paths(ROOT, docs, auth, args.tier)
+    docs_checkout = None
+    paths = {}
     def interrupted(_signum, _frame):
         raise InterruptedError("verification interrupted")
     previous = signal.signal(signal.SIGTERM, interrupted)
     try:
+        docs_checkout, docs = checkout_docs(docs_repository, docs_ref)
+        paths = source_paths(ROOT, docs, auth, args.tier)
         report["tool_versions"] = preflight(ROOT, docs, auth, args.tier)
         report["sources_start"] = {name: fingerprint(path) for name, path in paths.items()}
         if args.doctor:
@@ -234,6 +259,8 @@ def main(argv=None):
         report["finished_at"] = utc_now()
         write_report(report_path, report)
         signal.signal(signal.SIGTERM, previous)
+        if docs_checkout is not None:
+            docs_checkout.cleanup()
     print(f"Result: {report['status']}; report: {report_path}", flush=True)
     if report.get("error"):
         print(report["error"], file=sys.stderr)

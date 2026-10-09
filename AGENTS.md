@@ -4,27 +4,25 @@
 
 This repository contains the App Center implementation. Build only from the current design contracts.
 
-The authoritative design documents are intentionally outside this code repository:
-
-```text
-../../docs/app-center/
-```
-
-Do not copy those documents into this repository. If that path is unavailable, stop work that depends on business semantics and report the missing design source instead of guessing.
+The authoritative design documents are maintained in
+[`TokenTeam/iwut-docs`](https://github.com/TokenTeam/iwut-docs/tree/main/app-center).
+Do not copy those documents into this repository. If that Git repository is
+unavailable, stop work that depends on business semantics and report the missing
+design source instead of guessing.
 
 ## Required reading
 
 Default design input for an implementation work package is the generated brief,
 not the UC/ADR sources. Before implementation work, read only:
 
-1. `../../docs/app-center/implements/README.md` — the local-reading protocol.
-2. `../../docs/app-center/briefs/_engineering-baseline.md` — cross-cutting
+1. [`app-center/implements/README.md`](https://github.com/TokenTeam/iwut-docs/blob/main/app-center/implements/README.md) — the reading protocol.
+2. [`app-center/briefs/_engineering-baseline.md`](https://github.com/TokenTeam/iwut-docs/blob/main/app-center/briefs/_engineering-baseline.md) — cross-cutting
    architecture decisions; read once per session and reuse.
-3. `../../docs/app-center/briefs/UC-APP-XXX.md` — the brief for the active work
+3. `app-center/briefs/UC-APP-XXX.md` in the same Git repository — the brief for the active work
    package named below.
 
 If that brief does not exist yet, create or refresh
-`docs/tools/brief-specs/UC-APP-XXX.json` in the design docs repository and
+`tools/brief-specs/UC-APP-XXX.json` in the design docs repository and
 regenerate the brief before starting. Do not begin implementation without it,
 and do not fall back to reading whole UC or ADR files.
 
