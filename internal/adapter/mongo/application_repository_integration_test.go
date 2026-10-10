@@ -451,6 +451,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		applicationProfileReviewQueryMigrationID,
 		applicationArchivalMigrationID,
 		applicationVersionManagementMigrationID,
+		applicationVersionAbandonmentMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {

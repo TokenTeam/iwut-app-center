@@ -11,6 +11,9 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	applicationdomain "iwut-app-center/internal/application/domain"
+	reviewdomain "iwut-app-center/internal/review/domain"
+	reviewport "iwut-app-center/internal/review/port"
 	"iwut-app-center/internal/shared"
 	versiondomain "iwut-app-center/internal/version/domain"
 	versionport "iwut-app-center/internal/version/port"
@@ -84,7 +87,10 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 			name, status string
 			addReview    bool
 		}{
-			{"submitted", "SUBMITTED", false}, {"restored draft", "DRAFT", true},
+			{"submitted", "SUBMITTED", false},
+			{"approved", "APPROVED", false},
+			{"rejected", "REJECTED", false},
+			{"restored draft", "DRAFT", true},
 		} {
 			t.Run(test.name, func(t *testing.T) {
 				database := migratedIntegrationDatabase(t, client)
@@ -137,18 +143,21 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 			t.Fatalf("suspended and archived abandonment=%v", err)
 		}
 
-		closing := createVersionTestApplication(t, database, "auth-closing", "abandon-closing")
-		closingDraft, err := repository.CreateDraft(t.Context(), "auth-closing", integrationApplicationVersionDraft(t, closing.ID(), "auth-closing", "v1"))
-		if err != nil {
-			t.Fatal(err)
+		for index, lifecycle := range []string{"CLOSING", "CLOSED"} {
+			admin := shared.AuthID(fmt.Sprintf("auth-%s", lifecycle))
+			blocked := createVersionTestApplication(t, database, admin.String(), fmt.Sprintf("abandon-blocked-%d", index))
+			blockedDraft, createErr := repository.CreateDraft(t.Context(), admin, integrationApplicationVersionDraft(t, blocked.ID(), admin.String(), "v1"))
+			if createErr != nil {
+				t.Fatal(createErr)
+			}
+			if _, err = database.Collection(applicationsCollectionName).UpdateOne(t.Context(), bson.M{"id": blocked.ID().String()}, bson.M{"$set": bson.M{"lifecycleStatus": lifecycle}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = repository.AbandonDraft(t.Context(), blocked.ID(), blockedDraft.ID(), admin, 1, integrationAbandonmentFactory(t, blocked.ID(), blockedDraft.ID(), 1, admin, time.Now())); !errors.Is(err, versionport.ErrVersionAbandonmentNotAllowed) {
+				t.Fatalf("%s application error=%v", lifecycle, err)
+			}
 		}
-		if _, err = database.Collection(applicationsCollectionName).UpdateOne(t.Context(), bson.M{"id": closing.ID().String()}, bson.M{"$set": bson.M{"lifecycleStatus": "CLOSING"}}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err = repository.AbandonDraft(t.Context(), closing.ID(), closingDraft.ID(), "auth-closing", 1, integrationAbandonmentFactory(t, closing.ID(), closingDraft.ID(), 1, "auth-closing", time.Now())); !errors.Is(err, versionport.ErrVersionAbandonmentNotAllowed) {
-			t.Fatalf("closing application error=%v", err)
-		}
-		assertCollectionCount(t, database, applicationVersionsCollectionName, 1)
+		assertCollectionCount(t, database, applicationVersionsCollectionName, 2)
 	})
 
 	t.Run("BR-VER-031 missing dependency and tombstone overlap fail closed", func(t *testing.T) {
@@ -178,6 +187,13 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 			{"publication history reference", func(t *testing.T, r *ApplicationVersionRepository, _ shared.ApplicationID, v *versiondomain.ApplicationVersion) {
 				if _, err := r.database.Collection(applicationPublicationHistoryCollectionName).InsertOne(t.Context(), bson.M{
 					"eventId": "01990000-0000-7000-8000-000000000104", "previousVersionId": v.ID().String(),
+				}, options.InsertOne().SetBypassDocumentValidation(true)); err != nil {
+					t.Fatal(err)
+				}
+			}},
+			{"current publication reference", func(t *testing.T, r *ApplicationVersionRepository, app shared.ApplicationID, v *versiondomain.ApplicationVersion) {
+				if _, err := r.database.Collection(applicationPublicationsCollectionName).InsertOne(t.Context(), bson.M{
+					"applicationId": app.String(), "stableVersionId": v.ID().String(),
 				}, options.InsertOne().SetBypassDocumentValidation(true)); err != nil {
 					t.Fatal(err)
 				}
@@ -285,6 +301,207 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 1)
 		default:
 			t.Fatalf("replace/abandon results=(%v,%v)", replaceErr, abandonErr)
+		}
+	})
+
+	t.Run("BR-VER-032 submission and abandonment serialize on the shared fence", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		application := createVersionTestApplication(t, database, "auth-submit-race", "abandon-submit-race")
+		versionRepository := NewApplicationVersionRepository(database)
+		created, err := versionRepository.CreateDraft(t.Context(), "auth-submit-race", integrationApplicationVersionDraft(t, application.ID(), "auth-submit-race", "v1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		reviewRepository := NewApplicationReviewRepository(database)
+		candidate, err := reviewRepository.LoadSubmissionCandidate(t.Context(), application.ID(), reviewdomain.ApplicationVersionID(created.ID().String()), "auth-submit-race", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reviewID := nextIntegrationApplicationReviewID(t)
+		factory := integrationAbandonmentFactory(t, application.ID(), created.ID(), 1, "auth-submit-race", time.Now())
+		start := make(chan struct{})
+		submitResult := make(chan error, 1)
+		abandonResult := make(chan error, 1)
+		go func() {
+			<-start
+			_, submitErr := reviewRepository.Submit(t.Context(), candidate, reviewID, "auth-submit-race", 1, "v1", time.Now())
+			submitResult <- submitErr
+		}()
+		go func() {
+			<-start
+			_, abandonErr := versionRepository.AbandonDraft(t.Context(), application.ID(), created.ID(), "auth-submit-race", 1, factory)
+			abandonResult <- abandonErr
+		}()
+		close(start)
+		submitErr, abandonErr := <-submitResult, <-abandonResult
+		switch {
+		case submitErr == nil && (errors.Is(abandonErr, versionport.ErrApplicationVersionNotAbandonable) || errors.Is(abandonErr, versionport.ErrApplicationVersionRevisionConflict)):
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 1)
+			assertCollectionCount(t, database, applicationVersionOAuthConfigsCollectionName, 1)
+			assertCollectionCount(t, database, applicationReviewsCollectionName, 1)
+			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 0)
+		case errors.Is(submitErr, reviewport.ErrApplicationVersionNotFound) && abandonErr == nil:
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionOAuthConfigsCollectionName, 0)
+			assertCollectionCount(t, database, applicationReviewsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 1)
+		default:
+			t.Fatalf("submit/abandon results=(%v,%v)", submitErr, abandonErr)
+		}
+	})
+
+	t.Run("BR-VER-032 administrator transfer and abandonment serialize on the shared fence", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		const oldAdmin, newAdmin = "auth-transfer-race-old", "auth-transfer-race-new"
+		application := createVersionTestApplication(t, database, oldAdmin, "abandon-transfer-race")
+		versionRepository := NewApplicationVersionRepository(database)
+		created, err := versionRepository.CreateDraft(t.Context(), oldAdmin, integrationApplicationVersionDraft(t, application.ID(), oldAdmin, "v1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		transferRepository := NewApplicationAdminTransferRepository(database, transferSecretFactory{}, 100)
+		transferID, _ := applicationdomain.ParseApplicationAdminTransferID("01990000-0000-7000-8000-000000000201")
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		if _, err = transferRepository.Initiate(t.Context(), application.ID(), oldAdmin, newAdmin, 1, transferID, now); err != nil {
+			t.Fatal(err)
+		}
+		factory := integrationAbandonmentFactory(t, application.ID(), created.ID(), 1, oldAdmin, now)
+		start := make(chan struct{})
+		transferResult := make(chan error, 1)
+		abandonResult := make(chan error, 1)
+		go func() {
+			<-start
+			_, acceptErr := transferRepository.Accept(t.Context(), transferID, newAdmin, applicationdomain.ConfidentialCredentialKeep, now.Add(time.Second))
+			transferResult <- acceptErr
+		}()
+		go func() {
+			<-start
+			_, abandonErr := versionRepository.AbandonDraft(t.Context(), application.ID(), created.ID(), oldAdmin, 1, factory)
+			abandonResult <- abandonErr
+		}()
+		close(start)
+		acceptErr, abandonErr := <-transferResult, <-abandonResult
+		if acceptErr != nil {
+			t.Fatalf("accept transfer=%v", acceptErr)
+		}
+		var stored applicationDocument
+		if err := database.Collection(applicationsCollectionName).FindOne(t.Context(), bson.M{"id": application.ID().String()}).Decode(&stored); err != nil || stored.AdminID != newAdmin {
+			t.Fatalf("transferred application=%#v err=%v", stored, err)
+		}
+		switch {
+		case abandonErr == nil:
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionOAuthConfigsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 1)
+			var fact applicationVersionAbandonmentDocument
+			if err := database.Collection(applicationVersionAbandonmentsCollectionName).FindOne(t.Context(), bson.M{"versionId": created.ID().String()}).Decode(&fact); err != nil || fact.AbandonedBy != oldAdmin {
+				t.Fatalf("abandonment executor=%q err=%v", fact.AbandonedBy, err)
+			}
+		case errors.Is(abandonErr, versionport.ErrApplicationVersionNotFound):
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 1)
+			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 0)
+		default:
+			t.Fatalf("abandon after transfer=%v", abandonErr)
+		}
+	})
+
+	t.Run("BR-VER-032 application closure and abandonment serialize on the shared fence", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		const admin = "auth-close-race"
+		application := createVersionTestApplication(t, database, admin, "abandon-close-race")
+		versionRepository := NewApplicationVersionRepository(database)
+		created, err := versionRepository.CreateDraft(t.Context(), admin, integrationApplicationVersionDraft(t, application.ID(), admin, "v1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		closureID, _ := applicationdomain.ParseApplicationClosureID("01990000-0000-7000-8000-000000000202")
+		proof := applicationdomain.ApplicationCloseProof{
+			Subject: admin, ApplicationID: application.ID(), JTI: "01990000-0000-7000-8000-000000000203",
+			AuthTime: now, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute),
+		}
+		factory := integrationAbandonmentFactory(t, application.ID(), created.ID(), 1, admin, now)
+		start := make(chan struct{})
+		closureResult := make(chan error, 1)
+		abandonResult := make(chan error, 1)
+		go func() {
+			<-start
+			_, closeErr := NewApplicationClosureRepository(database).Start(t.Context(), application.ID(), admin, 1, 1, proof, closureID, now)
+			closureResult <- closeErr
+		}()
+		go func() {
+			<-start
+			_, abandonErr := versionRepository.AbandonDraft(t.Context(), application.ID(), created.ID(), admin, 1, factory)
+			abandonResult <- abandonErr
+		}()
+		close(start)
+		closeErr, abandonErr := <-closureResult, <-abandonResult
+		if closeErr != nil {
+			t.Fatalf("start closure=%v", closeErr)
+		}
+		var stored applicationDocument
+		if err := database.Collection(applicationsCollectionName).FindOne(t.Context(), bson.M{"id": application.ID().String()}).Decode(&stored); err != nil || stored.LifecycleStatus != "CLOSING" {
+			t.Fatalf("closing application=%#v err=%v", stored, err)
+		}
+		switch {
+		case abandonErr == nil:
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionOAuthConfigsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 1)
+		case errors.Is(abandonErr, versionport.ErrVersionAbandonmentNotAllowed):
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 1)
+			assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 0)
+		default:
+			t.Fatalf("abandon during closure=%v", abandonErr)
+		}
+	})
+
+	t.Run("BR-VER-029-032 same-label creation and abandonment serialize with fresh identity", func(t *testing.T) {
+		database := migratedIntegrationDatabase(t, client)
+		const admin = "auth-label-race"
+		application := createVersionTestApplication(t, database, admin, "abandon-label-race")
+		repository := NewApplicationVersionRepository(database)
+		created, err := repository.CreateDraft(t.Context(), admin, integrationApplicationVersionDraft(t, application.ID(), admin, "v1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		newDraft := integrationApplicationVersionDraft(t, application.ID(), admin, "v1")
+		factory := integrationAbandonmentFactory(t, application.ID(), created.ID(), 1, admin, time.Now())
+		start := make(chan struct{})
+		createdResult := make(chan *versiondomain.ApplicationVersion, 1)
+		createErrors := make(chan error, 1)
+		abandonResult := make(chan error, 1)
+		go func() {
+			<-start
+			version, createErr := repository.CreateDraft(t.Context(), admin, newDraft)
+			createdResult <- version
+			createErrors <- createErr
+		}()
+		go func() {
+			<-start
+			_, abandonErr := repository.AbandonDraft(t.Context(), application.ID(), created.ID(), admin, 1, factory)
+			abandonResult <- abandonErr
+		}()
+		close(start)
+		recreated, createErr, abandonErr := <-createdResult, <-createErrors, <-abandonResult
+		if abandonErr != nil {
+			t.Fatalf("abandon=%v", abandonErr)
+		}
+		assertCollectionCount(t, database, applicationVersionAbandonmentsCollectionName, 1)
+		switch {
+		case createErr == nil:
+			if recreated == nil || recreated.ID() == created.ID() || recreated.Sequence() != 2 || recreated.VersionLabel() != created.VersionLabel() {
+				t.Fatalf("recreated version=%#v", recreated)
+			}
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 1)
+			assertCollectionCount(t, database, applicationVersionOAuthConfigsCollectionName, 1)
+			assertNextVersionSequence(t, database, application.ID(), 3)
+		case errors.Is(createErr, versionport.ErrApplicationVersionLabelAlreadyExists):
+			assertCollectionCount(t, database, applicationVersionsCollectionName, 0)
+			assertCollectionCount(t, database, applicationVersionOAuthConfigsCollectionName, 0)
+			assertNextVersionSequence(t, database, application.ID(), 2)
+		default:
+			t.Fatalf("same-label creation=%v", createErr)
 		}
 	})
 
