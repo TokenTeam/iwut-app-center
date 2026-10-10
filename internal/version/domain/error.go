@@ -17,25 +17,31 @@ const (
 type ErrorCode string
 
 const (
-	ErrorCodeInvalidApplicationID                 ErrorCode = "InvalidApplicationId"
-	ErrorCodeDeveloperIdentityRequired            ErrorCode = "DeveloperIdentityRequired"
-	ErrorCodeDeveloperApprovalRequired            ErrorCode = "DeveloperApprovalRequired"
-	ErrorCodeInvalidVersionLabel                  ErrorCode = "InvalidVersionLabel"
-	ErrorCodeInvalidApplicationLaunchURL          ErrorCode = "InvalidApplicationLaunchUrl"
-	ErrorCodeInvalidRPCApiRange                   ErrorCode = "InvalidRpcApiRange"
-	ErrorCodeInvalidRequiredCapability            ErrorCode = "InvalidRequiredCapability"
-	ErrorCodeInvalidApplicationScope              ErrorCode = "InvalidApplicationScope"
-	ErrorCodeInvalidOAuthRedirectConfiguration    ErrorCode = "InvalidOAuthRedirectConfiguration"
-	ErrorCodeScopeCatalogUnavailable              ErrorCode = "ScopeCatalogUnavailable"
-	ErrorCodeApplicationNotFound                  ErrorCode = "ApplicationNotFound"
-	ErrorCodeApplicationAdminRequired             ErrorCode = "ApplicationAdminRequired"
-	ErrorCodeApplicationVersionRevisionRequired   ErrorCode = "ApplicationVersionRevisionRequired"
-	ErrorCodeApplicationVersionNotFound           ErrorCode = "ApplicationVersionNotFound"
-	ErrorCodeApplicationVersionNotDraft           ErrorCode = "ApplicationVersionNotDraft"
-	ErrorCodeApplicationVersionNotRejected        ErrorCode = "ApplicationVersionNotRejected"
-	ErrorCodeApplicationVersionRevisionConflict   ErrorCode = "ApplicationVersionRevisionConflict"
-	ErrorCodeApplicationVersionLabelAlreadyExists ErrorCode = "ApplicationVersionLabelAlreadyExists"
-	ErrorCodeInternal                             ErrorCode = "Internal"
+	ErrorCodeInvalidApplicationID                          ErrorCode = "InvalidApplicationId"
+	ErrorCodeDeveloperIdentityRequired                     ErrorCode = "DeveloperIdentityRequired"
+	ErrorCodeDeveloperApprovalRequired                     ErrorCode = "DeveloperApprovalRequired"
+	ErrorCodeInvalidVersionLabel                           ErrorCode = "InvalidVersionLabel"
+	ErrorCodeInvalidApplicationLaunchURL                   ErrorCode = "InvalidApplicationLaunchUrl"
+	ErrorCodeInvalidRPCApiRange                            ErrorCode = "InvalidRpcApiRange"
+	ErrorCodeInvalidRequiredCapability                     ErrorCode = "InvalidRequiredCapability"
+	ErrorCodeInvalidApplicationScope                       ErrorCode = "InvalidApplicationScope"
+	ErrorCodeInvalidOAuthRedirectConfiguration             ErrorCode = "InvalidOAuthRedirectConfiguration"
+	ErrorCodeScopeCatalogUnavailable                       ErrorCode = "ScopeCatalogUnavailable"
+	ErrorCodeApplicationNotFound                           ErrorCode = "ApplicationNotFound"
+	ErrorCodeApplicationAdminRequired                      ErrorCode = "ApplicationAdminRequired"
+	ErrorCodeApplicationVersionRevisionRequired            ErrorCode = "ApplicationVersionRevisionRequired"
+	ErrorCodeApplicationVersionNotFound                    ErrorCode = "ApplicationVersionNotFound"
+	ErrorCodeApplicationVersionNotDraft                    ErrorCode = "ApplicationVersionNotDraft"
+	ErrorCodeApplicationVersionNotRejected                 ErrorCode = "ApplicationVersionNotRejected"
+	ErrorCodeApplicationVersionRevisionConflict            ErrorCode = "ApplicationVersionRevisionConflict"
+	ErrorCodeApplicationVersionLabelAlreadyExists          ErrorCode = "ApplicationVersionLabelAlreadyExists"
+	ErrorCodeUserIdentityRequired                          ErrorCode = "UserIdentityRequired"
+	ErrorCodeInvalidApplicationVersionQuery                ErrorCode = "InvalidApplicationVersionQuery"
+	ErrorCodeInvalidApplicationVersionPageToken            ErrorCode = "InvalidApplicationVersionPageToken"
+	ErrorCodeApplicationVersionManagementNotFound          ErrorCode = "ApplicationVersionManagementNotFound"
+	ErrorCodeApplicationVersionManagementStateInconsistent ErrorCode = "ApplicationVersionManagementStateInconsistent"
+	ErrorCodeApplicationVersionManagementUnavailable       ErrorCode = "ApplicationVersionManagementUnavailable"
+	ErrorCodeInternal                                      ErrorCode = "Internal"
 )
 
 type Error struct {
@@ -60,6 +66,10 @@ func NewScopeCatalogUnavailableError(cause error) *Error {
 		"scope catalog is unavailable",
 		cause,
 	)
+}
+
+func NewApplicationVersionManagementUnavailableError(cause error) *Error {
+	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationVersionManagementUnavailable, "application version management query is unavailable", cause)
 }
 
 func (e *Error) Error() string { return e.message }
@@ -126,5 +136,10 @@ var (
 	ErrApplicationVersionLabelAlreadyExists = newError(
 		ErrorCategoryConflict, ErrorCodeApplicationVersionLabelAlreadyExists, "application version label already exists", nil,
 	)
-	ErrInternal = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
+	ErrUserIdentityRequired                          = newError(ErrorCategoryAuthentication, ErrorCodeUserIdentityRequired, "user identity is required", nil)
+	ErrInvalidApplicationVersionQuery                = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionQuery, "application version query is invalid", nil)
+	ErrInvalidApplicationVersionPageToken            = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionPageToken, "application version page token is invalid", nil)
+	ErrApplicationVersionManagementNotFound          = newError(ErrorCategoryNotFound, ErrorCodeApplicationVersionManagementNotFound, "application version management resource not found", nil)
+	ErrApplicationVersionManagementStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationVersionManagementStateInconsistent, "application version management state is inconsistent", nil)
+	ErrInternal                                      = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestAPIContract_UCAPP002_ResourceRouteAndGeneratedMethodAgree(t *testing.T) {
@@ -155,6 +156,60 @@ func TestAPIContract_UCAPP003_HTTPBodyIsCompleteReplacementWithoutServerState(t 
 	for _, reason := range reasons {
 		if _, ok := applicationversionv1.ErrorReason_value[reason]; !ok {
 			t.Fatalf("generated UC-APP-003 ErrorReason enum is missing %q", reason)
+		}
+	}
+}
+
+func TestAPIContract_UCAPP034_QueryRoutesFieldsAndReasons(t *testing.T) {
+	t.Parallel()
+	root := moduleRoot(t)
+	source, err := os.ReadFile(filepath.Join(root, "api", "app_center", "v1", "application_version", "application_version.proto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	if !strings.Contains(text, `post: "`+ListApplicationVersionsInternalPath+`"`) || !strings.Contains(text, `body: "query"`) || !strings.Contains(text, `get: "`+GetApplicationVersionInternalPath+`"`) {
+		t.Fatalf("query HTTP annotations do not match constants")
+	}
+	if ListApplicationVersionsExternalPath != ServicePrefix+ListApplicationVersionsInternalPath || GetApplicationVersionExternalPath != ServicePrefix+GetApplicationVersionInternalPath || ListApplicationVersionsGRPCMethod != applicationversionv1.OperationApplicationVersionListApplicationVersions || GetApplicationVersionGRPCMethod != applicationversionv1.OperationApplicationVersionGetApplicationVersion {
+		t.Fatal("query route constants do not match generated contract")
+	}
+	request := &applicationversionv1.ListApplicationVersionsRequest{}
+	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != "application_id,query" {
+		t.Fatalf("list request fields=%v", fields)
+	}
+	query := &applicationversionv1.ListApplicationVersionsQuery{}
+	if fields := messageFieldNames(t, query); strings.Join(fields, ",") != "page_size,page_token,review_status" {
+		t.Fatalf("list query fields=%v", fields)
+	}
+	for _, field := range []string{"auth_id", "admin_id", "created_by", "updated_by"} {
+		if containsField(request, field) || containsField(query, field) {
+			t.Fatalf("query contains caller-controlled identity field %q", field)
+		}
+	}
+	for _, reason := range []string{ReasonUserIdentityRequired, ReasonInvalidUserIdentity, ReasonInvalidApplicationVersionQuery, ReasonInvalidApplicationVersionPageToken, ReasonApplicationVersionManagementNotFound, ReasonApplicationVersionManagementStateInconsistent, ReasonApplicationVersionManagementUnavailable} {
+		if _, ok := applicationversionv1.ErrorReason_value[reason]; !ok {
+			t.Fatalf("generated UC-APP-034 ErrorReason enum is missing %q", reason)
+		}
+	}
+}
+
+func TestAPIContract_UCAPP034_ReadModelsCannotExposeReviewerOrSYSTEMAuthIDs(t *testing.T) {
+	t.Parallel()
+	for _, message := range []struct {
+		name  string
+		value proto.Message
+	}{
+		{"list summary", &applicationversionv1.OwnedApplicationVersionSummary{}},
+		{"detail resource", &applicationversionv1.OwnedApplicationVersionResource{}},
+		{"latest review", &applicationversionv1.OwnedApplicationVersionLatestReview{}},
+		{"review decision", &applicationversionv1.OwnedApplicationVersionReviewDecision{}},
+		{"draft restoration", &applicationversionv1.OwnedApplicationVersionDraftRestoration{}},
+	} {
+		for _, identity := range []string{"updated_by", "decided_by", "restored_by", "reviewer_id", "system_auth_id"} {
+			if containsField(message.value, identity) {
+				t.Fatalf("%s exposes Reviewer/SYSTEM identity field %q", message.name, identity)
+			}
 		}
 	}
 }

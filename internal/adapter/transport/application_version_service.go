@@ -35,10 +35,20 @@ type UpdateDraftApplicationVersionHandler interface {
 	) (*versiondomain.ApplicationVersion, error)
 }
 
+type ApplicationVersionManagementQueryHandler interface {
+	List(context.Context, shared.AuthenticatedUserIdentity, versionusecase.ListApplicationVersionsQuery) (*versiondomain.OwnedVersionPage, error)
+	Get(context.Context, shared.AuthenticatedUserIdentity, string, string) (*versiondomain.OwnedVersionDetail, error)
+}
+
 type ApplicationVersionService struct {
 	applicationversionv1.UnimplementedApplicationVersionServer
 	createHandler CreateApplicationVersionHandler
 	updateHandler UpdateDraftApplicationVersionHandler
+	queryHandler  ApplicationVersionManagementQueryHandler
+}
+
+func NewApplicationVersionServiceWithQuery(createHandler CreateApplicationVersionHandler, updateHandler UpdateDraftApplicationVersionHandler, queryHandler ApplicationVersionManagementQueryHandler) *ApplicationVersionService {
+	return &ApplicationVersionService{createHandler: createHandler, updateHandler: updateHandler, queryHandler: queryHandler}
 }
 
 var _ applicationversionv1.ApplicationVersionHTTPServer = (*ApplicationVersionService)(nil)
@@ -149,6 +159,87 @@ func (service *ApplicationVersionService) UpdateApplicationVersion(
 		return nil, toTransportError(versiondomain.NewInternalError(nil))
 	}
 	return updateApplicationVersionResponse(version), nil
+}
+
+func (service *ApplicationVersionService) ListApplicationVersions(ctx context.Context, request *applicationversionv1.ListApplicationVersionsRequest) (*applicationversionv1.OwnedApplicationVersionPage, error) {
+	setPrivateNoStore(ctx)
+	identity, ok := authenticatedUserIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(versiondomain.ErrUserIdentityRequired)
+	}
+	if service == nil || service.queryHandler == nil || request == nil {
+		return nil, toTransportError(versiondomain.NewInternalError(nil))
+	}
+	query := request.GetQuery()
+	if query == nil {
+		query = &applicationversionv1.ListApplicationVersionsQuery{}
+	}
+	var reviewStatus *string
+	if query.ReviewStatus != nil {
+		value := query.GetReviewStatus()
+		reviewStatus = &value
+	}
+	page, err := service.queryHandler.List(ctx, identity, versionusecase.ListApplicationVersionsQuery{ApplicationID: request.GetApplicationId(), ReviewStatus: reviewStatus, PageSize: query.GetPageSize(), PageToken: query.GetPageToken()})
+	if err != nil {
+		return nil, toTransportError(err)
+	}
+	items := make([]*applicationversionv1.OwnedApplicationVersionSummary, len(page.Items))
+	for i := range page.Items {
+		items[i] = ownedApplicationVersionSummaryResponse(page.Items[i])
+	}
+	return &applicationversionv1.OwnedApplicationVersionPage{Items: items, NextPageToken: page.NextPageToken, AsOf: timestamppb.New(page.AsOf)}, nil
+}
+
+func (service *ApplicationVersionService) GetApplicationVersion(ctx context.Context, request *applicationversionv1.GetApplicationVersionRequest) (*applicationversionv1.OwnedApplicationVersionDetail, error) {
+	setPrivateNoStore(ctx)
+	identity, ok := authenticatedUserIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(versiondomain.ErrUserIdentityRequired)
+	}
+	if service == nil || service.queryHandler == nil || request == nil {
+		return nil, toTransportError(versiondomain.NewInternalError(nil))
+	}
+	detail, err := service.queryHandler.Get(ctx, identity, request.GetApplicationId(), request.GetVersionId())
+	if err != nil {
+		return nil, toTransportError(err)
+	}
+	return &applicationversionv1.OwnedApplicationVersionDetail{Version: ownedApplicationVersionResourceResponse(detail.Version), LatestReview: ownedApplicationVersionLatestReviewResponse(detail.Version.LatestReview), AsOf: timestamppb.New(detail.AsOf)}, nil
+}
+
+func ownedApplicationVersionSummaryResponse(version versiondomain.OwnedVersion) *applicationversionv1.OwnedApplicationVersionSummary {
+	return &applicationversionv1.OwnedApplicationVersionSummary{VersionId: version.VersionID, ApplicationId: version.ApplicationID, Sequence: version.Sequence, VersionLabel: version.VersionLabel, RpcApiMinVersion: version.RPCApiMinVersion, RpcApiMaxVersionExclusive: version.RPCApiMaxVersionExclusive, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy, CreatedAt: timestamppb.New(version.CreatedAt), UpdatedAt: timestamppb.New(version.UpdatedAt), LatestReview: ownedApplicationVersionReviewSummaryResponse(version.LatestReview)}
+}
+
+func ownedApplicationVersionReviewSummaryResponse(review *versiondomain.OwnedLatestReview) *applicationversionv1.OwnedApplicationVersionReviewSummary {
+	if review == nil {
+		return nil
+	}
+	response := &applicationversionv1.OwnedApplicationVersionReviewSummary{ReviewId: review.ReviewID, Attempt: review.Attempt, Status: review.Status, SubmittedAt: timestamppb.New(review.SubmittedAt)}
+	if review.Decision != nil {
+		response.DecidedAt = timestamppb.New(review.Decision.DecidedAt)
+	}
+	if review.DraftRestoration != nil {
+		response.RestoredAt = timestamppb.New(review.DraftRestoration.RestoredAt)
+	}
+	return response
+}
+
+func ownedApplicationVersionResourceResponse(version versiondomain.OwnedVersion) *applicationversionv1.OwnedApplicationVersionResource {
+	return &applicationversionv1.OwnedApplicationVersionResource{VersionId: version.VersionID, ApplicationId: version.ApplicationID, Sequence: version.Sequence, VersionLabel: version.VersionLabel, LaunchUrl: version.LaunchURL, RpcApiMinVersion: version.RPCApiMinVersion, RpcApiMaxVersionExclusive: version.RPCApiMaxVersionExclusive, RequiredCapabilities: append([]string(nil), version.RequiredCapabilities...), RequiredScopes: append([]string(nil), version.RequiredScopes...), OptionalScopes: append([]string(nil), version.OptionalScopes...), OauthRedirects: &applicationversionv1.OAuthRedirectConfiguration{PkceRedirectUris: append([]string(nil), version.PKCERedirectURIs...), ConfidentialRedirectUris: append([]string(nil), version.ConfidentialRedirectURIs...)}, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy, CreatedAt: timestamppb.New(version.CreatedAt), UpdatedAt: timestamppb.New(version.UpdatedAt)}
+}
+
+func ownedApplicationVersionLatestReviewResponse(review *versiondomain.OwnedLatestReview) *applicationversionv1.OwnedApplicationVersionLatestReview {
+	if review == nil {
+		return nil
+	}
+	response := &applicationversionv1.OwnedApplicationVersionLatestReview{ReviewId: review.ReviewID, Attempt: review.Attempt, Status: review.Status, SubmittedBy: review.SubmittedBy, SubmittedAt: timestamppb.New(review.SubmittedAt)}
+	if review.Decision != nil {
+		response.Decision = &applicationversionv1.OwnedApplicationVersionReviewDecision{Outcome: review.Decision.Outcome, Reason: review.Decision.Reason, DecidedAt: timestamppb.New(review.Decision.DecidedAt)}
+	}
+	if review.DraftRestoration != nil {
+		response.DraftRestoration = &applicationversionv1.OwnedApplicationVersionDraftRestoration{RestoredAt: timestamppb.New(review.DraftRestoration.RestoredAt)}
+	}
+	return response
 }
 
 func expectedRevision(ctx context.Context, grpcRevision int64) (int64, error) {

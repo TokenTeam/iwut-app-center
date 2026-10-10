@@ -113,6 +113,12 @@ const (
 	UpdateApplicationVersionInternalPath       = "/v1/applications/{application_id}/versions/{version_id}"
 	UpdateApplicationVersionExternalPath       = ServicePrefix + UpdateApplicationVersionInternalPath
 	UpdateApplicationVersionGRPCMethod         = applicationversionv1.OperationApplicationVersionUpdateApplicationVersion
+	ListApplicationVersionsInternalPath        = "/v1/applications/{application_id}/versions:search"
+	ListApplicationVersionsExternalPath        = ServicePrefix + ListApplicationVersionsInternalPath
+	ListApplicationVersionsGRPCMethod          = applicationversionv1.OperationApplicationVersionListApplicationVersions
+	GetApplicationVersionInternalPath          = "/v1/applications/{application_id}/versions/{version_id}"
+	GetApplicationVersionExternalPath          = ServicePrefix + GetApplicationVersionInternalPath
+	GetApplicationVersionGRPCMethod            = applicationversionv1.OperationApplicationVersionGetApplicationVersion
 	SubmitApplicationVersionReviewInternalPath = "/v1/applications/{application_id}/versions/{version_id}/reviews"
 	SubmitApplicationVersionReviewExternalPath = ServicePrefix + SubmitApplicationVersionReviewInternalPath
 	SubmitApplicationVersionReviewGRPCMethod   = applicationreviewv1.OperationApplicationReviewSubmitApplicationVersionReview
@@ -516,6 +522,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.WriteHeader(http.StatusCreated)
 	case *applicationversionv1.UpdateApplicationVersionResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
+	case *applicationversionv1.OwnedApplicationVersionPage, *applicationversionv1.OwnedApplicationVersionDetail:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationreviewv1.SubmitApplicationVersionReviewResponse:
 		if review := response.GetReview(); review != nil {
 			w.Header().Set("Location", fmt.Sprintf(
@@ -566,6 +574,16 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isApplicationVersionManagementRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		if _, ok := applicationversionv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = transportStatus(codes.InvalidArgument, ReasonInvalidApplicationVersionQuery, "application version query is invalid")
+			} else {
+				err = transportStatus(codes.Internal, ReasonInternal, "internal failure")
+			}
+		}
+	}
 	if isApplicationArchivalRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		if _, ok := applicationarchivalv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -665,6 +683,21 @@ func isApplicationClosureRequest(r *http.Request) bool {
 		return r.Method == http.MethodGet
 	}
 	return len(parts) == 3 && parts[0] == "v1" && parts[1] == "applications" && strings.HasSuffix(parts[2], ":close") && r.Method == http.MethodPost
+}
+
+func isApplicationVersionManagementRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "versions:search" {
+		return true
+	}
+	return r.Method == http.MethodGet && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "versions"
+}
+
+func applicationVersionManagementOperation(r *http.Request) string {
+	if r.Method == http.MethodPost {
+		return applicationversionv1.OperationApplicationVersionListApplicationVersions
+	}
+	return applicationversionv1.OperationApplicationVersionGetApplicationVersion
 }
 
 func isApplicationOperationsRequest(r *http.Request) bool {
@@ -856,9 +889,9 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
-				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) {
+				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
 				}
 				var identityErr error
@@ -943,6 +976,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					}
 					if isApplicationOperationsRequest(r) {
 						operation = applicationOperationsOperation(r)
+					}
+					if isApplicationVersionManagementRequest(r) {
+						operation = applicationVersionManagementOperation(r)
 					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
 					return

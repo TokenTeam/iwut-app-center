@@ -199,6 +199,7 @@ func wireApp(configuration config.Config) (*kratos.App, func(), error) {
 var _ transport.CreateApplicationHandler = (*usecase.CreateApplicationHandler)(nil)
 var _ transport.CreateApplicationVersionHandler = (*versionusecase.CreateApplicationVersionHandler)(nil)
 var _ transport.UpdateDraftApplicationVersionHandler = (*versionusecase.UpdateDraftApplicationVersionHandler)(nil)
+var _ transport.ApplicationVersionManagementQueryHandler = (*versionusecase.ManagementQuery)(nil)
 var _ transport.SubmitApplicationVersionReviewHandler = (*reviewusecase.SubmitApplicationVersionReviewHandler)(nil)
 var _ transport.DecideApplicationVersionReviewHandler = (*reviewusecase.DecideApplicationVersionReviewHandler)(nil)
 var _ transport.RestoreRejectedApplicationVersionHandler = (*reviewusecase.RestoreRejectedApplicationVersionHandler)(nil)

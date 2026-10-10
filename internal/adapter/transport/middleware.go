@@ -13,6 +13,7 @@ import (
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
+	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 )
 
@@ -56,7 +57,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod || isApplicationArchivalOperation(operation) {
+				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod || isApplicationArchivalOperation(operation) || isApplicationVersionManagementOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == testermembershipv1.OperationTesterMembershipRemoveApplicationTester {
@@ -94,6 +95,12 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
+	if isApplicationVersionManagementOperation(operation) {
+		if errors.Is(err, errIdentityRequired) {
+			return transportStatus(codes.Unauthenticated, ReasonUserIdentityRequired, "user identity is required")
+		}
+		return transportStatus(codes.Unauthenticated, ReasonInvalidUserIdentity, "user identity is invalid")
+	}
 	if isApplicationArchivalOperation(operation) {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, "ERROR_REASON_USER_IDENTITY_REQUIRED", "user identity is required")
@@ -122,6 +129,11 @@ func toIdentityTransportError(err error, operation string) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidReviewerIdentity, "reviewer identity is invalid")
 	}
 	return toTransportError(err)
+}
+
+func isApplicationVersionManagementOperation(operation string) bool {
+	return operation == applicationversionv1.OperationApplicationVersionListApplicationVersions ||
+		operation == applicationversionv1.OperationApplicationVersionGetApplicationVersion
 }
 
 func isApplicationArchivalOperation(operation string) bool {

@@ -99,54 +99,61 @@ const (
 	ReasonApplicationPublicationStateInconsistent = "ERROR_REASON_APPLICATION_PUBLICATION_STATE_INCONSISTENT"
 	ReasonGreyStableBaselineRequired              = "ERROR_REASON_GREY_STABLE_BASELINE_REQUIRED"
 
-	ReasonInvalidApplicationName                 = "ERROR_REASON_INVALID_APPLICATION_NAME"
-	ReasonDeveloperIdentityRequired              = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
-	ReasonInvalidDeveloperIdentity               = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
-	ReasonDeveloperApprovalRequired              = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
-	ReasonApplicationNameAlreadyExists           = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
-	ReasonApplicationQuotaExceeded               = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
-	ReasonInvalidApplicationID                   = "ERROR_REASON_INVALID_APPLICATION_ID"
-	ReasonInvalidVersionLabel                    = "ERROR_REASON_INVALID_VERSION_LABEL"
-	ReasonInvalidApplicationLaunchURL            = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
-	ReasonInvalidRPCApiRange                     = "ERROR_REASON_INVALID_RPC_API_RANGE"
-	ReasonInvalidRequiredCapability              = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
-	ReasonInvalidApplicationScope                = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
-	ReasonInvalidOAuthRedirectConfiguration      = "ERROR_REASON_INVALID_OAUTH_REDIRECT_CONFIGURATION"
-	ReasonApplicationNotFound                    = "ERROR_REASON_APPLICATION_NOT_FOUND"
-	ReasonApplicationAdminRequired               = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
-	ReasonApplicationVersionLabelExists          = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
-	ReasonScopeCatalogUnavailable                = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
-	ReasonApplicationVersionRevisionRequired     = "ERROR_REASON_APPLICATION_VERSION_REVISION_REQUIRED"
-	ReasonApplicationVersionNotFound             = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
-	ReasonApplicationVersionNotDraft             = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
-	ReasonApplicationVersionNotRejected          = "ERROR_REASON_APPLICATION_VERSION_NOT_REJECTED"
-	ReasonApplicationVersionRevisionConflict     = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
-	ReasonApplicationReviewNotFound              = "ERROR_REASON_APPLICATION_REVIEW_NOT_FOUND"
-	ReasonApplicationReviewNotLatest             = "ERROR_REASON_APPLICATION_REVIEW_NOT_LATEST"
-	ReasonApplicationReviewAlreadyRestored       = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_RESTORED"
-	ReasonApplicationReviewStateInconsistent     = "ERROR_REASON_APPLICATION_REVIEW_STATE_INCONSISTENT"
-	ReasonApplicationLaunchURLNotReviewable      = "ERROR_REASON_APPLICATION_LAUNCH_URL_NOT_REVIEWABLE"
-	ReasonLaunchURLInspectionUnavailable         = "ERROR_REASON_LAUNCH_URL_INSPECTION_UNAVAILABLE"
-	ReasonReviewerIdentityRequired               = "ERROR_REASON_REVIEWER_IDENTITY_REQUIRED"
-	ReasonInvalidReviewerIdentity                = "ERROR_REASON_INVALID_REVIEWER_IDENTITY"
-	ReasonApplicationReviewPermissionRequired    = "ERROR_REASON_APPLICATION_REVIEW_PERMISSION_REQUIRED"
-	ReasonApplicationReviewAlreadyDecided        = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_DECIDED"
-	ReasonApplicationReviewConflictOfInterest    = "ERROR_REASON_APPLICATION_REVIEW_CONFLICT_OF_INTEREST"
-	ReasonInvalidApplicationReviewOutcome        = "ERROR_REASON_INVALID_APPLICATION_REVIEW_OUTCOME"
-	ReasonInvalidApplicationReviewPolicyVersion  = "ERROR_REASON_INVALID_APPLICATION_REVIEW_POLICY_VERSION"
-	ReasonApplicationReviewPolicyChanged         = "ERROR_REASON_APPLICATION_REVIEW_POLICY_CHANGED"
-	ReasonApplicationReviewChecksIncomplete      = "ERROR_REASON_APPLICATION_REVIEW_CHECKS_INCOMPLETE"
-	ReasonInvalidApplicationReviewChecks         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
-	ReasonInvalidApplicationReviewReason         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
-	ReasonInvalidApplicationReviewQuery          = "ERROR_REASON_INVALID_APPLICATION_REVIEW_QUERY"
-	ReasonInvalidApplicationReviewPageToken      = "ERROR_REASON_INVALID_APPLICATION_REVIEW_PAGE_TOKEN"
-	ReasonDeveloperStatusUnavailable             = "ERROR_REASON_DEVELOPER_STATUS_UNAVAILABLE"
-	ReasonSystemPrincipalUnavailable             = "ERROR_REASON_SYSTEM_PRINCIPAL_UNAVAILABLE"
-	ReasonInternal                               = "ERROR_REASON_INTERNAL"
-	ReasonInvalidApplicationManagementRequest    = "ERROR_REASON_INVALID_APPLICATION_MANAGEMENT_REQUEST"
-	ReasonInvalidApplicationManagementPageToken  = "ERROR_REASON_INVALID_APPLICATION_MANAGEMENT_PAGE_TOKEN"
-	ReasonApplicationManagementNotFound          = "ERROR_REASON_APPLICATION_MANAGEMENT_NOT_FOUND"
-	ReasonApplicationManagementStateInconsistent = "ERROR_REASON_APPLICATION_MANAGEMENT_STATE_INCONSISTENT"
+	ReasonInvalidApplicationName                        = "ERROR_REASON_INVALID_APPLICATION_NAME"
+	ReasonDeveloperIdentityRequired                     = "ERROR_REASON_DEVELOPER_IDENTITY_REQUIRED"
+	ReasonInvalidDeveloperIdentity                      = "ERROR_REASON_INVALID_DEVELOPER_IDENTITY"
+	ReasonDeveloperApprovalRequired                     = "ERROR_REASON_DEVELOPER_APPROVAL_REQUIRED"
+	ReasonApplicationNameAlreadyExists                  = "ERROR_REASON_APPLICATION_NAME_ALREADY_EXISTS"
+	ReasonApplicationQuotaExceeded                      = "ERROR_REASON_APPLICATION_QUOTA_EXCEEDED"
+	ReasonInvalidApplicationID                          = "ERROR_REASON_INVALID_APPLICATION_ID"
+	ReasonInvalidVersionLabel                           = "ERROR_REASON_INVALID_VERSION_LABEL"
+	ReasonInvalidApplicationLaunchURL                   = "ERROR_REASON_INVALID_APPLICATION_LAUNCH_URL"
+	ReasonInvalidRPCApiRange                            = "ERROR_REASON_INVALID_RPC_API_RANGE"
+	ReasonInvalidRequiredCapability                     = "ERROR_REASON_INVALID_REQUIRED_CAPABILITY"
+	ReasonInvalidApplicationScope                       = "ERROR_REASON_INVALID_APPLICATION_SCOPE"
+	ReasonInvalidOAuthRedirectConfiguration             = "ERROR_REASON_INVALID_OAUTH_REDIRECT_CONFIGURATION"
+	ReasonApplicationNotFound                           = "ERROR_REASON_APPLICATION_NOT_FOUND"
+	ReasonApplicationAdminRequired                      = "ERROR_REASON_APPLICATION_ADMIN_REQUIRED"
+	ReasonApplicationVersionLabelExists                 = "ERROR_REASON_APPLICATION_VERSION_LABEL_ALREADY_EXISTS"
+	ReasonScopeCatalogUnavailable                       = "ERROR_REASON_SCOPE_CATALOG_UNAVAILABLE"
+	ReasonApplicationVersionRevisionRequired            = "ERROR_REASON_APPLICATION_VERSION_REVISION_REQUIRED"
+	ReasonApplicationVersionNotFound                    = "ERROR_REASON_APPLICATION_VERSION_NOT_FOUND"
+	ReasonApplicationVersionNotDraft                    = "ERROR_REASON_APPLICATION_VERSION_NOT_DRAFT"
+	ReasonApplicationVersionNotRejected                 = "ERROR_REASON_APPLICATION_VERSION_NOT_REJECTED"
+	ReasonApplicationVersionRevisionConflict            = "ERROR_REASON_APPLICATION_VERSION_REVISION_CONFLICT"
+	ReasonUserIdentityRequired                          = "ERROR_REASON_USER_IDENTITY_REQUIRED"
+	ReasonInvalidUserIdentity                           = "ERROR_REASON_INVALID_USER_IDENTITY"
+	ReasonInvalidApplicationVersionQuery                = "ERROR_REASON_INVALID_APPLICATION_VERSION_QUERY"
+	ReasonInvalidApplicationVersionPageToken            = "ERROR_REASON_INVALID_APPLICATION_VERSION_PAGE_TOKEN"
+	ReasonApplicationVersionManagementNotFound          = "ERROR_REASON_APPLICATION_VERSION_MANAGEMENT_NOT_FOUND"
+	ReasonApplicationVersionManagementStateInconsistent = "ERROR_REASON_APPLICATION_VERSION_MANAGEMENT_STATE_INCONSISTENT"
+	ReasonApplicationVersionManagementUnavailable       = "ERROR_REASON_APPLICATION_VERSION_MANAGEMENT_UNAVAILABLE"
+	ReasonApplicationReviewNotFound                     = "ERROR_REASON_APPLICATION_REVIEW_NOT_FOUND"
+	ReasonApplicationReviewNotLatest                    = "ERROR_REASON_APPLICATION_REVIEW_NOT_LATEST"
+	ReasonApplicationReviewAlreadyRestored              = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_RESTORED"
+	ReasonApplicationReviewStateInconsistent            = "ERROR_REASON_APPLICATION_REVIEW_STATE_INCONSISTENT"
+	ReasonApplicationLaunchURLNotReviewable             = "ERROR_REASON_APPLICATION_LAUNCH_URL_NOT_REVIEWABLE"
+	ReasonLaunchURLInspectionUnavailable                = "ERROR_REASON_LAUNCH_URL_INSPECTION_UNAVAILABLE"
+	ReasonReviewerIdentityRequired                      = "ERROR_REASON_REVIEWER_IDENTITY_REQUIRED"
+	ReasonInvalidReviewerIdentity                       = "ERROR_REASON_INVALID_REVIEWER_IDENTITY"
+	ReasonApplicationReviewPermissionRequired           = "ERROR_REASON_APPLICATION_REVIEW_PERMISSION_REQUIRED"
+	ReasonApplicationReviewAlreadyDecided               = "ERROR_REASON_APPLICATION_REVIEW_ALREADY_DECIDED"
+	ReasonApplicationReviewConflictOfInterest           = "ERROR_REASON_APPLICATION_REVIEW_CONFLICT_OF_INTEREST"
+	ReasonInvalidApplicationReviewOutcome               = "ERROR_REASON_INVALID_APPLICATION_REVIEW_OUTCOME"
+	ReasonInvalidApplicationReviewPolicyVersion         = "ERROR_REASON_INVALID_APPLICATION_REVIEW_POLICY_VERSION"
+	ReasonApplicationReviewPolicyChanged                = "ERROR_REASON_APPLICATION_REVIEW_POLICY_CHANGED"
+	ReasonApplicationReviewChecksIncomplete             = "ERROR_REASON_APPLICATION_REVIEW_CHECKS_INCOMPLETE"
+	ReasonInvalidApplicationReviewChecks                = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
+	ReasonInvalidApplicationReviewReason                = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
+	ReasonInvalidApplicationReviewQuery                 = "ERROR_REASON_INVALID_APPLICATION_REVIEW_QUERY"
+	ReasonInvalidApplicationReviewPageToken             = "ERROR_REASON_INVALID_APPLICATION_REVIEW_PAGE_TOKEN"
+	ReasonDeveloperStatusUnavailable                    = "ERROR_REASON_DEVELOPER_STATUS_UNAVAILABLE"
+	ReasonSystemPrincipalUnavailable                    = "ERROR_REASON_SYSTEM_PRINCIPAL_UNAVAILABLE"
+	ReasonInternal                                      = "ERROR_REASON_INTERNAL"
+	ReasonInvalidApplicationManagementRequest           = "ERROR_REASON_INVALID_APPLICATION_MANAGEMENT_REQUEST"
+	ReasonInvalidApplicationManagementPageToken         = "ERROR_REASON_INVALID_APPLICATION_MANAGEMENT_PAGE_TOKEN"
+	ReasonApplicationManagementNotFound                 = "ERROR_REASON_APPLICATION_MANAGEMENT_NOT_FOUND"
+	ReasonApplicationManagementStateInconsistent        = "ERROR_REASON_APPLICATION_MANAGEMENT_STATE_INCONSISTENT"
 
 	ReasonInvalidOAuthChannel              = "ERROR_REASON_INVALID_OAUTH_CHANNEL"
 	ReasonOAuthChannelNotEnabled           = "ERROR_REASON_OAUTH_CHANNEL_NOT_ENABLED"
@@ -281,25 +288,31 @@ var oauthClientDomainErrorSpecs = map[oauthclientdomain.ErrorCode]errorSpec{
 }
 
 var versionDomainErrorSpecs = map[versiondomain.ErrorCode]errorSpec{
-	versiondomain.ErrorCodeInvalidApplicationID:                 {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
-	versiondomain.ErrorCodeInvalidVersionLabel:                  {code: codes.InvalidArgument, reason: ReasonInvalidVersionLabel, message: "version label is invalid"},
-	versiondomain.ErrorCodeInvalidApplicationLaunchURL:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationLaunchURL, message: "application launch URL is invalid"},
-	versiondomain.ErrorCodeInvalidRPCApiRange:                   {code: codes.InvalidArgument, reason: ReasonInvalidRPCApiRange, message: "RPC API range is invalid"},
-	versiondomain.ErrorCodeInvalidRequiredCapability:            {code: codes.InvalidArgument, reason: ReasonInvalidRequiredCapability, message: "required capability is invalid"},
-	versiondomain.ErrorCodeInvalidApplicationScope:              {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
-	versiondomain.ErrorCodeInvalidOAuthRedirectConfiguration:    {code: codes.InvalidArgument, reason: ReasonInvalidOAuthRedirectConfiguration, message: "OAuth redirect configuration is invalid"},
-	versiondomain.ErrorCodeDeveloperIdentityRequired:            {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
-	versiondomain.ErrorCodeDeveloperApprovalRequired:            {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
-	versiondomain.ErrorCodeApplicationNotFound:                  {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
-	versiondomain.ErrorCodeApplicationAdminRequired:             {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
-	versiondomain.ErrorCodeApplicationVersionLabelAlreadyExists: {code: codes.AlreadyExists, reason: ReasonApplicationVersionLabelExists, message: "application version label already exists"},
-	versiondomain.ErrorCodeScopeCatalogUnavailable:              {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
-	versiondomain.ErrorCodeApplicationVersionRevisionRequired:   {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
-	versiondomain.ErrorCodeApplicationVersionNotFound:           {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
-	versiondomain.ErrorCodeApplicationVersionNotDraft:           {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
-	versiondomain.ErrorCodeApplicationVersionNotRejected:        {code: codes.Aborted, reason: ReasonApplicationVersionNotRejected, message: "application version is not rejected"},
-	versiondomain.ErrorCodeApplicationVersionRevisionConflict:   {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
-	versiondomain.ErrorCodeInternal:                             internalSpec,
+	versiondomain.ErrorCodeInvalidApplicationID:                          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
+	versiondomain.ErrorCodeInvalidVersionLabel:                           {code: codes.InvalidArgument, reason: ReasonInvalidVersionLabel, message: "version label is invalid"},
+	versiondomain.ErrorCodeInvalidApplicationLaunchURL:                   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationLaunchURL, message: "application launch URL is invalid"},
+	versiondomain.ErrorCodeInvalidRPCApiRange:                            {code: codes.InvalidArgument, reason: ReasonInvalidRPCApiRange, message: "RPC API range is invalid"},
+	versiondomain.ErrorCodeInvalidRequiredCapability:                     {code: codes.InvalidArgument, reason: ReasonInvalidRequiredCapability, message: "required capability is invalid"},
+	versiondomain.ErrorCodeInvalidApplicationScope:                       {code: codes.InvalidArgument, reason: ReasonInvalidApplicationScope, message: "application scope request is invalid"},
+	versiondomain.ErrorCodeInvalidOAuthRedirectConfiguration:             {code: codes.InvalidArgument, reason: ReasonInvalidOAuthRedirectConfiguration, message: "OAuth redirect configuration is invalid"},
+	versiondomain.ErrorCodeDeveloperIdentityRequired:                     {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
+	versiondomain.ErrorCodeDeveloperApprovalRequired:                     {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
+	versiondomain.ErrorCodeApplicationNotFound:                           {code: codes.NotFound, reason: ReasonApplicationNotFound, message: "application not found"},
+	versiondomain.ErrorCodeApplicationAdminRequired:                      {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
+	versiondomain.ErrorCodeApplicationVersionLabelAlreadyExists:          {code: codes.AlreadyExists, reason: ReasonApplicationVersionLabelExists, message: "application version label already exists"},
+	versiondomain.ErrorCodeScopeCatalogUnavailable:                       {code: codes.Unavailable, reason: ReasonScopeCatalogUnavailable, message: "scope catalog is unavailable"},
+	versiondomain.ErrorCodeApplicationVersionRevisionRequired:            {code: codes.InvalidArgument, reason: ReasonApplicationVersionRevisionRequired, message: "application version revision is required"},
+	versiondomain.ErrorCodeApplicationVersionNotFound:                    {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},
+	versiondomain.ErrorCodeApplicationVersionNotDraft:                    {code: codes.Aborted, reason: ReasonApplicationVersionNotDraft, message: "application version is not a draft"},
+	versiondomain.ErrorCodeApplicationVersionNotRejected:                 {code: codes.Aborted, reason: ReasonApplicationVersionNotRejected, message: "application version is not rejected"},
+	versiondomain.ErrorCodeApplicationVersionRevisionConflict:            {code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict, message: "application version revision conflicts"},
+	versiondomain.ErrorCodeUserIdentityRequired:                          {code: codes.Unauthenticated, reason: ReasonUserIdentityRequired, message: "user identity is required"},
+	versiondomain.ErrorCodeInvalidApplicationVersionQuery:                {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionQuery, message: "application version query is invalid"},
+	versiondomain.ErrorCodeInvalidApplicationVersionPageToken:            {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionPageToken, message: "application version page token is invalid"},
+	versiondomain.ErrorCodeApplicationVersionManagementNotFound:          {code: codes.NotFound, reason: ReasonApplicationVersionManagementNotFound, message: "application version management resource not found"},
+	versiondomain.ErrorCodeApplicationVersionManagementStateInconsistent: {code: codes.Internal, reason: ReasonApplicationVersionManagementStateInconsistent, message: "application version management state is inconsistent"},
+	versiondomain.ErrorCodeApplicationVersionManagementUnavailable:       {code: codes.Unavailable, reason: ReasonApplicationVersionManagementUnavailable, message: "application version management query is unavailable"},
+	versiondomain.ErrorCodeInternal:                                      internalSpec,
 }
 
 var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
