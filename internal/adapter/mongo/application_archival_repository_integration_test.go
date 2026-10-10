@@ -144,6 +144,119 @@ func TestApplicationArchivalRepositoryIntegration_BR_APP_051_055_OrthogonalPlatf
 	}
 }
 
+func TestApplicationArchivalRepositoryIntegration_BR_APP_051_052_056_TransferOrderings(t *testing.T) {
+	db := migratedIntegrationDatabase(t, integrationClient(t))
+	ctx := t.Context()
+	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	transferRepository := NewApplicationAdminTransferRepository(db, transferSecretFactory{}, 10)
+	archiveRepository := NewApplicationArchivalRepository(db)
+
+	t.Run("transfer wins and old administrator cannot archive", func(t *testing.T) {
+		application := createVersionTestApplication(t, db, "archive-transfer-old", "archive-transfer-first")
+		transferID, _ := domain.ParseApplicationAdminTransferID("0199b33c-d04d-7abc-8abc-123456789012")
+		if _, err := transferRepository.Initiate(ctx, application.ID(), "archive-transfer-old", "archive-transfer-new", 1, transferID, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := transferRepository.Accept(ctx, transferID, "archive-transfer-new", domain.ConfidentialCredentialKeep, now.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		_, err := archiveRepository.SetArchiveState(ctx, application.ID(), "archive-transfer-old", domain.ApplicationArchiveArchived, 1, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+			return "0199b33c-d04e-7abc-8abc-123456789012", now.Add(2 * time.Second), nil
+		})
+		if !errors.Is(err, domain.ErrApplicationArchiveNotFound) {
+			t.Fatalf("old-administrator archive error=%v", err)
+		}
+		state, err := archiveRepository.GetArchiveState(ctx, application.ID(), "archive-transfer-new")
+		if err != nil || state.ArchiveStatus != domain.ApplicationArchiveUnarchived || state.ArchiveRevision != 1 {
+			t.Fatalf("new-administrator state=%#v error=%v", state, err)
+		}
+	})
+
+	t.Run("archive wins and transfer preserves state for new administrator", func(t *testing.T) {
+		application := createVersionTestApplication(t, db, "archive-first-old", "archive-before-transfer")
+		if _, err := archiveRepository.SetArchiveState(ctx, application.ID(), "archive-first-old", domain.ApplicationArchiveArchived, 1, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+			return "0199b33c-d04f-7abc-8abc-123456789012", now.Add(3 * time.Second), nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		transferID, _ := domain.ParseApplicationAdminTransferID("0199b33c-d050-7abc-8abc-123456789012")
+		if _, err := transferRepository.Initiate(ctx, application.ID(), "archive-first-old", "archive-first-new", 1, transferID, now.Add(4*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := transferRepository.Accept(ctx, transferID, "archive-first-new", domain.ConfidentialCredentialKeep, now.Add(5*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		state, err := archiveRepository.GetArchiveState(ctx, application.ID(), "archive-first-new")
+		if err != nil || state.ArchiveStatus != domain.ApplicationArchiveArchived || state.ArchiveRevision != 2 {
+			t.Fatalf("transferred archive state=%#v error=%v", state, err)
+		}
+		unarchived, err := archiveRepository.SetArchiveState(ctx, application.ID(), "archive-first-new", domain.ApplicationArchiveUnarchived, 2, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+			return "0199b33c-d051-7abc-8abc-123456789012", now.Add(6 * time.Second), nil
+		})
+		if err != nil || unarchived.ArchiveStatus != domain.ApplicationArchiveUnarchived || unarchived.ArchiveRevision != 3 {
+			t.Fatalf("new-administrator unarchive=%#v error=%v", unarchived, err)
+		}
+	})
+}
+
+func TestApplicationArchivalRepositoryIntegration_BR_APP_051_052_056_ClosureOrderings(t *testing.T) {
+	db := migratedIntegrationDatabase(t, integrationClient(t))
+	ctx := t.Context()
+	now := time.Date(2026, 10, 10, 13, 0, 0, 0, time.UTC)
+	archiveRepository := NewApplicationArchivalRepository(db)
+	closureRepository := NewApplicationClosureRepository(db)
+
+	t.Run("archive wins and close proceeds without clearing archive", func(t *testing.T) {
+		application := createVersionTestApplication(t, db, "archive-close-owner", "archive-before-close")
+		if _, err := archiveRepository.SetArchiveState(ctx, application.ID(), "archive-close-owner", domain.ApplicationArchiveArchived, 1, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+			return "0199b33c-d052-7abc-8abc-123456789012", now, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		closureID, _ := domain.ParseApplicationClosureID("0199b33c-d053-7abc-8abc-123456789012")
+		proof := domain.ApplicationCloseProof{Subject: "archive-close-owner", ApplicationID: application.ID(), JTI: "0199b33c-d054-7abc-8abc-123456789012", AuthTime: now, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
+		closure, err := closureRepository.Start(ctx, application.ID(), "archive-close-owner", 1, 1, proof, closureID, now.Add(time.Second))
+		if err != nil || closure.Status != domain.ApplicationClosureClosing {
+			t.Fatalf("close archived application=%#v error=%v", closure, err)
+		}
+		state, err := archiveRepository.GetArchiveState(ctx, application.ID(), "archive-close-owner")
+		if err != nil || state.LifecycleStatus != domain.ApplicationLifecycleClosing || state.ArchiveStatus != domain.ApplicationArchiveArchived || state.ArchiveRevision != 2 {
+			t.Fatalf("closing archive state=%#v error=%v", state, err)
+		}
+		if _, err = archiveRepository.SetArchiveState(ctx, application.ID(), "archive-close-owner", domain.ApplicationArchiveUnarchived, 2, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+			return "0199b33c-d055-7abc-8abc-123456789012", now.Add(2 * time.Second), nil
+		}); !errors.Is(err, domain.ErrApplicationNotActive) {
+			t.Fatalf("unarchive closing application error=%v", err)
+		}
+		closed, err := closureRepository.Complete(ctx, closureID, "archive-close-receipt", now.Add(3*time.Second))
+		if err != nil || closed.Status != domain.ApplicationClosureClosed {
+			t.Fatalf("complete closure=%#v error=%v", closed, err)
+		}
+		if _, err = archiveRepository.SetArchiveState(ctx, application.ID(), "archive-close-owner", domain.ApplicationArchiveUnarchived, 2, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+			return "0199b33c-d056-7abc-8abc-123456789012", now.Add(4 * time.Second), nil
+		}); !errors.Is(err, domain.ErrApplicationNotActive) {
+			t.Fatalf("unarchive closed application error=%v", err)
+		}
+	})
+
+	t.Run("close wins and both archive commands reject while closing", func(t *testing.T) {
+		application := createVersionTestApplication(t, db, "close-first-owner", "close-before-archive")
+		closureID, _ := domain.ParseApplicationClosureID("0199b33c-d057-7abc-8abc-123456789012")
+		proof := domain.ApplicationCloseProof{Subject: "close-first-owner", ApplicationID: application.ID(), JTI: "0199b33c-d058-7abc-8abc-123456789012", AuthTime: now, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
+		if _, err := closureRepository.Start(ctx, application.ID(), "close-first-owner", 1, 1, proof, closureID, now.Add(5*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		for _, target := range []domain.ApplicationArchiveStatus{domain.ApplicationArchiveArchived, domain.ApplicationArchiveUnarchived} {
+			_, err := archiveRepository.SetArchiveState(ctx, application.ID(), "close-first-owner", target, 1, func() (domain.ApplicationArchiveEventID, time.Time, error) {
+				return "0199b33c-d059-7abc-8abc-123456789012", now.Add(6 * time.Second), nil
+			})
+			if !errors.Is(err, domain.ErrApplicationNotActive) {
+				t.Fatalf("target=%s closing application error=%v", target, err)
+			}
+		}
+	})
+}
+
 func TestApplicationArchivalMigrationIntegration_BR_APP_057_StrictValidatorsAndIndexes(t *testing.T) {
 	db := migratedIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "archive-schema-admin", "archive-schema-app")

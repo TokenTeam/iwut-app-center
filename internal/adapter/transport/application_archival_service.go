@@ -40,7 +40,7 @@ func archivalRequest(ctx context.Context, raw string) (shared.AuthenticatedUserI
 }
 
 func (s *ApplicationArchivalService) GetApplicationArchiveState(ctx context.Context, req *pb.GetApplicationArchiveStateRequest) (*pb.GetApplicationArchiveStateResponse, error) {
-	setNoStore(ctx)
+	setPrivateNoStore(ctx)
 	if s == nil || s.handlers == nil || req == nil {
 		return nil, archivalError(domain.ErrInvalidApplicationArchiveRequest)
 	}
@@ -60,7 +60,7 @@ func (s *ApplicationArchivalService) GetApplicationArchiveState(ctx context.Cont
 }
 
 func (s *ApplicationArchivalService) ArchiveApplication(ctx context.Context, req *pb.ArchiveApplicationRequest) (*pb.ArchiveApplicationResponse, error) {
-	setNoStore(ctx)
+	setPrivateNoStore(ctx)
 	if s == nil || s.handlers == nil || req == nil || req.GetCommand() == nil {
 		return nil, archivalError(domain.ErrInvalidApplicationArchiveRequest)
 	}
@@ -80,7 +80,7 @@ func (s *ApplicationArchivalService) ArchiveApplication(ctx context.Context, req
 }
 
 func (s *ApplicationArchivalService) UnarchiveApplication(ctx context.Context, req *pb.UnarchiveApplicationRequest) (*pb.UnarchiveApplicationResponse, error) {
-	setNoStore(ctx)
+	setPrivateNoStore(ctx)
 	if s == nil || s.handlers == nil || req == nil || req.GetCommand() == nil {
 		return nil, archivalError(domain.ErrInvalidApplicationArchiveRequest)
 	}

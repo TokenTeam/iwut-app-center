@@ -56,7 +56,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod {
+				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod || isApplicationArchivalOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == testermembershipv1.OperationTesterMembershipRemoveApplicationTester {
@@ -94,7 +94,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
-	if operation == applicationarchivalv1.OperationApplicationArchivalServiceGetApplicationArchiveState || operation == applicationarchivalv1.OperationApplicationArchivalServiceArchiveApplication || operation == applicationarchivalv1.OperationApplicationArchivalServiceUnarchiveApplication {
+	if isApplicationArchivalOperation(operation) {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, "ERROR_REASON_USER_IDENTITY_REQUIRED", "user identity is required")
 		}
@@ -122,6 +122,12 @@ func toIdentityTransportError(err error, operation string) error {
 		return transportStatus(codes.Unauthenticated, ReasonInvalidReviewerIdentity, "reviewer identity is invalid")
 	}
 	return toTransportError(err)
+}
+
+func isApplicationArchivalOperation(operation string) bool {
+	return operation == applicationarchivalv1.OperationApplicationArchivalServiceGetApplicationArchiveState ||
+		operation == applicationarchivalv1.OperationApplicationArchivalServiceArchiveApplication ||
+		operation == applicationarchivalv1.OperationApplicationArchivalServiceUnarchiveApplication
 }
 
 func optionalIdentityTokenFromContext(ctx context.Context) (string, bool, error) {
