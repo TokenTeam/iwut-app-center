@@ -49,6 +49,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(port.ApplicationIDGenerator), new(*UUIDv7Generator)),
 	wire.Bind(new(port.Clock), new(*SystemClock)),
 	wire.Bind(new(versionport.ApplicationVersionIDGenerator), new(*ApplicationVersionUUIDv7Generator)),
+	wire.Bind(new(versionport.ApplicationVersionAbandonmentIDGenerator), new(*ApplicationVersionUUIDv7Generator)),
 	wire.Bind(new(versionport.Clock), new(*SystemClock)),
 	wire.Bind(new(reviewport.ApplicationReviewIDGenerator), new(*ApplicationReviewUUIDv7Generator)),
 	wire.Bind(new(reviewport.Clock), new(*SystemClock)),

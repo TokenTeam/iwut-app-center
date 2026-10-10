@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,36 @@ type fakeUpdateDraftApplicationVersionHandler struct {
 	applicationID shared.ApplicationID
 	versionID     versiondomain.ApplicationVersionID
 	command       versionusecase.UpdateDraftApplicationVersionCommand
+}
+
+type fakeAbandonApplicationVersionDraftHandler struct {
+	result   *versiondomain.AbandonApplicationVersionDraftResult
+	err      error
+	calls    int
+	identity shared.AuthenticatedUserIdentity
+	command  versionusecase.AbandonApplicationVersionDraftCommand
+}
+
+func (handler *fakeAbandonApplicationVersionDraftHandler) Handle(_ context.Context, identity shared.AuthenticatedUserIdentity, command versionusecase.AbandonApplicationVersionDraftCommand) (*versiondomain.AbandonApplicationVersionDraftResult, error) {
+	handler.calls++
+	handler.identity = identity
+	handler.command = command
+	return handler.result, handler.err
+}
+
+func testAbandonment(t *testing.T) *versiondomain.ApplicationVersionAbandonment {
+	t.Helper()
+	applicationID, _ := shared.ParseApplicationID(testApplicationID)
+	sequence, _ := versiondomain.NewVersionSequence(7)
+	label, _ := versiondomain.NewVersionLabel("v7")
+	fact, err := versiondomain.NewApplicationVersionAbandonment(
+		"018f7777-7777-7777-8777-777777777779", applicationID, testApplicationVersionID,
+		sequence, label, 3, "private-admin", time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fact
 }
 
 func (handler *fakeUpdateDraftApplicationVersionHandler) Handle(
@@ -263,4 +294,38 @@ func errorReason(current *status.Status) string {
 		}
 	}
 	return ""
+}
+
+func TestApplicationVersionService_UCAPP035_GRPCMinimalResponseAndErrors(t *testing.T) {
+	fact := testAbandonment(t)
+	ctx := withTrustedIdentity(context.Background(), shared.TrustedIdentity{AuthID: "auth-current"})
+	handler := &fakeAbandonApplicationVersionDraftHandler{result: &versiondomain.AbandonApplicationVersionDraftResult{Abandonment: fact, Changed: true}}
+	service := NewApplicationVersionService(nil, nil, handler)
+	response, err := service.AbandonApplicationVersionDraft(ctx, &applicationversionv1.AbandonApplicationVersionDraftRequest{ApplicationId: testApplicationID, VersionId: testApplicationVersionID, ExpectedRevision: 3})
+	if err != nil || response.GetAbandonment().GetVersionLabel() != "v7" || response.GetAbandonment().GetSourceRevision() != 3 || !response.GetChanged() {
+		t.Fatalf("response=(%v,%v)", response, err)
+	}
+	if handler.identity.AuthID != "auth-current" || handler.command.ExpectedRevision != 3 {
+		t.Fatalf("handler input=%#v %#v", handler.identity, handler.command)
+	}
+	for _, test := range []struct {
+		err    error
+		code   codes.Code
+		reason string
+	}{
+		{versiondomain.ErrInvalidApplicationVersionAbandonment, codes.InvalidArgument, ReasonInvalidApplicationVersionAbandonment},
+		{versiondomain.ErrApplicationVersionNotFound, codes.NotFound, ReasonApplicationVersionNotFound},
+		{versiondomain.ErrApplicationVersionRevisionConflict, codes.Aborted, ReasonApplicationVersionRevisionConflict},
+		{versiondomain.ErrApplicationVersionNotAbandonable, codes.FailedPrecondition, ReasonApplicationVersionNotAbandonable},
+		{versiondomain.ErrApplicationVersionAbandonmentNotAllowed, codes.FailedPrecondition, ReasonApplicationVersionAbandonmentNotAllowed},
+		{versiondomain.ErrApplicationVersionAbandonmentStateInconsistent, codes.Internal, ReasonApplicationVersionAbandonmentStateInconsistent},
+		{versiondomain.NewApplicationVersionAbandonmentUnavailableError(errors.New("private-db")), codes.Unavailable, ReasonApplicationVersionAbandonmentUnavailable},
+	} {
+		handler := &fakeAbandonApplicationVersionDraftHandler{err: test.err}
+		_, err := NewApplicationVersionService(nil, nil, handler).AbandonApplicationVersionDraft(ctx, &applicationversionv1.AbandonApplicationVersionDraftRequest{ApplicationId: testApplicationID, VersionId: testApplicationVersionID, ExpectedRevision: 3})
+		current := status.Convert(err)
+		if current.Code() != test.code || errorReason(current) != test.reason || strings.Contains(current.Message(), "private-db") {
+			t.Fatalf("error=%v reason=%s", current, errorReason(current))
+		}
+	}
 }

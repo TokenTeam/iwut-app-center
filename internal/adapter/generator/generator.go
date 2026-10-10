@@ -28,6 +28,7 @@ func NewUUIDv7Generator() *UUIDv7Generator {
 type ApplicationVersionUUIDv7Generator struct{}
 
 var _ versionport.ApplicationVersionIDGenerator = (*ApplicationVersionUUIDv7Generator)(nil)
+var _ versionport.ApplicationVersionAbandonmentIDGenerator = (*ApplicationVersionUUIDv7Generator)(nil)
 
 func NewApplicationVersionUUIDv7Generator() *ApplicationVersionUUIDv7Generator {
 	return &ApplicationVersionUUIDv7Generator{}
@@ -55,6 +56,14 @@ func (generator *ApplicationVersionUUIDv7Generator) NewUUIDv7() (versiondomain.A
 		return "", err
 	}
 	return versiondomain.ApplicationVersionID(id.String()), nil
+}
+
+func (generator *ApplicationVersionUUIDv7Generator) NewAbandonmentUUIDv7() (versiondomain.ApplicationVersionAbandonmentID, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	return versiondomain.ApplicationVersionAbandonmentID(id.String()), nil
 }
 
 func (generator *UUIDv7Generator) NewUUIDv7() (domain.ApplicationID, error) {

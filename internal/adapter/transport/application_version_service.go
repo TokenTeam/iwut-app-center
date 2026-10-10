@@ -40,15 +40,24 @@ type ApplicationVersionManagementQueryHandler interface {
 	Get(context.Context, shared.AuthenticatedUserIdentity, string, string) (*versiondomain.OwnedVersionDetail, error)
 }
 
+type AbandonApplicationVersionDraftHandler interface {
+	Handle(context.Context, shared.AuthenticatedUserIdentity, versionusecase.AbandonApplicationVersionDraftCommand) (*versiondomain.AbandonApplicationVersionDraftResult, error)
+}
+
 type ApplicationVersionService struct {
 	applicationversionv1.UnimplementedApplicationVersionServer
-	createHandler CreateApplicationVersionHandler
-	updateHandler UpdateDraftApplicationVersionHandler
-	queryHandler  ApplicationVersionManagementQueryHandler
+	createHandler  CreateApplicationVersionHandler
+	updateHandler  UpdateDraftApplicationVersionHandler
+	queryHandler   ApplicationVersionManagementQueryHandler
+	abandonHandler AbandonApplicationVersionDraftHandler
 }
 
 func NewApplicationVersionServiceWithQuery(createHandler CreateApplicationVersionHandler, updateHandler UpdateDraftApplicationVersionHandler, queryHandler ApplicationVersionManagementQueryHandler) *ApplicationVersionService {
 	return &ApplicationVersionService{createHandler: createHandler, updateHandler: updateHandler, queryHandler: queryHandler}
+}
+
+func NewApplicationVersionServiceWithQueryAndAbandonment(createHandler CreateApplicationVersionHandler, updateHandler UpdateDraftApplicationVersionHandler, queryHandler ApplicationVersionManagementQueryHandler, abandonHandler AbandonApplicationVersionDraftHandler) *ApplicationVersionService {
+	return &ApplicationVersionService{createHandler: createHandler, updateHandler: updateHandler, queryHandler: queryHandler, abandonHandler: abandonHandler}
 }
 
 var _ applicationversionv1.ApplicationVersionHTTPServer = (*ApplicationVersionService)(nil)
@@ -57,8 +66,13 @@ var _ applicationversionv1.ApplicationVersionServer = (*ApplicationVersionServic
 func NewApplicationVersionService(
 	createHandler CreateApplicationVersionHandler,
 	updateHandler UpdateDraftApplicationVersionHandler,
+	abandonHandlers ...AbandonApplicationVersionDraftHandler,
 ) *ApplicationVersionService {
-	return &ApplicationVersionService{createHandler: createHandler, updateHandler: updateHandler}
+	var abandonHandler AbandonApplicationVersionDraftHandler
+	if len(abandonHandlers) == 1 {
+		abandonHandler = abandonHandlers[0]
+	}
+	return &ApplicationVersionService{createHandler: createHandler, updateHandler: updateHandler, abandonHandler: abandonHandler}
 }
 
 func (service *ApplicationVersionService) CreateApplicationVersion(
@@ -161,6 +175,53 @@ func (service *ApplicationVersionService) UpdateApplicationVersion(
 	return updateApplicationVersionResponse(version), nil
 }
 
+func (service *ApplicationVersionService) AbandonApplicationVersionDraft(
+	ctx context.Context,
+	request *applicationversionv1.AbandonApplicationVersionDraftRequest,
+) (*applicationversionv1.AbandonApplicationVersionDraftResponse, error) {
+	setPrivateNoStore(ctx)
+	if service == nil || service.abandonHandler == nil || request == nil {
+		return nil, toTransportError(versiondomain.NewInternalError(nil))
+	}
+	identity, ok := authenticatedUserIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(versiondomain.ErrUserIdentityRequired)
+	}
+	expected, err := abandonmentExpectedRevision(ctx, request.GetExpectedRevision())
+	if err != nil {
+		return nil, err
+	}
+	result, err := service.abandonHandler.Handle(ctx, identity, versionusecase.AbandonApplicationVersionDraftCommand{
+		ApplicationID: request.GetApplicationId(), VersionID: request.GetVersionId(), ExpectedRevision: expected,
+	})
+	if err != nil {
+		if isHTTP(ctx) {
+			converted := kratoserrors.FromError(toTransportError(err))
+			switch {
+			case errors.Is(err, versiondomain.ErrApplicationVersionRevisionConflict):
+				return nil, kratoserrors.New(http.StatusPreconditionFailed, converted.Reason, converted.Message)
+			case errors.Is(err, versiondomain.ErrApplicationVersionNotAbandonable):
+				return nil, kratoserrors.New(http.StatusConflict, converted.Reason, converted.Message)
+			case errors.Is(err, versiondomain.ErrApplicationVersionAbandonmentNotAllowed):
+				return nil, kratoserrors.New(http.StatusUnprocessableEntity, converted.Reason, converted.Message)
+			}
+		}
+		return nil, toTransportError(err)
+	}
+	if result == nil || result.Abandonment == nil {
+		return nil, toTransportError(versiondomain.ErrApplicationVersionAbandonmentStateInconsistent)
+	}
+	fact := result.Abandonment
+	return &applicationversionv1.AbandonApplicationVersionDraftResponse{
+		Changed: result.Changed,
+		Abandonment: &applicationversionv1.ApplicationVersionAbandonment{
+			ApplicationId: fact.ApplicationID().String(), VersionId: fact.VersionID().String(),
+			Sequence: fact.Sequence().Int32(), VersionLabel: fact.VersionLabel().String(),
+			SourceRevision: fact.SourceRevision(), AbandonedAt: timestamppb.New(fact.AbandonedAt()),
+		},
+	}, nil
+}
+
 func (service *ApplicationVersionService) ListApplicationVersions(ctx context.Context, request *applicationversionv1.ListApplicationVersionsRequest) (*applicationversionv1.OwnedApplicationVersionPage, error) {
 	setPrivateNoStore(ctx)
 	identity, ok := authenticatedUserIdentityFromContext(ctx)
@@ -257,6 +318,38 @@ func expectedRevision(ctx context.Context, grpcRevision int64) (int64, error) {
 	revision, err := strconv.ParseInt(value[1:len(value)-1], 10, 64)
 	if err != nil || revision < 1 {
 		return 0, toTransportError(versiondomain.ErrApplicationVersionRevisionRequired)
+	}
+	return revision, nil
+}
+
+func abandonmentExpectedRevision(ctx context.Context, grpcRevision int64) (int64, error) {
+	transporter, ok := kratostransport.FromServerContext(ctx)
+	if !ok || transporter.Kind() != kratostransport.KindHTTP {
+		return grpcRevision, nil
+	}
+	values := transporter.RequestHeader().Values("If-Match")
+	if len(values) == 0 {
+		return 0, kratoserrors.New(http.StatusPreconditionRequired, ReasonApplicationVersionRevisionRequired, "If-Match is required")
+	}
+	if len(values) != 1 {
+		return 0, toTransportError(versiondomain.ErrInvalidApplicationVersionAbandonment)
+	}
+	value := values[0]
+	if len(value) < 3 || value[0] != '"' || value[len(value)-1] != '"' || strings.HasPrefix(value, "W/") {
+		return 0, toTransportError(versiondomain.ErrInvalidApplicationVersionAbandonment)
+	}
+	digits := value[1 : len(value)-1]
+	if digits == "" || digits[0] == '0' {
+		return 0, toTransportError(versiondomain.ErrInvalidApplicationVersionAbandonment)
+	}
+	for _, digit := range digits {
+		if digit < '0' || digit > '9' {
+			return 0, toTransportError(versiondomain.ErrInvalidApplicationVersionAbandonment)
+		}
+	}
+	revision, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil || revision < 1 {
+		return 0, toTransportError(versiondomain.ErrInvalidApplicationVersionAbandonment)
 	}
 	return revision, nil
 }

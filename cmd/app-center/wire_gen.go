@@ -110,7 +110,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	}
 	applicationVersionManagementRepository := mongo.NewApplicationVersionManagementRepository(database, applicationVersionManagementCursorKey)
 	managementQuery := usecase2.NewManagementQuery(applicationVersionManagementRepository)
-	applicationVersionService := transport.NewApplicationVersionServiceWithQuery(createApplicationVersionHandler, updateDraftApplicationVersionHandler, managementQuery)
+	abandonApplicationVersionDraftHandler := usecase2.NewAbandonApplicationVersionDraftHandler(applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
+	applicationVersionService := transport.NewApplicationVersionServiceWithQueryAndAbandonment(createApplicationVersionHandler, updateDraftApplicationVersionHandler, managementQuery, abandonApplicationVersionDraftHandler)
 	reviewScopeCatalog := auth.NewReviewScopeCatalog(scopeCatalogCache)
 	launchURLSubmissionPolicy := preflight.NewLaunchURLSubmissionPolicy(resolver)
 	applicationReviewUUIDv7Generator := generator.NewApplicationReviewUUIDv7Generator()

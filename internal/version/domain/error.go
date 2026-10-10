@@ -17,31 +17,36 @@ const (
 type ErrorCode string
 
 const (
-	ErrorCodeInvalidApplicationID                          ErrorCode = "InvalidApplicationId"
-	ErrorCodeDeveloperIdentityRequired                     ErrorCode = "DeveloperIdentityRequired"
-	ErrorCodeDeveloperApprovalRequired                     ErrorCode = "DeveloperApprovalRequired"
-	ErrorCodeInvalidVersionLabel                           ErrorCode = "InvalidVersionLabel"
-	ErrorCodeInvalidApplicationLaunchURL                   ErrorCode = "InvalidApplicationLaunchUrl"
-	ErrorCodeInvalidRPCApiRange                            ErrorCode = "InvalidRpcApiRange"
-	ErrorCodeInvalidRequiredCapability                     ErrorCode = "InvalidRequiredCapability"
-	ErrorCodeInvalidApplicationScope                       ErrorCode = "InvalidApplicationScope"
-	ErrorCodeInvalidOAuthRedirectConfiguration             ErrorCode = "InvalidOAuthRedirectConfiguration"
-	ErrorCodeScopeCatalogUnavailable                       ErrorCode = "ScopeCatalogUnavailable"
-	ErrorCodeApplicationNotFound                           ErrorCode = "ApplicationNotFound"
-	ErrorCodeApplicationAdminRequired                      ErrorCode = "ApplicationAdminRequired"
-	ErrorCodeApplicationVersionRevisionRequired            ErrorCode = "ApplicationVersionRevisionRequired"
-	ErrorCodeApplicationVersionNotFound                    ErrorCode = "ApplicationVersionNotFound"
-	ErrorCodeApplicationVersionNotDraft                    ErrorCode = "ApplicationVersionNotDraft"
-	ErrorCodeApplicationVersionNotRejected                 ErrorCode = "ApplicationVersionNotRejected"
-	ErrorCodeApplicationVersionRevisionConflict            ErrorCode = "ApplicationVersionRevisionConflict"
-	ErrorCodeApplicationVersionLabelAlreadyExists          ErrorCode = "ApplicationVersionLabelAlreadyExists"
-	ErrorCodeUserIdentityRequired                          ErrorCode = "UserIdentityRequired"
-	ErrorCodeInvalidApplicationVersionQuery                ErrorCode = "InvalidApplicationVersionQuery"
-	ErrorCodeInvalidApplicationVersionPageToken            ErrorCode = "InvalidApplicationVersionPageToken"
-	ErrorCodeApplicationVersionManagementNotFound          ErrorCode = "ApplicationVersionManagementNotFound"
-	ErrorCodeApplicationVersionManagementStateInconsistent ErrorCode = "ApplicationVersionManagementStateInconsistent"
-	ErrorCodeApplicationVersionManagementUnavailable       ErrorCode = "ApplicationVersionManagementUnavailable"
-	ErrorCodeInternal                                      ErrorCode = "Internal"
+	ErrorCodeInvalidApplicationID                           ErrorCode = "InvalidApplicationId"
+	ErrorCodeDeveloperIdentityRequired                      ErrorCode = "DeveloperIdentityRequired"
+	ErrorCodeDeveloperApprovalRequired                      ErrorCode = "DeveloperApprovalRequired"
+	ErrorCodeInvalidVersionLabel                            ErrorCode = "InvalidVersionLabel"
+	ErrorCodeInvalidApplicationLaunchURL                    ErrorCode = "InvalidApplicationLaunchUrl"
+	ErrorCodeInvalidRPCApiRange                             ErrorCode = "InvalidRpcApiRange"
+	ErrorCodeInvalidRequiredCapability                      ErrorCode = "InvalidRequiredCapability"
+	ErrorCodeInvalidApplicationScope                        ErrorCode = "InvalidApplicationScope"
+	ErrorCodeInvalidOAuthRedirectConfiguration              ErrorCode = "InvalidOAuthRedirectConfiguration"
+	ErrorCodeScopeCatalogUnavailable                        ErrorCode = "ScopeCatalogUnavailable"
+	ErrorCodeApplicationNotFound                            ErrorCode = "ApplicationNotFound"
+	ErrorCodeApplicationAdminRequired                       ErrorCode = "ApplicationAdminRequired"
+	ErrorCodeApplicationVersionRevisionRequired             ErrorCode = "ApplicationVersionRevisionRequired"
+	ErrorCodeApplicationVersionNotFound                     ErrorCode = "ApplicationVersionNotFound"
+	ErrorCodeApplicationVersionNotDraft                     ErrorCode = "ApplicationVersionNotDraft"
+	ErrorCodeApplicationVersionNotRejected                  ErrorCode = "ApplicationVersionNotRejected"
+	ErrorCodeApplicationVersionRevisionConflict             ErrorCode = "ApplicationVersionRevisionConflict"
+	ErrorCodeApplicationVersionLabelAlreadyExists           ErrorCode = "ApplicationVersionLabelAlreadyExists"
+	ErrorCodeUserIdentityRequired                           ErrorCode = "UserIdentityRequired"
+	ErrorCodeInvalidApplicationVersionQuery                 ErrorCode = "InvalidApplicationVersionQuery"
+	ErrorCodeInvalidApplicationVersionPageToken             ErrorCode = "InvalidApplicationVersionPageToken"
+	ErrorCodeApplicationVersionManagementNotFound           ErrorCode = "ApplicationVersionManagementNotFound"
+	ErrorCodeApplicationVersionManagementStateInconsistent  ErrorCode = "ApplicationVersionManagementStateInconsistent"
+	ErrorCodeApplicationVersionManagementUnavailable        ErrorCode = "ApplicationVersionManagementUnavailable"
+	ErrorCodeInvalidApplicationVersionAbandonment           ErrorCode = "InvalidApplicationVersionAbandonment"
+	ErrorCodeApplicationVersionNotAbandonable               ErrorCode = "ApplicationVersionNotAbandonable"
+	ErrorCodeApplicationVersionAbandonmentNotAllowed        ErrorCode = "ApplicationVersionAbandonmentNotAllowed"
+	ErrorCodeApplicationVersionAbandonmentStateInconsistent ErrorCode = "ApplicationVersionAbandonmentStateInconsistent"
+	ErrorCodeApplicationVersionAbandonmentUnavailable       ErrorCode = "ApplicationVersionAbandonmentUnavailable"
+	ErrorCodeInternal                                       ErrorCode = "Internal"
 )
 
 type Error struct {
@@ -70,6 +75,10 @@ func NewScopeCatalogUnavailableError(cause error) *Error {
 
 func NewApplicationVersionManagementUnavailableError(cause error) *Error {
 	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationVersionManagementUnavailable, "application version management query is unavailable", cause)
+}
+
+func NewApplicationVersionAbandonmentUnavailableError(cause error) *Error {
+	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationVersionAbandonmentUnavailable, "application version abandonment is unavailable", cause)
 }
 
 func (e *Error) Error() string { return e.message }
@@ -136,10 +145,14 @@ var (
 	ErrApplicationVersionLabelAlreadyExists = newError(
 		ErrorCategoryConflict, ErrorCodeApplicationVersionLabelAlreadyExists, "application version label already exists", nil,
 	)
-	ErrUserIdentityRequired                          = newError(ErrorCategoryAuthentication, ErrorCodeUserIdentityRequired, "user identity is required", nil)
-	ErrInvalidApplicationVersionQuery                = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionQuery, "application version query is invalid", nil)
-	ErrInvalidApplicationVersionPageToken            = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionPageToken, "application version page token is invalid", nil)
-	ErrApplicationVersionManagementNotFound          = newError(ErrorCategoryNotFound, ErrorCodeApplicationVersionManagementNotFound, "application version management resource not found", nil)
-	ErrApplicationVersionManagementStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationVersionManagementStateInconsistent, "application version management state is inconsistent", nil)
-	ErrInternal                                      = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
+	ErrUserIdentityRequired                           = newError(ErrorCategoryAuthentication, ErrorCodeUserIdentityRequired, "user identity is required", nil)
+	ErrInvalidApplicationVersionQuery                 = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionQuery, "application version query is invalid", nil)
+	ErrInvalidApplicationVersionPageToken             = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionPageToken, "application version page token is invalid", nil)
+	ErrApplicationVersionManagementNotFound           = newError(ErrorCategoryNotFound, ErrorCodeApplicationVersionManagementNotFound, "application version management resource not found", nil)
+	ErrApplicationVersionManagementStateInconsistent  = newError(ErrorCategoryInternal, ErrorCodeApplicationVersionManagementStateInconsistent, "application version management state is inconsistent", nil)
+	ErrInvalidApplicationVersionAbandonment           = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionAbandonment, "application version abandonment is invalid", nil)
+	ErrApplicationVersionNotAbandonable               = newError(ErrorCategoryConflict, ErrorCodeApplicationVersionNotAbandonable, "application version is not abandonable", nil)
+	ErrApplicationVersionAbandonmentNotAllowed        = newError(ErrorCategoryConflict, ErrorCodeApplicationVersionAbandonmentNotAllowed, "application version abandonment is not allowed", nil)
+	ErrApplicationVersionAbandonmentStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationVersionAbandonmentStateInconsistent, "application version abandonment state is inconsistent", nil)
+	ErrInternal                                       = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

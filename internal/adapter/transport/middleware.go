@@ -133,7 +133,8 @@ func toIdentityTransportError(err error, operation string) error {
 
 func isApplicationVersionManagementOperation(operation string) bool {
 	return operation == applicationversionv1.OperationApplicationVersionListApplicationVersions ||
-		operation == applicationversionv1.OperationApplicationVersionGetApplicationVersion
+		operation == applicationversionv1.OperationApplicationVersionGetApplicationVersion ||
+		operation == applicationversionv1.OperationApplicationVersionAbandonApplicationVersionDraft
 }
 
 func isApplicationArchivalOperation(operation string) bool {

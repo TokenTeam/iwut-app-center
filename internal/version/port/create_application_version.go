@@ -19,6 +19,10 @@ var (
 	ErrApplicationVersionRevisionConflict   = errors.New("application version revision conflict")
 	ErrApplicationVersionLabelAlreadyExists = errors.New("application version label already exists")
 	ErrInvalidOAuthRedirectConfiguration    = errors.New("OAuth redirect configuration is invalid")
+	ErrApplicationVersionNotAbandonable     = errors.New("application version not abandonable")
+	ErrVersionAbandonmentNotAllowed         = errors.New("application version abandonment not allowed")
+	ErrVersionAbandonmentStateInconsistent  = errors.New("application version abandonment state inconsistent")
+	ErrVersionAbandonmentUnavailable        = errors.New("application version abandonment unavailable")
 )
 
 type ScopeCatalogRevision int64
@@ -34,6 +38,19 @@ type OAuthRedirectPolicy interface {
 type ApplicationVersionIDGenerator interface {
 	NewUUIDv7() (domain.ApplicationVersionID, error)
 }
+
+type ApplicationVersionAbandonmentIDGenerator interface {
+	NewAbandonmentUUIDv7() (domain.ApplicationVersionAbandonmentID, error)
+}
+
+// ApplicationVersionAbandonmentFactory is called only after the repository
+// has proved that this is a first successful abandonment. Implementations must
+// memoize the returned identity and time so MongoDB transaction retries reuse
+// the same immutable fact.
+type ApplicationVersionAbandonmentFactory func(
+	sequence domain.VersionSequence,
+	label domain.VersionLabel,
+) (*domain.ApplicationVersionAbandonment, error)
 
 type Clock interface {
 	Now() time.Time
@@ -56,4 +73,15 @@ type ApplicationVersionRepository interface {
 		replacement domain.DraftApplicationVersionReplacement,
 		updatedAt time.Time,
 	) (*domain.ApplicationVersion, error)
+}
+
+type ApplicationVersionAbandonmentRepository interface {
+	AbandonDraft(
+		ctx context.Context,
+		applicationID shared.ApplicationID,
+		versionID domain.ApplicationVersionID,
+		expectedAdminID shared.AuthID,
+		expectedRevision int64,
+		factory ApplicationVersionAbandonmentFactory,
+	) (*domain.AbandonApplicationVersionDraftResult, error)
 }

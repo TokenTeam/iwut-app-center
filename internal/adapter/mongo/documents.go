@@ -79,6 +79,52 @@ type applicationVersionOAuthConfigDocument struct {
 	OAuthRedirects       oauthRedirectConfigurationDocument `bson:"oauthRedirects"`
 }
 
+type applicationVersionAbandonmentDocument struct {
+	AbandonmentID  string    `bson:"abandonmentId"`
+	ApplicationID  string    `bson:"applicationId"`
+	VersionID      string    `bson:"versionId"`
+	Sequence       int32     `bson:"sequence"`
+	VersionLabel   string    `bson:"versionLabel"`
+	SourceRevision int64     `bson:"sourceRevision"`
+	AbandonedBy    string    `bson:"abandonedBy"`
+	AbandonedAt    time.Time `bson:"abandonedAt"`
+}
+
+func applicationVersionAbandonmentToDocument(fact *versiondomain.ApplicationVersionAbandonment) (applicationVersionAbandonmentDocument, error) {
+	if fact == nil {
+		return applicationVersionAbandonmentDocument{}, fmt.Errorf("map application version abandonment: fact is nil")
+	}
+	return applicationVersionAbandonmentDocument{
+		AbandonmentID: fact.ID().String(), ApplicationID: fact.ApplicationID().String(), VersionID: fact.VersionID().String(),
+		Sequence: fact.Sequence().Int32(), VersionLabel: fact.VersionLabel().String(), SourceRevision: fact.SourceRevision(),
+		AbandonedBy: fact.AbandonedBy().String(), AbandonedAt: fact.AbandonedAt().UTC(),
+	}, nil
+}
+
+func applicationVersionAbandonmentFromDocument(document applicationVersionAbandonmentDocument) (*versiondomain.ApplicationVersionAbandonment, error) {
+	applicationID, ok := shared.ParseApplicationID(document.ApplicationID)
+	if !ok {
+		return nil, corruptApplicationVersion("invalid abandonment application ID")
+	}
+	sequence, err := versiondomain.NewVersionSequence(document.Sequence)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid abandonment sequence")
+	}
+	label, err := versiondomain.NewVersionLabel(document.VersionLabel)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid abandonment version label")
+	}
+	fact, err := versiondomain.NewApplicationVersionAbandonment(
+		versiondomain.ApplicationVersionAbandonmentID(document.AbandonmentID), applicationID,
+		versiondomain.ApplicationVersionID(document.VersionID), sequence, label, document.SourceRevision,
+		shared.AuthID(document.AbandonedBy), document.AbandonedAt,
+	)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid abandonment audit fields")
+	}
+	return fact, nil
+}
+
 type applicationVersionReviewSnapshotDocument struct {
 	VersionLabel              string                             `bson:"versionLabel"`
 	LaunchURL                 string                             `bson:"launchUrl"`

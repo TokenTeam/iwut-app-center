@@ -70,6 +70,21 @@ func newTestServersWithUpdate(
 	return servers
 }
 
+func newTestServersWithAbandonment(t *testing.T, handler *fakeAbandonApplicationVersionDraftHandler) *Servers {
+	t.Helper()
+	servers, err := NewServers(
+		ServerConfig{HTTPAddr: "127.0.0.1:0", GRPCAddr: "127.0.0.1:0"}, newTestVerifier(t),
+		NewApplicationService(&fakeCreateApplicationHandler{}), NewApplicationVersionService(nil, nil, handler),
+		NewApplicationReviewService(nil, nil, nil), NewApplicationPublicationService(nil),
+		NewTesterJoinLinkService(nil, nil), NewTesterMembershipService(nil, nil), NewCatalogService(nil),
+		NewApplicationProfileRevisionService(nil, nil), NewApplicationProfileReviewService(nil, nil), NewOAuthClientService(nil),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return servers
+}
+
 func TestServers_HealthIsUnauthenticatedAndDependencySafe(t *testing.T) {
 	t.Parallel()
 	servers := newTestServers(t, &fakeCreateApplicationHandler{})
@@ -191,6 +206,66 @@ func TestServers_UCAPP003_HTTPPreconditions(t *testing.T) {
 			servers.HTTP.ServeHTTP(recorder, request)
 			if recorder.Code != test.wantStatus || !strings.Contains(recorder.Body.String(), test.wantReason) {
 				t.Fatalf("response = status:%d body:%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestServers_UCAPP035_HTTPShapeOCCAndMinimalDisclosure(t *testing.T) {
+	token := ordinaryUserToken(t)
+	path := strings.Replace(AbandonApplicationVersionInternalPath, "{application_id}", testApplicationID, 1)
+	path = strings.Replace(path, "{version_id}", testApplicationVersionID, 1)
+	success := &fakeAbandonApplicationVersionDraftHandler{result: &versiondomain.AbandonApplicationVersionDraftResult{Abandonment: testAbandonment(t), Changed: true}}
+	request := httptest.NewRequest(http.MethodDelete, path, nil)
+	request.Header.Set(IdentityHeader, token)
+	request.Header.Set("If-Match", `"3"`)
+	recorder := httptest.NewRecorder()
+	newTestServersWithAbandonment(t, success).HTTP.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || recorder.Header().Get("Cache-Control") != "private, no-store" || success.calls != 1 || success.command.ExpectedRevision != 3 {
+		t.Fatalf("success status=%d headers=%v calls=%d body=%s", recorder.Code, recorder.Header(), success.calls, recorder.Body.String())
+	}
+	for _, forbidden := range []string{"private-admin", "launchUrl", "oauthRedirects", "abandonedBy", "createdBy", "updatedBy"} {
+		if strings.Contains(recorder.Body.String(), forbidden) {
+			t.Fatalf("response leaks %q: %s", forbidden, recorder.Body.String())
+		}
+	}
+
+	for _, test := range []struct {
+		name, suffix, body, ifMatch string
+		addSecond                   bool
+		handlerErr                  error
+		status                      int
+		reason                      string
+	}{
+		{"missing If-Match", "", "", "", false, nil, http.StatusPreconditionRequired, ReasonApplicationVersionRevisionRequired},
+		{"weak If-Match", "", "", `W/"3"`, false, nil, http.StatusBadRequest, ReasonInvalidApplicationVersionAbandonment},
+		{"duplicate If-Match", "", "", `"3"`, true, nil, http.StatusBadRequest, ReasonInvalidApplicationVersionAbandonment},
+		{"query rejected", "?expected_revision=3", "", `"3"`, false, nil, http.StatusBadRequest, ReasonInvalidApplicationVersionAbandonment},
+		{"body rejected", "", "{}", `"3"`, false, nil, http.StatusBadRequest, ReasonInvalidApplicationVersionAbandonment},
+		{"revision conflict", "", "", `"3"`, false, versiondomain.ErrApplicationVersionRevisionConflict, http.StatusPreconditionFailed, ReasonApplicationVersionRevisionConflict},
+		{"reviewed", "", "", `"3"`, false, versiondomain.ErrApplicationVersionNotAbandonable, http.StatusConflict, ReasonApplicationVersionNotAbandonable},
+		{"closing", "", "", `"3"`, false, versiondomain.ErrApplicationVersionAbandonmentNotAllowed, http.StatusUnprocessableEntity, ReasonApplicationVersionAbandonmentNotAllowed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := &fakeAbandonApplicationVersionDraftHandler{err: test.handlerErr}
+			var body *strings.Reader
+			if test.body != "" {
+				body = strings.NewReader(test.body)
+			} else {
+				body = strings.NewReader("")
+			}
+			request := httptest.NewRequest(http.MethodDelete, path+test.suffix, body)
+			request.Header.Set(IdentityHeader, token)
+			if test.ifMatch != "" {
+				request.Header.Set("If-Match", test.ifMatch)
+			}
+			if test.addSecond {
+				request.Header.Add("If-Match", `"4"`)
+			}
+			recorder := httptest.NewRecorder()
+			newTestServersWithAbandonment(t, handler).HTTP.ServeHTTP(recorder, request)
+			if recorder.Code != test.status || recorder.Header().Get("Cache-Control") != "private, no-store" || !strings.Contains(recorder.Body.String(), test.reason) {
+				t.Fatalf("status=%d headers=%v body=%s", recorder.Code, recorder.Header(), recorder.Body.String())
 			}
 		})
 	}

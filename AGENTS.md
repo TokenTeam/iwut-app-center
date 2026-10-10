@@ -38,14 +38,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**Engineering — App Center observability baseline (ADR-007).**
-Read the engineering baseline and implements README. Deliver JSON structured logs
-with trace correlation, W3C context propagation across HTTP/gRPC and the native
-Auth client, OTLP gRPC trace/metric export, low-cardinality request metrics, and
-HTTP plus standard gRPC health checks. Telemetry must not contain credentials,
-request bodies, user KV/profile content, full URL/scope lists or free-form reasons.
-Do not change business APIs, domain models, persistence schemas or audit semantics.
-Required final tier: `make check-full`. Keep all commits local.
+**UC-APP-035 — abandon an unsubmitted ApplicationVersion draft.**
+Read `app-center/briefs/UC-APP-035.md`, the engineering baseline, and the
+implements README. Implement BR-VER-026 through BR-VER-033 across the API
+submodule, Version domain/usecase/port, MongoDB transaction adapter, migration
+0028, HTTP/gRPC transport, composition wiring, and automated acceptance tests.
+Only a DRAFT with no ApplicationReview attempt can be abandoned; atomically
+delete its active Version and OAuth configuration while retaining one minimal
+immutable abandonment fact. Preserve version identity/sequence non-reuse,
+revision-based idempotency, current-admin authorization, shared-fence ordering,
+strict relationship checks, and no-store/minimal-disclosure responses. Do not
+delete reviewed Versions or Review/Publication history, add an ABANDONED review
+status, call Auth, or implement recovery, bulk cleanup, expiry, or approved-
+qualification revocation. Required final tier: `make check-full`; do not claim
+`make check-auth-app`. Keep all commits local.
 
 ## Verification entry points
 

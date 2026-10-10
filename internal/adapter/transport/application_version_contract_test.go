@@ -213,3 +213,40 @@ func TestAPIContract_UCAPP034_ReadModelsCannotExposeReviewerOrSYSTEMAuthIDs(t *t
 		}
 	}
 }
+
+func TestAPIContract_UCAPP035_DeleteRouteMinimalFieldsAndReasons(t *testing.T) {
+	t.Parallel()
+	root := moduleRoot(t)
+	source, err := os.ReadFile(filepath.Join(root, "api", "app_center", "v1", "application_version", "application_version.proto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	deletePath := mustFind(t, regexp.MustCompile(`(?s)rpc\s+AbandonApplicationVersionDraft.*?delete:\s*"([^"]+)"`), text)
+	if deletePath != AbandonApplicationVersionInternalPath || AbandonApplicationVersionExternalPath != ServicePrefix+deletePath || AbandonApplicationVersionGRPCMethod != applicationversionv1.OperationApplicationVersionAbandonApplicationVersionDraft {
+		t.Fatalf("route mismatch: %s %s %s", deletePath, AbandonApplicationVersionExternalPath, AbandonApplicationVersionGRPCMethod)
+	}
+	request := &applicationversionv1.AbandonApplicationVersionDraftRequest{}
+	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != "application_id,expected_revision,version_id" {
+		t.Fatalf("request fields=%v", fields)
+	}
+	fact := &applicationversionv1.ApplicationVersionAbandonment{}
+	if fields := messageFieldNames(t, fact); strings.Join(fields, ",") != "abandoned_at,application_id,sequence,source_revision,version_id,version_label" {
+		t.Fatalf("abandonment fields=%v", fields)
+	}
+	for _, forbidden := range []string{"abandoned_by", "launch_url", "required_capabilities", "required_scopes", "optional_scopes", "oauth_redirects", "created_by", "updated_by"} {
+		if containsField(fact, forbidden) {
+			t.Fatalf("response exposes %q", forbidden)
+		}
+	}
+	for _, reason := range []string{
+		ReasonUserIdentityRequired, ReasonInvalidUserIdentity, ReasonApplicationVersionRevisionRequired,
+		ReasonApplicationVersionNotFound, ReasonApplicationVersionRevisionConflict, ReasonInvalidApplicationVersionAbandonment,
+		ReasonApplicationVersionNotAbandonable, ReasonApplicationVersionAbandonmentNotAllowed,
+		ReasonApplicationVersionAbandonmentStateInconsistent, ReasonApplicationVersionAbandonmentUnavailable,
+	} {
+		if _, ok := applicationversionv1.ErrorReason_value[reason]; !ok {
+			t.Fatalf("missing reason %s", reason)
+		}
+	}
+}

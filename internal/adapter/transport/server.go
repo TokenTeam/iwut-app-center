@@ -113,6 +113,9 @@ const (
 	UpdateApplicationVersionInternalPath       = "/v1/applications/{application_id}/versions/{version_id}"
 	UpdateApplicationVersionExternalPath       = ServicePrefix + UpdateApplicationVersionInternalPath
 	UpdateApplicationVersionGRPCMethod         = applicationversionv1.OperationApplicationVersionUpdateApplicationVersion
+	AbandonApplicationVersionInternalPath      = "/v1/applications/{application_id}/versions/{version_id}"
+	AbandonApplicationVersionExternalPath      = ServicePrefix + AbandonApplicationVersionInternalPath
+	AbandonApplicationVersionGRPCMethod        = applicationversionv1.OperationApplicationVersionAbandonApplicationVersionDraft
 	ListApplicationVersionsInternalPath        = "/v1/applications/{application_id}/versions:search"
 	ListApplicationVersionsExternalPath        = ServicePrefix + ListApplicationVersionsInternalPath
 	ListApplicationVersionsGRPCMethod          = applicationversionv1.OperationApplicationVersionListApplicationVersions
@@ -522,6 +525,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.WriteHeader(http.StatusCreated)
 	case *applicationversionv1.UpdateApplicationVersionResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
+	case *applicationversionv1.AbandonApplicationVersionDraftResponse:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationversionv1.OwnedApplicationVersionPage, *applicationversionv1.OwnedApplicationVersionDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationreviewv1.SubmitApplicationVersionReviewResponse:
@@ -574,6 +579,17 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isApplicationVersionAbandonmentRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		converted := kerrors.FromError(err)
+		if _, ok := applicationversionv1.ErrorReason_value[converted.Reason]; !ok {
+			if converted.Code == http.StatusBadRequest {
+				err = transportStatus(codes.InvalidArgument, ReasonInvalidApplicationVersionAbandonment, "application version abandonment is invalid")
+			} else {
+				err = transportStatus(codes.Internal, ReasonInternal, "internal failure")
+			}
+		}
+	}
 	if isApplicationVersionManagementRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		if _, ok := applicationversionv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -691,6 +707,23 @@ func isApplicationVersionManagementRequest(r *http.Request) bool {
 		return true
 	}
 	return r.Method == http.MethodGet && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "versions"
+}
+
+func isApplicationVersionAbandonmentRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodDelete && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "versions"
+}
+
+func validApplicationVersionAbandonmentHTTPInput(r *http.Request) bool {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		return false
+	}
+	if r.Body == nil || r.Body == http.NoBody {
+		return true
+	}
+	var one [1]byte
+	n, err := r.Body.Read(one[:])
+	return n == 0 && errors.Is(err, io.EOF)
 }
 
 func applicationVersionManagementOperation(r *http.Request) string {
@@ -889,9 +922,9 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) {
+			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
-				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) {
+				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
 				}
 				var identityErr error
@@ -980,6 +1013,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					if isApplicationVersionManagementRequest(r) {
 						operation = applicationVersionManagementOperation(r)
 					}
+					if isApplicationVersionAbandonmentRequest(r) {
+						operation = AbandonApplicationVersionGRPCMethod
+					}
 					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
 					return
 				}
@@ -1019,6 +1055,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if isPublicCatalogRequest(r) && !validApplicationCatalogHTTPInput(r) {
 					credentialSafeErrorEncoder(w, r, invalidApplicationCatalogRequest())
+					return
+				}
+				if isApplicationVersionAbandonmentRequest(r) && !validApplicationVersionAbandonmentHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, transportStatus(codes.InvalidArgument, ReasonInvalidApplicationVersionAbandonment, "application version abandonment is invalid"))
 					return
 				}
 				if isTesterJoinLinkRevocationRequest(r) && !validTesterRemovalHTTPInput(r) {

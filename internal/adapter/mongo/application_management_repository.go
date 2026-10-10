@@ -174,6 +174,12 @@ func (r *ApplicationManagementRepository) loadManagementCounts(ctx context.Conte
 	for _, id := range appIDs {
 		result[id] = managementdomain.Counts{}
 	}
+	if err := ensureNoActiveVersionAbandonmentOverlap(ctx, r.database, appIDs); err != nil {
+		if errors.Is(err, errActiveVersionAbandonmentOverlap) {
+			return nil, managementport.ErrStateInconsistent
+		}
+		return nil, err
+	}
 	var versions []applicationVersionDocument
 	cur, err := r.database.Collection(applicationVersionsCollectionName).Find(ctx, bson.M{"applicationId": bson.M{"$in": appIDs}})
 	if err != nil {

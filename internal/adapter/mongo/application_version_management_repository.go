@@ -89,6 +89,12 @@ func (r *ApplicationVersionManagementRepository) List(ctx context.Context, admin
 		if err := r.requireVersionManagementAdmin(tx, adminID, applicationID); err != nil {
 			return nil, err
 		}
+		if err := ensureNoActiveVersionAbandonmentOverlap(tx, r.database, []string{applicationID.String()}); err != nil {
+			if errors.Is(err, errActiveVersionAbandonmentOverlap) {
+				return nil, versionport.ErrManagementStateInconsistent
+			}
+			return nil, versionport.ErrManagementUnavailable
+		}
 		filter := bson.M{"applicationId": applicationID.String()}
 		if reviewStatus != nil {
 			filter["reviewStatus"] = string(*reviewStatus)
@@ -141,6 +147,12 @@ func (r *ApplicationVersionManagementRepository) Get(ctx context.Context, adminI
 	return withApplicationVersionManagementSnapshot(r, ctx, func(tx context.Context, asOf time.Time) (*versiondomain.OwnedVersionDetail, error) {
 		if err := r.requireVersionManagementAdmin(tx, adminID, applicationID); err != nil {
 			return nil, err
+		}
+		if err := ensureNoActiveVersionAbandonmentOverlap(tx, r.database, []string{applicationID.String()}); err != nil {
+			if errors.Is(err, errActiveVersionAbandonmentOverlap) {
+				return nil, versionport.ErrManagementStateInconsistent
+			}
+			return nil, versionport.ErrManagementUnavailable
 		}
 		var document applicationVersionDocument
 		err := r.database.Collection(applicationVersionsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "versionId": versionID.String()}).Decode(&document)
