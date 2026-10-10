@@ -112,13 +112,16 @@ func TestApplication_BR_APP_001_002_007_FieldsAreSetAtCreation(t *testing.T) {
 	if application.CreatedAt().Location() != time.UTC {
 		t.Fatalf("CreatedAt() location = %v, want UTC", application.CreatedAt().Location())
 	}
+	if application.ArchiveStatus() != ApplicationArchiveUnarchived || application.ArchiveRevision() != 1 {
+		t.Fatalf("archive state = %s/%d, want UNARCHIVED/1", application.ArchiveStatus(), application.ArchiveRevision())
+	}
 }
 
 func TestApplication_BR_APP_020_ContainsLifecycleFields(t *testing.T) {
 	t.Parallel()
 
 	applicationType := reflect.TypeOf(Application{})
-	wantFields := []string{"id", "name", "adminID", "lifecycleStatus", "lifecycleRevision", "platformAvailabilityStatus", "platformAvailabilityRevision", "createdAt"}
+	wantFields := []string{"id", "name", "adminID", "lifecycleStatus", "lifecycleRevision", "platformAvailabilityStatus", "platformAvailabilityRevision", "archiveStatus", "archiveRevision", "createdAt"}
 	if applicationType.NumField() != len(wantFields) {
 		t.Fatalf("Application has %d fields, want %d", applicationType.NumField(), len(wantFields))
 	}

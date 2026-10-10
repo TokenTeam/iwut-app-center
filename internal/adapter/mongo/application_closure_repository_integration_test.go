@@ -282,7 +282,7 @@ func TestApplicationClosureMigrationIntegration_BackfillsStrict0021(t *testing.T
 	if err := NewApplicationRepository(database).CreateWithinQuota(ctx, application, 10); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.M{"id": application.ID().String()}, bson.M{"$unset": bson.M{"lifecycleStatus": "", "lifecycleRevision": "", "platformAvailabilityStatus": "", "platformAvailabilityRevision": "", "lastPlatformOperationEventId": "", "suspendedAt": "", "restoredAt": ""}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+	if _, err := database.Collection(applicationsCollectionName).UpdateOne(ctx, bson.M{"id": application.ID().String()}, bson.M{"$unset": bson.M{"lifecycleStatus": "", "lifecycleRevision": "", "platformAvailabilityStatus": "", "platformAvailabilityRevision": "", "lastPlatformOperationEventId": "", "suspendedAt": "", "restoredAt": "", "archiveStatus": "", "archiveRevision": "", "lastArchiveEventId": ""}}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.RunCommand(ctx, bson.D{{Key: "collMod", Value: applicationsCollectionName}, {Key: "validator", Value: applicationOwnershipValidator()}}).Err(); err != nil {
@@ -292,6 +292,7 @@ func TestApplicationClosureMigrationIntegration_BackfillsStrict0021(t *testing.T
 		t.Fatal(err)
 	}
 	_, _ = database.Collection(migrationLedgerCollectionName).DeleteOne(ctx, bson.M{"_id": applicationOperationsMigrationID})
+	_, _ = database.Collection(migrationLedgerCollectionName).DeleteOne(ctx, bson.M{"_id": applicationArchivalMigrationID})
 	if err := NewMigrator(database).Migrate(ctx); err != nil {
 		t.Fatalf("Migrate() = %v", err)
 	}

@@ -21,6 +21,8 @@ import (
 var ProviderSet = wire.NewSet(
 	NewApplicationManagementRepository,
 	wire.Bind(new(managementport.Repository), new(*ApplicationManagementRepository)),
+	NewApplicationArchivalRepository,
+	wire.Bind(new(port.ApplicationArchivalRepository), new(*ApplicationArchivalRepository)),
 	NewApplicationOperationsRepository,
 	wire.Bind(new(port.ApplicationOperationsRepository), new(*ApplicationOperationsRepository)),
 	NewApplicationClosureRepository,

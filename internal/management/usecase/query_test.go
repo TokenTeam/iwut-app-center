@@ -11,19 +11,20 @@ import (
 )
 
 type fakeRepository struct {
-	lifecycle, availability []string
-	admin                   shared.AuthID
-	size                    int32
-	token                   string
-	page                    *domain.Page
-	detail                  *domain.Detail
-	err                     error
+	lifecycle, availability, archive []string
+	admin                            shared.AuthID
+	size                             int32
+	token                            string
+	page                             *domain.Page
+	detail                           *domain.Detail
+	err                              error
 }
 
-func (f *fakeRepository) List(_ context.Context, a shared.AuthID, l, p []string, s int32, t string) (*domain.Page, error) {
+func (f *fakeRepository) List(_ context.Context, a shared.AuthID, l, p, archive []string, s int32, t string) (*domain.Page, error) {
 	f.admin = a
 	f.lifecycle = l
 	f.availability = p
+	f.archive = archive
 	f.size = s
 	f.token = t
 	return f.page, f.err
@@ -40,7 +41,7 @@ func TestQueryList_BRAPP038_BRAPP040(t *testing.T) {
 	if err != nil || page == nil || repo.admin != "admin" || repo.size != 20 || len(repo.lifecycle) != 2 || repo.lifecycle[0] != "ACTIVE" || repo.lifecycle[1] != "CLOSING" {
 		t.Fatalf("page=%#v repo=%#v err=%v", page, repo, err)
 	}
-	for _, input := range []ListQuery{{LifecycleStatuses: []string{"BAD"}}, {LifecycleStatuses: []string{"ACTIVE", "ACTIVE"}}, {PlatformAvailabilityStatuses: []string{"BAD"}}, {PageSize: 101}} {
+	for _, input := range []ListQuery{{LifecycleStatuses: []string{"BAD"}}, {LifecycleStatuses: []string{"ACTIVE", "ACTIVE"}}, {PlatformAvailabilityStatuses: []string{"BAD"}}, {ArchiveStatuses: []string{"BAD"}}, {ArchiveStatuses: []string{"ARCHIVED", "ARCHIVED"}}, {PageSize: 101}} {
 		if _, err = q.List(t.Context(), shared.AuthenticatedUserIdentity{AuthID: "admin"}, input); !errors.Is(err, domain.ErrInvalidRequest) {
 			t.Fatalf("input=%#v err=%v", input, err)
 		}

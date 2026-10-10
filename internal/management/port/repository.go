@@ -14,6 +14,6 @@ var (
 )
 
 type Repository interface {
-	List(context.Context, shared.AuthID, []string, []string, int32, string) (*domain.Page, error)
+	List(context.Context, shared.AuthID, []string, []string, []string, int32, string) (*domain.Page, error)
 	Get(context.Context, shared.AuthID, shared.ApplicationID) (*domain.Detail, error)
 }

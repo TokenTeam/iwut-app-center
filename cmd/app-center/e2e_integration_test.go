@@ -44,6 +44,7 @@ import (
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
+	applicationarchivalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_archival"
 	applicationclosurev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_closure"
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
@@ -1240,6 +1241,34 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	var restored applicationoperationsv1.RestoreApplicationResponse
 	if err := protojson.Unmarshal(restoreBody, &restored); restoreStatus != http.StatusOK || err != nil || restored.GetAvailability().GetPlatformAvailabilityStatus() != applicationoperationsv1.PlatformAvailabilityStatus_PLATFORM_AVAILABILITY_STATUS_AVAILABLE || restored.GetAvailability().GetPlatformAvailabilityRevision() != 3 {
 		t.Fatalf("restore status=%d body=%s error=%v", restoreStatus, restoreBody, err)
+	}
+	archiveGetStatus, archiveGetHeaders, archiveGetBody := e2eHTTPAdminTransfer(t, httpAddress, adminToken, http.MethodGet, "/v1/applications/"+application.GetId()+"/archive-state", nil)
+	var initialArchive applicationarchivalv1.GetApplicationArchiveStateResponse
+	if err := protojson.Unmarshal(archiveGetBody, &initialArchive); archiveGetStatus != http.StatusOK || err != nil || initialArchive.GetState().GetArchiveStatus() != applicationarchivalv1.ApplicationArchiveStatus_APPLICATION_ARCHIVE_STATUS_UNARCHIVED || initialArchive.GetState().GetArchiveRevision() != 1 || archiveGetHeaders.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("initial archive state status=%d cache=%q body=%s error=%v", archiveGetStatus, archiveGetHeaders.Get("Cache-Control"), archiveGetBody, err)
+	}
+	archiveHiddenStatus, _, archiveHiddenBody := e2eHTTPAdminTransfer(t, httpAddress, reviewerToken, http.MethodPost, "/v1/applications/"+application.GetId()+":archive", []byte(`{"expectedArchiveRevision":"1"}`))
+	if archiveHiddenStatus != http.StatusNotFound {
+		t.Fatalf("non-admin archive status=%d, want 404; body=%s", archiveHiddenStatus, archiveHiddenBody)
+	}
+	archiveStatus, archiveHeaders, archiveBody := e2eHTTPAdminTransfer(t, httpAddress, adminToken, http.MethodPost, "/v1/applications/"+application.GetId()+":archive", []byte(`{"expectedArchiveRevision":"1"}`))
+	var archived applicationarchivalv1.ArchiveApplicationResponse
+	if err := protojson.Unmarshal(archiveBody, &archived); archiveStatus != http.StatusOK || err != nil || archived.GetState().GetArchiveStatus() != applicationarchivalv1.ApplicationArchiveStatus_APPLICATION_ARCHIVE_STATUS_ARCHIVED || archived.GetState().GetArchiveRevision() != 2 || archived.GetState().GetPlatformAvailabilityStatus() != applicationarchivalv1.PlatformAvailabilityStatus_PLATFORM_AVAILABILITY_STATUS_AVAILABLE || archiveHeaders.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("archive status=%d cache=%q body=%s error=%v", archiveStatus, archiveHeaders.Get("Cache-Control"), archiveBody, err)
+	}
+	archivalClient := applicationarchivalv1.NewApplicationArchivalServiceClient(connection)
+	archivalCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, adminToken))
+	archiveNoOp, err := archivalClient.ArchiveApplication(archivalCtx, &applicationarchivalv1.ArchiveApplicationRequest{
+		ApplicationId: application.GetId(),
+		Command:       &applicationarchivalv1.ApplicationArchiveCommand{ExpectedArchiveRevision: 2},
+	})
+	if err != nil || archiveNoOp.GetState().GetArchiveRevision() != 2 || archiveNoOp.GetState().GetArchiveStatus() != applicationarchivalv1.ApplicationArchiveStatus_APPLICATION_ARCHIVE_STATUS_ARCHIVED {
+		t.Fatalf("archive gRPC no-op response=%v error=%v", archiveNoOp, err)
+	}
+	unarchiveStatus, _, unarchiveBody := e2eHTTPAdminTransfer(t, httpAddress, adminToken, http.MethodPost, "/v1/applications/"+application.GetId()+":unarchive", []byte(`{"expectedArchiveRevision":"2"}`))
+	var unarchived applicationarchivalv1.UnarchiveApplicationResponse
+	if err := protojson.Unmarshal(unarchiveBody, &unarchived); unarchiveStatus != http.StatusOK || err != nil || unarchived.GetState().GetArchiveStatus() != applicationarchivalv1.ApplicationArchiveStatus_APPLICATION_ARCHIVE_STATUS_UNARCHIVED || unarchived.GetState().GetArchiveRevision() != 3 {
+		t.Fatalf("unarchive status=%d body=%s error=%v", unarchiveStatus, unarchiveBody, err)
 	}
 	versionStatus, _, versionBody := e2eHTTPCreateVersion(
 		t, httpAddress, adminToken, application.GetId(), "v1.0.0",

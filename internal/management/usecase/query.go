@@ -14,9 +14,9 @@ const MaxPageSize int32 = 100
 const MaxPageTokenBytes = 4096
 
 type ListQuery struct {
-	LifecycleStatuses, PlatformAvailabilityStatuses []string
-	PageSize                                        int32
-	PageToken                                       string
+	LifecycleStatuses, PlatformAvailabilityStatuses, ArchiveStatuses []string
+	PageSize                                                         int32
+	PageToken                                                        string
 }
 type Query struct{ repository port.Repository }
 
@@ -34,6 +34,10 @@ func (q *Query) List(ctx context.Context, identity shared.AuthenticatedUserIdent
 	if !ok {
 		return nil, domain.ErrInvalidRequest
 	}
+	archive, ok := normalize(input.ArchiveStatuses, []string{"UNARCHIVED", "ARCHIVED"}, nil)
+	if !ok {
+		return nil, domain.ErrInvalidRequest
+	}
 	size := input.PageSize
 	if size == 0 {
 		size = DefaultPageSize
@@ -47,7 +51,7 @@ func (q *Query) List(ctx context.Context, identity shared.AuthenticatedUserIdent
 	if q == nil || q.repository == nil {
 		return nil, domain.NewInternalError(nil)
 	}
-	page, err := q.repository.List(ctx, identity.AuthID, lifecycle, availability, size, input.PageToken)
+	page, err := q.repository.List(ctx, identity.AuthID, lifecycle, availability, archive, size, input.PageToken)
 	if err != nil {
 		return nil, mapError(err)
 	}

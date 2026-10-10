@@ -18,6 +18,8 @@ import (
 var ProviderSet = wire.NewSet(
 	NewApplicationOperationUUIDv7Generator,
 	wire.Bind(new(port.ApplicationOperationEventIDGenerator), new(*ApplicationOperationUUIDv7Generator)),
+	NewApplicationArchiveUUIDv7Generator,
+	wire.Bind(new(port.ApplicationArchiveEventIDGenerator), new(*ApplicationArchiveUUIDv7Generator)),
 	NewApplicationClosureUUIDv7Generator,
 	wire.Bind(new(port.ApplicationClosureIDGenerator), new(*ApplicationClosureUUIDv7Generator)),
 	NewApplicationAdminTransferUUIDv7Generator,

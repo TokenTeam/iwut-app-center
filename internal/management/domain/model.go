@@ -10,6 +10,8 @@ type ApplicationCore struct {
 	LifecycleRevision            int64
 	PlatformAvailabilityStatus   string
 	PlatformAvailabilityRevision int64
+	ArchiveStatus                string
+	ArchiveRevision              int64
 }
 type Counts struct {
 	VersionCount, DraftVersionCount, SubmittedVersionCount, ApprovedVersionCount, RejectedVersionCount int64

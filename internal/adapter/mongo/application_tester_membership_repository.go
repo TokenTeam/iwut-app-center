@@ -90,7 +90,7 @@ func (r *ApplicationTesterMembershipRepository) joinTesterTransaction(ctx contex
 	if gate != applicationGateAvailable {
 		return nil, testerport.ErrTesterJoinLinkInvalid
 	}
-	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}, {Key: "platformAvailabilityStatus", Value: "AVAILABLE"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err()
+	err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, bson.D{{Key: "id", Value: appID.String()}, {Key: "lifecycleStatus", Value: "ACTIVE"}, {Key: "platformAvailabilityStatus", Value: "AVAILABLE"}, {Key: "archiveStatus", Value: "UNARCHIVED"}}, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err()
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, testerport.ErrTesterJoinLinkInvalid
 	}

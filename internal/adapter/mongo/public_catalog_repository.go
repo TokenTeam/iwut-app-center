@@ -200,7 +200,14 @@ func (r *PublicCatalogRepository) loadCatalogFacts(ctx context.Context, publicat
 		if err := (&ApplicationOperationsRepository{database: r.database}).validateLatestEvent(ctx, document, availability); err != nil {
 			return nil, catalogport.ErrApplicationCatalogStateInconsistent
 		}
-		if availability.LifecycleStatus == "ACTIVE" && availability.Status == "AVAILABLE" {
+		archive, err := archiveStateFromDocument(document)
+		if err != nil {
+			return nil, catalogport.ErrApplicationCatalogStateInconsistent
+		}
+		if err := (&ApplicationArchivalRepository{database: r.database}).validateLatestArchiveEvent(ctx, document, archive); err != nil {
+			return nil, catalogport.ErrApplicationCatalogStateInconsistent
+		}
+		if availability.LifecycleStatus == "ACTIVE" && availability.Status == "AVAILABLE" && archive.ArchiveStatus == "UNARCHIVED" {
 			f.applications[document.ID] = true
 		}
 	}

@@ -38,11 +38,11 @@ type applicationManagementCursor struct {
 	ApplicationID        string    `json:"applicationId"`
 }
 
-func (r *ApplicationManagementRepository) List(ctx context.Context, adminID shared.AuthID, lifecycle, availability []string, pageSize int32, token string) (*managementdomain.Page, error) {
+func (r *ApplicationManagementRepository) List(ctx context.Context, adminID shared.AuthID, lifecycle, availability, archive []string, pageSize int32, token string) (*managementdomain.Page, error) {
 	if r == nil || r.database == nil || !adminID.IsValid() || pageSize < 1 {
 		return nil, fmt.Errorf("list application management: invalid input")
 	}
-	cursor, err := decodeApplicationManagementCursor(token, adminID.String(), lifecycle, availability)
+	cursor, err := decodeApplicationManagementCursor(token, adminID.String(), lifecycle, availability, archive)
 	if err != nil {
 		return nil, managementport.ErrInvalidPageToken
 	}
@@ -50,6 +50,9 @@ func (r *ApplicationManagementRepository) List(ctx context.Context, adminID shar
 		filter := bson.M{"adminId": adminID.String(), "lifecycleStatus": bson.M{"$in": lifecycle}}
 		if len(availability) > 0 {
 			filter["platformAvailabilityStatus"] = bson.M{"$in": availability}
+		}
+		if len(archive) > 0 {
+			filter["archiveStatus"] = bson.M{"$in": archive}
 		}
 		if cursor != nil {
 			filter["$or"] = bson.A{bson.M{"createdAt": bson.M{"$lt": cursor.CreatedAt}}, bson.M{"createdAt": cursor.CreatedAt, "id": bson.M{"$lt": cursor.ApplicationID}}}
@@ -85,7 +88,7 @@ func (r *ApplicationManagementRepository) List(ctx context.Context, adminID shar
 		}
 		next := ""
 		if hasMore && len(docs) > 0 {
-			next, err = encodeApplicationManagementCursor(adminID.String(), lifecycle, availability, docs[len(docs)-1])
+			next, err = encodeApplicationManagementCursor(adminID.String(), lifecycle, availability, archive, docs[len(docs)-1])
 			if err != nil {
 				return nil, err
 			}
@@ -157,10 +160,10 @@ func withManagementSnapshot[T any](r *ApplicationManagementRepository, ctx conte
 }
 
 func managementCore(doc applicationDocument) (managementdomain.ApplicationCore, error) {
-	if _, ok := shared.ParseApplicationID(doc.ID); !ok || doc.Name == "" || doc.AdminID == "" || doc.CreatedAt.IsZero() || doc.OwnershipRevision < 1 || doc.LifecycleRevision < 1 || doc.PlatformAvailabilityRevision < 1 || !slices.Contains([]string{"ACTIVE", "CLOSING", "CLOSED"}, doc.LifecycleStatus) || !slices.Contains([]string{"AVAILABLE", "SUSPENDED"}, doc.PlatformAvailabilityStatus) {
+	if _, ok := shared.ParseApplicationID(doc.ID); !ok || doc.Name == "" || doc.AdminID == "" || doc.CreatedAt.IsZero() || doc.OwnershipRevision < 1 || doc.LifecycleRevision < 1 || doc.PlatformAvailabilityRevision < 1 || doc.ArchiveRevision < 1 || !slices.Contains([]string{"ACTIVE", "CLOSING", "CLOSED"}, doc.LifecycleStatus) || !slices.Contains([]string{"AVAILABLE", "SUSPENDED"}, doc.PlatformAvailabilityStatus) || !slices.Contains([]string{"UNARCHIVED", "ARCHIVED"}, doc.ArchiveStatus) {
 		return managementdomain.ApplicationCore{}, managementport.ErrStateInconsistent
 	}
-	return managementdomain.ApplicationCore{ApplicationID: doc.ID, Name: doc.Name, AdminID: doc.AdminID, CreatedAt: doc.CreatedAt, OwnershipRevision: doc.OwnershipRevision, LifecycleStatus: doc.LifecycleStatus, LifecycleRevision: doc.LifecycleRevision, PlatformAvailabilityStatus: doc.PlatformAvailabilityStatus, PlatformAvailabilityRevision: doc.PlatformAvailabilityRevision}, nil
+	return managementdomain.ApplicationCore{ApplicationID: doc.ID, Name: doc.Name, AdminID: doc.AdminID, CreatedAt: doc.CreatedAt, OwnershipRevision: doc.OwnershipRevision, LifecycleStatus: doc.LifecycleStatus, LifecycleRevision: doc.LifecycleRevision, PlatformAvailabilityStatus: doc.PlatformAvailabilityStatus, PlatformAvailabilityRevision: doc.PlatformAvailabilityRevision, ArchiveStatus: doc.ArchiveStatus, ArchiveRevision: doc.ArchiveRevision}, nil
 }
 
 func (r *ApplicationManagementRepository) loadManagementCounts(ctx context.Context, appIDs []string) (map[string]managementdomain.Counts, error) {
@@ -378,20 +381,22 @@ func (r *ApplicationManagementRepository) loadManagementClosure(ctx context.Cont
 	return &managementdomain.Closure{ClosureID: d.ClosureID, Status: d.Status, AuthRevocationState: d.AuthRevocationState, ClosingStartedAt: d.ClosingStartedAt, ClosedAt: d.ClosedAt}, nil
 }
 
-func managementFingerprint(lifecycle, availability []string) string {
+func managementFingerprint(lifecycle, availability, archive []string) string {
 	raw := append(append([]string(nil), lifecycle...), "|")
 	raw = append(raw, availability...)
+	raw = append(raw, "|")
+	raw = append(raw, archive...)
 	sum := sha256.Sum256([]byte(fmt.Sprint(raw)))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
-func encodeApplicationManagementCursor(admin string, lifecycle, availability []string, doc applicationDocument) (string, error) {
-	raw, err := json.Marshal(applicationManagementCursor{Version: 1, AdminID: admin, Fingerprint: managementFingerprint(lifecycle, availability), CreatedAt: doc.CreatedAt.UTC(), ApplicationID: doc.ID})
+func encodeApplicationManagementCursor(admin string, lifecycle, availability, archive []string, doc applicationDocument) (string, error) {
+	raw, err := json.Marshal(applicationManagementCursor{Version: 1, AdminID: admin, Fingerprint: managementFingerprint(lifecycle, availability, archive), CreatedAt: doc.CreatedAt.UTC(), ApplicationID: doc.ID})
 	if err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
-func decodeApplicationManagementCursor(token, admin string, lifecycle, availability []string) (*applicationManagementCursor, error) {
+func decodeApplicationManagementCursor(token, admin string, lifecycle, availability, archive []string) (*applicationManagementCursor, error) {
 	if token == "" {
 		return nil, nil
 	}
@@ -400,7 +405,7 @@ func decodeApplicationManagementCursor(token, admin string, lifecycle, availabil
 		return nil, managementport.ErrInvalidPageToken
 	}
 	var c applicationManagementCursor
-	if json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.AdminID != admin || c.Fingerprint != managementFingerprint(lifecycle, availability) || c.CreatedAt.IsZero() {
+	if json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.AdminID != admin || c.Fingerprint != managementFingerprint(lifecycle, availability, archive) || c.CreatedAt.IsZero() {
 		return nil, managementport.ErrInvalidPageToken
 	}
 	if _, ok := shared.ParseApplicationID(c.ApplicationID); !ok {

@@ -40,7 +40,7 @@ func (s *ApplicationManagementQueryService) ListMyApplications(ctx context.Conte
 	if q == nil {
 		q = &managementv1.ListMyApplicationsQuery{}
 	}
-	page, err := s.handler.List(ctx, identity, managementusecase.ListQuery{LifecycleStatuses: append([]string(nil), q.GetLifecycleStatuses()...), PlatformAvailabilityStatuses: append([]string(nil), q.GetPlatformAvailabilityStatuses()...), PageSize: q.GetPageSize(), PageToken: q.GetPageToken()})
+	page, err := s.handler.List(ctx, identity, managementusecase.ListQuery{LifecycleStatuses: append([]string(nil), q.GetLifecycleStatuses()...), PlatformAvailabilityStatuses: append([]string(nil), q.GetPlatformAvailabilityStatuses()...), ArchiveStatuses: append([]string(nil), q.GetArchiveStatuses()...), PageSize: q.GetPageSize(), PageToken: q.GetPageToken()})
 	if err != nil {
 		return nil, toTransportError(err)
 	}
@@ -83,7 +83,7 @@ func (s *ApplicationManagementQueryService) GetMyApplication(ctx context.Context
 	return result, nil
 }
 func managementCoreResponse(v managementdomain.ApplicationCore) *managementv1.OwnedApplicationCore {
-	return &managementv1.OwnedApplicationCore{ApplicationId: v.ApplicationID, Name: v.Name, AdminId: v.AdminID, CreatedAt: timestamppb.New(v.CreatedAt), OwnershipRevision: v.OwnershipRevision, LifecycleStatus: v.LifecycleStatus, LifecycleRevision: v.LifecycleRevision, PlatformAvailabilityStatus: v.PlatformAvailabilityStatus, PlatformAvailabilityRevision: v.PlatformAvailabilityRevision}
+	return &managementv1.OwnedApplicationCore{ApplicationId: v.ApplicationID, Name: v.Name, AdminId: v.AdminID, CreatedAt: timestamppb.New(v.CreatedAt), OwnershipRevision: v.OwnershipRevision, LifecycleStatus: v.LifecycleStatus, LifecycleRevision: v.LifecycleRevision, PlatformAvailabilityStatus: v.PlatformAvailabilityStatus, PlatformAvailabilityRevision: v.PlatformAvailabilityRevision, ArchiveStatus: v.ArchiveStatus, ArchiveRevision: v.ArchiveRevision}
 }
 func managementCountsResponse(v managementdomain.Counts) *managementv1.ApplicationManagementCounts {
 	return &managementv1.ApplicationManagementCounts{VersionCount: v.VersionCount, DraftVersionCount: v.DraftVersionCount, SubmittedVersionCount: v.SubmittedVersionCount, ApprovedVersionCount: v.ApprovedVersionCount, RejectedVersionCount: v.RejectedVersionCount, PendingVersionReviewCount: v.PendingVersionReviewCount, PendingProfileReviewCount: v.PendingProfileReviewCount, ActiveTesterCount: v.ActiveTesterCount}

@@ -11,6 +11,7 @@ var ProviderSet = wire.NewSet(
 	NewApplicationAdminTransferService,
 	NewApplicationClosureService,
 	NewApplicationOperationsService,
+	NewApplicationArchivalService,
 	NewApplicationVersionService,
 	NewApplicationReviewService,
 	NewApplicationReviewQueryService,

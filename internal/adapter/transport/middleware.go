@@ -9,6 +9,7 @@ import (
 	"github.com/go-kratos/kratos/v2/transport"
 	"google.golang.org/grpc/codes"
 
+	applicationarchivalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_archival"
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
@@ -93,6 +94,12 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
+	if operation == applicationarchivalv1.OperationApplicationArchivalServiceGetApplicationArchiveState || operation == applicationarchivalv1.OperationApplicationArchivalServiceArchiveApplication || operation == applicationarchivalv1.OperationApplicationArchivalServiceUnarchiveApplication {
+		if errors.Is(err, errIdentityRequired) {
+			return transportStatus(codes.Unauthenticated, "ERROR_REASON_USER_IDENTITY_REQUIRED", "user identity is required")
+		}
+		return transportStatus(codes.Unauthenticated, "ERROR_REASON_INVALID_USER_IDENTITY", "user identity is invalid")
+	}
 	if operation == applicationoperationsv1.OperationApplicationOperationsServiceGetApplicationPlatformAvailability || operation == applicationoperationsv1.OperationApplicationOperationsServiceSuspendApplication || operation == applicationoperationsv1.OperationApplicationOperationsServiceRestoreApplication {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, "ERROR_REASON_USER_IDENTITY_REQUIRED", "user identity is required")

@@ -88,6 +88,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: applicationOperationsMigrationID, apply: migrator.applyApplicationOperationsMigration},
 		{id: applicationManagementMigrationID, apply: migrator.applyApplicationManagementMigration},
 		{id: applicationProfileReviewQueryMigrationID, apply: migrator.applyApplicationProfileReviewQueryMigration},
+		{id: applicationArchivalMigrationID, apply: migrator.applyApplicationArchivalMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -393,28 +394,32 @@ func versionReviewPolicyValidator() bson.D {
 // equivalent to the validator a fresh 0001 deployment established; the
 // coordinationRevision fence is added by 0003, never by rewriting this stage.
 func applicationInitialValidator() bson.D {
-	return applicationValidatorForCoordination(false, false, false, false)
+	return applicationValidatorForCoordination(false, false, false, false, false)
 }
 
 // applicationValidator is the 0003 schema. It keeps the 0001 business
 // constraints and adds the adapter-only coordinationRevision write fence.
 func applicationValidator() bson.D {
-	return applicationValidatorForCoordination(true, false, false, false)
+	return applicationValidatorForCoordination(true, false, false, false, false)
 }
 
 func applicationOwnershipValidator() bson.D {
-	return applicationValidatorForCoordination(true, true, false, false)
+	return applicationValidatorForCoordination(true, true, false, false, false)
 }
 
 func applicationLifecycleValidator() bson.D {
-	return applicationValidatorForCoordination(true, true, true, false)
+	return applicationValidatorForCoordination(true, true, true, false, false)
 }
 
 func applicationAvailabilityValidator() bson.D {
-	return applicationValidatorForCoordination(true, true, true, true)
+	return applicationValidatorForCoordination(true, true, true, true, false)
 }
 
-func applicationValidatorForCoordination(includeCoordinationRevision, includeOwnershipRevision, includeLifecycle, includeAvailability bool) bson.D {
+func applicationArchivalValidator() bson.D {
+	return applicationValidatorForCoordination(true, true, true, true, true)
+}
+
+func applicationValidatorForCoordination(includeCoordinationRevision, includeOwnershipRevision, includeLifecycle, includeAvailability, includeArchival bool) bson.D {
 	required := bson.A{
 		"id", "name", "nameKey", "adminId", "createdAt",
 		"nextVersionSequence", "nextProfileRevisionSequence",
@@ -478,6 +483,15 @@ func applicationValidatorForCoordination(includeCoordinationRevision, includeOwn
 			bson.E{Key: "lastPlatformOperationEventId", Value: nullString},
 			bson.E{Key: "suspendedAt", Value: nullDate},
 			bson.E{Key: "restoredAt", Value: nullDate},
+		)
+	}
+	if includeArchival {
+		required = append(required, "archiveStatus", "archiveRevision", "lastArchiveEventId")
+		nullString := bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, bson.D{{Key: "bsonType", Value: "string"}, {Key: "pattern", Value: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"}}}}}
+		properties = append(properties,
+			bson.E{Key: "archiveStatus", Value: bson.D{{Key: "enum", Value: bson.A{"UNARCHIVED", "ARCHIVED"}}}},
+			bson.E{Key: "archiveRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
+			bson.E{Key: "lastArchiveEventId", Value: nullString},
 		)
 	}
 

@@ -32,6 +32,9 @@ type applicationDocument struct {
 	LastOperationEventID         *string    `bson:"lastPlatformOperationEventId"`
 	SuspendedAt                  *time.Time `bson:"suspendedAt"`
 	RestoredAt                   *time.Time `bson:"restoredAt"`
+	ArchiveStatus                string     `bson:"archiveStatus"`
+	ArchiveRevision              int64      `bson:"archiveRevision"`
+	LastArchiveEventID           *string    `bson:"lastArchiveEventId"`
 	CreatedAt                    time.Time  `bson:"createdAt"`
 	NextVersionSequence          int32      `bson:"nextVersionSequence"`
 	NextProfileRevisionSequence  int32      `bson:"nextProfileRevisionSequence"`
@@ -142,6 +145,9 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 		LastOperationEventID:         nil,
 		SuspendedAt:                  nil,
 		RestoredAt:                   nil,
+		ArchiveStatus:                string(domain.ApplicationArchiveUnarchived),
+		ArchiveRevision:              1,
+		LastArchiveEventID:           nil,
 		CreatedAt:                    application.CreatedAt().UTC(),
 		NextVersionSequence:          1,
 		NextProfileRevisionSequence:  1,
@@ -151,7 +157,7 @@ func applicationToDocument(application *domain.Application) (applicationDocument
 // applicationFromDocument is deliberately kept inside the persistence
 // adapter. A malformed stored document is corruption, not caller validation.
 func applicationFromDocument(document applicationDocument) (*domain.Application, error) {
-	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 || document.LifecycleRevision < 1 || document.PlatformAvailabilityRevision < 1 {
+	if document.NextVersionSequence < 1 || document.NextProfileRevisionSequence < 1 || document.OwnershipRevision < 1 || document.LifecycleRevision < 1 || document.PlatformAvailabilityRevision < 1 || document.ArchiveRevision < 1 {
 		return nil, fmt.Errorf("%w: invalid next sequence", errCorruptApplicationDocument)
 	}
 
@@ -167,7 +173,7 @@ func applicationFromDocument(document applicationDocument) (*domain.Application,
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid admin ID", errCorruptApplicationDocument)
 	}
-	application, err := domain.RestoreApplication(id, name, adminID, domain.ApplicationLifecycleStatus(document.LifecycleStatus), document.LifecycleRevision, domain.PlatformAvailabilityStatus(document.PlatformAvailabilityStatus), document.PlatformAvailabilityRevision, document.CreatedAt)
+	application, err := domain.RestoreApplication(id, name, adminID, domain.ApplicationLifecycleStatus(document.LifecycleStatus), document.LifecycleRevision, domain.PlatformAvailabilityStatus(document.PlatformAvailabilityStatus), document.PlatformAvailabilityRevision, domain.ApplicationArchiveStatus(document.ArchiveStatus), document.ArchiveRevision, document.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid application fields", errCorruptApplicationDocument)
 	}

@@ -21,6 +21,7 @@ import (
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	applicationadmintransferv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
+	applicationarchivalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_archival"
 	applicationcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_catalog"
 	applicationclosurev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_closure"
 	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
@@ -206,8 +207,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -270,6 +271,7 @@ func NewServers(
 	var transferService *ApplicationAdminTransferService
 	var closureService *ApplicationClosureService
 	var operationsService *ApplicationOperationsService
+	var archivalService *ApplicationArchivalService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
 		case *RuntimeResolutionService:
@@ -317,6 +319,11 @@ func NewServers(
 				return nil, errors.New("transport servers: application operations service is invalid")
 			}
 			operationsService = value
+		case *ApplicationArchivalService:
+			if value == nil || archivalService != nil {
+				return nil, errors.New("transport servers: application archival service is invalid")
+			}
+			archivalService = value
 		case *ServiceIdentityVerifier:
 			if value == nil || serviceVerifier != nil {
 				return nil, errors.New("transport servers: service identity verifier is invalid")
@@ -390,6 +397,9 @@ func NewServers(
 	if operationsService != nil && config.ApplicationOperationsEnabled {
 		applicationoperationsv1.RegisterApplicationOperationsServiceHTTPServer(httpServer, operationsService)
 	}
+	if archivalService != nil {
+		applicationarchivalv1.RegisterApplicationArchivalServiceHTTPServer(httpServer, archivalService)
+	}
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceHTTPServer(httpServer, filterService)
 	}
@@ -436,6 +446,9 @@ func NewServers(
 	}
 	if operationsService != nil && config.ApplicationOperationsEnabled {
 		applicationoperationsv1.RegisterApplicationOperationsServiceServer(grpcServer, operationsService)
+	}
+	if archivalService != nil {
+		applicationarchivalv1.RegisterApplicationArchivalServiceServer(grpcServer, archivalService)
 	}
 	if filterService != nil {
 		filterv1.RegisterApplicationFilterServiceServer(grpcServer, filterService)
@@ -530,6 +543,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.Header().Set("Cache-Control", "no-store")
 	case *applicationoperationsv1.GetApplicationPlatformAvailabilityResponse, *applicationoperationsv1.SuspendApplicationResponse, *applicationoperationsv1.RestoreApplicationResponse:
 		w.Header().Set("Cache-Control", "private, no-store")
+	case *applicationarchivalv1.GetApplicationArchiveStateResponse, *applicationarchivalv1.ArchiveApplicationResponse, *applicationarchivalv1.UnarchiveApplicationResponse:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *oauthclientv1.GetApplicationOAuthRegistrationResponse,
 		*oauthclientv1.SetOAuthClientStatusResponse,
 		*oauthclientv1.GetOAuthClientCredentialMetadataResponse,
@@ -551,6 +566,16 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isApplicationArchivalRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		if _, ok := applicationarchivalv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_APPLICATION_ARCHIVE_REQUEST", "application archive request is invalid")
+			} else {
+				err = transportStatus(codes.Internal, "ERROR_REASON_INTERNAL", "internal failure")
+			}
+		}
+	}
 	if isApplicationOperationsRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		if _, ok := applicationoperationsv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -648,6 +673,14 @@ func isApplicationOperationsRequest(r *http.Request) bool {
 		return true
 	}
 	return r.Method == http.MethodPost && len(parts) == 3 && parts[0] == "v1" && parts[1] == "applications" && (strings.HasSuffix(parts[2], ":suspend") || strings.HasSuffix(parts[2], ":restore"))
+}
+
+func isApplicationArchivalRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if r.Method == http.MethodGet && len(parts) == 4 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "archive-state" {
+		return true
+	}
+	return r.Method == http.MethodPost && len(parts) == 3 && parts[0] == "v1" && parts[1] == "applications" && (strings.HasSuffix(parts[2], ":archive") || strings.HasSuffix(parts[2], ":unarchive"))
 }
 
 func applicationOperationsOperation(r *http.Request) string {
