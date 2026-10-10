@@ -101,7 +101,14 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationVersionRepository := mongo.NewApplicationVersionRepository(database)
 	createApplicationVersionHandler := usecase2.NewCreateApplicationVersionHandler(scopeCatalogCache, oAuthRedirectPolicy, applicationVersionUUIDv7Generator, systemClock, applicationVersionRepository)
 	updateDraftApplicationVersionHandler := usecase2.NewUpdateDraftApplicationVersionHandler(scopeCatalogCache, oAuthRedirectPolicy, systemClock, applicationVersionRepository)
-	applicationVersionManagementRepository := mongo.NewApplicationVersionManagementRepository(database)
+	applicationVersionManagementCursorKey, err := provideApplicationVersionManagementCursorKey(configuration)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	applicationVersionManagementRepository := mongo.NewApplicationVersionManagementRepository(database, applicationVersionManagementCursorKey)
 	managementQuery := usecase2.NewManagementQuery(applicationVersionManagementRepository)
 	applicationVersionService := transport.NewApplicationVersionServiceWithQuery(createApplicationVersionHandler, updateDraftApplicationVersionHandler, managementQuery)
 	reviewScopeCatalog := auth.NewReviewScopeCatalog(scopeCatalogCache)

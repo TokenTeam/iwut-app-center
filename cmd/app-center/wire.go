@@ -35,6 +35,7 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		provideApplicationVersionManagementCursorKey,
 		managementusecase.NewQuery,
 		wire.Bind(new(transport.ApplicationManagementQueryHandler), new(*managementusecase.Query)),
 		usecase.NewApplicationAdminTransferHandlers,

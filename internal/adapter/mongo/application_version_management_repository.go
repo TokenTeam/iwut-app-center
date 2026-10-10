@@ -1,7 +1,9 @@
 package mongo
 
 import (
+	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -27,10 +29,35 @@ const (
 	applicationVersionManagementIndexName   = "ix_application_versions_application_review_sequence_version"
 )
 
-type ApplicationVersionManagementRepository struct{ database *drivermongo.Database }
+const (
+	applicationVersionManagementCursorKeyDomain = "iwut-app-center/application-version-management-cursor-key/v1"
+	applicationVersionManagementCursorMACDomain = "iwut-app-center/application-version-management-cursor-mac/v1\x00"
+)
 
-func NewApplicationVersionManagementRepository(database *drivermongo.Database) *ApplicationVersionManagementRepository {
-	return &ApplicationVersionManagementRepository{database: database}
+type ApplicationVersionManagementCursorKey struct {
+	value [sha256.Size]byte
+	valid bool
+}
+
+func DeriveApplicationVersionManagementCursorKey(secretMaterial []byte) (ApplicationVersionManagementCursorKey, error) {
+	if len(secretMaterial) == 0 {
+		return ApplicationVersionManagementCursorKey{}, fmt.Errorf("derive application version management cursor key: secret material is empty")
+	}
+	mac := hmac.New(sha256.New, secretMaterial)
+	_, _ = mac.Write([]byte(applicationVersionManagementCursorKeyDomain))
+	var key ApplicationVersionManagementCursorKey
+	copy(key.value[:], mac.Sum(nil))
+	key.valid = true
+	return key, nil
+}
+
+type ApplicationVersionManagementRepository struct {
+	database  *drivermongo.Database
+	cursorKey ApplicationVersionManagementCursorKey
+}
+
+func NewApplicationVersionManagementRepository(database *drivermongo.Database, cursorKey ApplicationVersionManagementCursorKey) *ApplicationVersionManagementRepository {
+	return &ApplicationVersionManagementRepository{database: database, cursorKey: cursorKey}
 }
 
 var _ versionport.ManagementQueryRepository = (*ApplicationVersionManagementRepository)(nil)
@@ -40,13 +67,21 @@ type applicationVersionManagementCursor struct {
 	Fingerprint string `json:"f"`
 	Sequence    int32  `json:"s"`
 	VersionID   string `json:"i"`
+	MAC         string `json:"m"`
+}
+
+type applicationVersionManagementUnsignedCursor struct {
+	Version     int    `json:"v"`
+	Fingerprint string `json:"f"`
+	Sequence    int32  `json:"s"`
+	VersionID   string `json:"i"`
 }
 
 func (r *ApplicationVersionManagementRepository) List(ctx context.Context, adminID shared.AuthID, applicationID shared.ApplicationID, reviewStatus *versiondomain.ReviewStatus, pageSize int32, pageToken string) (*versiondomain.OwnedVersionPage, error) {
-	if r == nil || r.database == nil || !adminID.IsValid() || !applicationID.IsValid() || pageSize < 1 {
+	if r == nil || r.database == nil || !r.cursorKey.valid || !adminID.IsValid() || !applicationID.IsValid() || pageSize < 1 {
 		return nil, fmt.Errorf("list application versions: invalid input")
 	}
-	cursor, err := decodeApplicationVersionManagementCursor(pageToken, adminID, applicationID, reviewStatus)
+	cursor, err := decodeApplicationVersionManagementCursor(r.cursorKey, pageToken, adminID, applicationID, reviewStatus)
 	if err != nil {
 		return nil, versionport.ErrInvalidManagementPageToken
 	}
@@ -90,7 +125,7 @@ func (r *ApplicationVersionManagementRepository) List(ctx context.Context, admin
 		}
 		next := ""
 		if hasMore && len(documents) != 0 {
-			next, err = encodeApplicationVersionManagementCursor(adminID, applicationID, reviewStatus, documents[len(documents)-1])
+			next, err = encodeApplicationVersionManagementCursor(r.cursorKey, adminID, applicationID, reviewStatus, documents[len(documents)-1])
 			if err != nil {
 				return nil, versionport.ErrManagementUnavailable
 			}
@@ -322,25 +357,68 @@ func versionManagementFingerprint(adminID shared.AuthID, applicationID shared.Ap
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-func encodeApplicationVersionManagementCursor(adminID shared.AuthID, applicationID shared.ApplicationID, reviewStatus *versiondomain.ReviewStatus, last applicationVersionDocument) (string, error) {
-	encoded, err := json.Marshal(applicationVersionManagementCursor{Version: 1, Fingerprint: versionManagementFingerprint(adminID, applicationID, reviewStatus, last.Sequence, last.VersionID), Sequence: last.Sequence, VersionID: last.VersionID})
+func encodeApplicationVersionManagementCursor(key ApplicationVersionManagementCursorKey, adminID shared.AuthID, applicationID shared.ApplicationID, reviewStatus *versiondomain.ReviewStatus, last applicationVersionDocument) (string, error) {
+	if !key.valid {
+		return "", fmt.Errorf("encode application version management cursor: invalid signing key")
+	}
+	unsigned := applicationVersionManagementUnsignedCursor{Version: 1, Fingerprint: versionManagementFingerprint(adminID, applicationID, reviewStatus, last.Sequence, last.VersionID), Sequence: last.Sequence, VersionID: last.VersionID}
+	signature, err := signApplicationVersionManagementCursor(key, unsigned)
+	if err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(applicationVersionManagementCursor{Version: unsigned.Version, Fingerprint: unsigned.Fingerprint, Sequence: unsigned.Sequence, VersionID: unsigned.VersionID, MAC: signature})
 	if err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(encoded), nil
 }
 
-func decodeApplicationVersionManagementCursor(value string, adminID shared.AuthID, applicationID shared.ApplicationID, reviewStatus *versiondomain.ReviewStatus) (*applicationVersionManagementCursor, error) {
+func decodeApplicationVersionManagementCursor(key ApplicationVersionManagementCursorKey, value string, adminID shared.AuthID, applicationID shared.ApplicationID, reviewStatus *versiondomain.ReviewStatus) (*applicationVersionManagementCursor, error) {
 	if value == "" {
 		return nil, nil
+	}
+	if !key.valid {
+		return nil, versionport.ErrInvalidManagementPageToken
 	}
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(value)
 	if err != nil || len(raw) > 4096 || base64.RawURLEncoding.EncodeToString(raw) != value {
 		return nil, versionport.ErrInvalidManagementPageToken
 	}
 	var cursor applicationVersionManagementCursor
-	if err = json.Unmarshal(raw, &cursor); err != nil || cursor.Version != 1 || cursor.Sequence < 1 || !versiondomain.ApplicationVersionID(cursor.VersionID).IsValid() || cursor.Fingerprint != versionManagementFingerprint(adminID, applicationID, reviewStatus, cursor.Sequence, cursor.VersionID) {
+	if err = json.Unmarshal(raw, &cursor); err != nil {
+		return nil, versionport.ErrInvalidManagementPageToken
+	}
+	canonical, err := json.Marshal(cursor)
+	if err != nil || !bytes.Equal(raw, canonical) {
+		return nil, versionport.ErrInvalidManagementPageToken
+	}
+	unsigned := applicationVersionManagementUnsignedCursor{Version: cursor.Version, Fingerprint: cursor.Fingerprint, Sequence: cursor.Sequence, VersionID: cursor.VersionID}
+	if cursor.Version != 1 || cursor.Sequence < 1 || !versiondomain.ApplicationVersionID(cursor.VersionID).IsValid() || cursor.Fingerprint != versionManagementFingerprint(adminID, applicationID, reviewStatus, cursor.Sequence, cursor.VersionID) || !verifyApplicationVersionManagementCursor(key, unsigned, cursor.MAC) {
 		return nil, versionport.ErrInvalidManagementPageToken
 	}
 	return &cursor, nil
+}
+
+func signApplicationVersionManagementCursor(key ApplicationVersionManagementCursorKey, cursor applicationVersionManagementUnsignedCursor) (string, error) {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, key.value[:])
+	_, _ = mac.Write([]byte(applicationVersionManagementCursorMACDomain))
+	_, _ = mac.Write(payload)
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func verifyApplicationVersionManagementCursor(key ApplicationVersionManagementCursorKey, cursor applicationVersionManagementUnsignedCursor, encodedMAC string) bool {
+	provided, err := base64.RawURLEncoding.Strict().DecodeString(encodedMAC)
+	if err != nil || len(provided) != sha256.Size || base64.RawURLEncoding.EncodeToString(provided) != encodedMAC {
+		return false
+	}
+	want, err := signApplicationVersionManagementCursor(key, cursor)
+	if err != nil {
+		return false
+	}
+	expected, err := base64.RawURLEncoding.DecodeString(want)
+	return err == nil && hmac.Equal(provided, expected)
 }

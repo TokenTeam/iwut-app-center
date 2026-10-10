@@ -91,6 +91,10 @@ func provideScopeCatalogCacheTTL(configuration config.Config) time.Duration {
 	return configuration.ScopeCatalogCacheTTL
 }
 
+func provideApplicationVersionManagementCursorKey(configuration config.Config) (mongo.ApplicationVersionManagementCursorKey, error) {
+	return mongo.DeriveApplicationVersionManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
+}
+
 func provideServiceIdentitySigner(configuration config.Config, clock port.Clock) (*authadapter.ServiceIdentitySigner, error) {
 	return authadapter.NewServiceIdentitySigner(authadapter.ServiceIdentitySignerConfig{
 		ServiceID:     configuration.ServiceIdentityID,

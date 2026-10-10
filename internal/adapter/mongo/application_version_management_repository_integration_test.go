@@ -2,9 +2,9 @@ package mongo
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,28 +18,95 @@ import (
 )
 
 func TestApplicationVersionManagementCursorRejectsNonCanonicalBase64(t *testing.T) {
+	key := applicationVersionManagementTestCursorKey(t)
 	adminID := shared.AuthID("version-management-admin")
 	applicationID := shared.ApplicationID("019a0000-0000-7000-8000-000000000001")
 	document := applicationVersionDocument{VersionID: "019a0000-0000-7000-8000-000000000002", Sequence: 2}
-	token, err := encodeApplicationVersionManagementCursor(adminID, applicationID, nil, document)
+	token, err := encodeApplicationVersionManagementCursor(key, adminID, applicationID, nil, document)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = decodeApplicationVersionManagementCursor(token, adminID, applicationID, nil); err != nil {
+	if _, err = decodeApplicationVersionManagementCursor(key, token, adminID, applicationID, nil); err != nil {
 		t.Fatalf("canonical token rejected: %v", err)
 	}
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-	if len(token)%4 != 2 {
-		t.Fatalf("fixture token length mod 4 = %d, want 2", len(token)%4)
-	}
-	last := strings.IndexByte(alphabet, token[len(token)-1])
-	if last < 0 || last&15 != 0 {
-		t.Fatalf("fixture token has unexpected final base64 symbol %q", token[len(token)-1])
-	}
-	nonCanonical := token[:len(token)-1] + string(alphabet[last|1])
-	if _, err = decodeApplicationVersionManagementCursor(nonCanonical, adminID, applicationID, nil); !errors.Is(err, versionport.ErrInvalidManagementPageToken) {
+	nonCanonical := token + "="
+	if _, err = decodeApplicationVersionManagementCursor(key, nonCanonical, adminID, applicationID, nil); !errors.Is(err, versionport.ErrInvalidManagementPageToken) {
 		t.Fatalf("non-canonical token error = %v, want invalid page token", err)
 	}
+}
+
+func TestApplicationVersionManagementCursorRejectsTamperedSortKeys(t *testing.T) {
+	key := applicationVersionManagementTestCursorKey(t)
+	adminID := shared.AuthID("version-management-admin")
+	applicationID := shared.ApplicationID("019a0000-0000-7000-8000-000000000001")
+	document := applicationVersionDocument{VersionID: "019a0000-0000-7000-8000-000000000002", Sequence: 2}
+	token, err := encodeApplicationVersionManagementCursor(key, adminID, applicationID, nil, document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original applicationVersionManagementCursor
+	if err = json.Unmarshal(raw, &original); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name                   string
+		mutate                 func(*applicationVersionManagementCursor)
+		recalculateFingerprint bool
+	}{
+		{"sequence with retained fingerprint", func(cursor *applicationVersionManagementCursor) { cursor.Sequence++ }, false},
+		{"sequence with recomputed fingerprint", func(cursor *applicationVersionManagementCursor) { cursor.Sequence++ }, true},
+		{"version ID with retained fingerprint", func(cursor *applicationVersionManagementCursor) {
+			cursor.VersionID = "019a0000-0000-7000-8000-000000000003"
+		}, false},
+		{"version ID with recomputed fingerprint", func(cursor *applicationVersionManagementCursor) {
+			cursor.VersionID = "019a0000-0000-7000-8000-000000000003"
+		}, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			forged := original
+			test.mutate(&forged)
+			if test.recalculateFingerprint {
+				forged.Fingerprint = versionManagementFingerprint(adminID, applicationID, nil, forged.Sequence, forged.VersionID)
+			}
+			encoded, marshalErr := json.Marshal(forged)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			forgedToken := base64.RawURLEncoding.EncodeToString(encoded)
+			if _, decodeErr := decodeApplicationVersionManagementCursor(key, forgedToken, adminID, applicationID, nil); !errors.Is(decodeErr, versionport.ErrInvalidManagementPageToken) {
+				t.Fatalf("tampered token error = %v, want invalid page token", decodeErr)
+			}
+		})
+	}
+	otherKey, err := DeriveApplicationVersionManagementCursorKey([]byte("different-test-only-signing-material"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = decodeApplicationVersionManagementCursor(otherKey, token, adminID, applicationID, nil); !errors.Is(err, versionport.ErrInvalidManagementPageToken) {
+		t.Fatalf("token verified under a different key: %v", err)
+	}
+	if _, err = DeriveApplicationVersionManagementCursorKey(nil); err == nil {
+		t.Fatal("empty signing material was accepted")
+	}
+}
+
+func applicationVersionManagementTestCursorKey(t *testing.T) ApplicationVersionManagementCursorKey {
+	t.Helper()
+	key, err := DeriveApplicationVersionManagementCursorKey([]byte("test-only-application-version-management-signing-material"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+func newApplicationVersionManagementTestRepository(t *testing.T, database *drivermongo.Database) *ApplicationVersionManagementRepository {
+	t.Helper()
+	return NewApplicationVersionManagementRepository(database, applicationVersionManagementTestCursorKey(t))
 }
 
 func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
@@ -49,7 +116,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 		database := migratedIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-admin", "version_management_all_states")
 		fixture := createVersionManagementFixture(t, database, application.ID(), application.AdminID())
-		repository := NewApplicationVersionManagementRepository(database)
+		repository := newApplicationVersionManagementTestRepository(t, database)
 
 		first, err := repository.List(t.Context(), application.AdminID(), application.ID(), nil, 2, "")
 		if err != nil || len(first.Items) != 2 || first.Items[0].Sequence <= first.Items[1].Sequence || first.NextPageToken == "" || first.AsOf.IsZero() {
@@ -101,7 +168,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 		for _, label := range []string{"one", "two"} {
 			createVersionManagementDraft(t, database, application.ID(), application.AdminID(), label)
 		}
-		repository := NewApplicationVersionManagementRepository(database)
+		repository := newApplicationVersionManagementTestRepository(t, database)
 		page, err := repository.List(t.Context(), application.AdminID(), application.ID(), nil, 1, "")
 		if err != nil || page.NextPageToken == "" {
 			t.Fatalf("old admin page=%#v err=%v", page, err)
@@ -143,7 +210,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 		database := migratedIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-history", "version_management_history")
 		version := createVersionManagementDraft(t, database, application.ID(), application.AdminID(), "history")
-		repository := NewApplicationVersionManagementRepository(database)
+		repository := newApplicationVersionManagementTestRepository(t, database)
 		states := []bson.M{
 			{"platformAvailabilityStatus": "SUSPENDED", "platformAvailabilityRevision": int64(2)},
 			{"archiveStatus": "ARCHIVED", "archiveRevision": int64(2)},
@@ -164,7 +231,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 		database := migratedIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-corrupt", "version_management_corrupt")
 		version := createVersionManagementDraft(t, database, application.ID(), application.AdminID(), "corrupt")
-		repository := NewApplicationVersionManagementRepository(database)
+		repository := newApplicationVersionManagementTestRepository(t, database)
 		if _, err := database.Collection(applicationVersionOAuthConfigsCollectionName).DeleteOne(t.Context(), bson.M{"applicationVersionId": version.ID().String()}); err != nil {
 			t.Fatal(err)
 		}
@@ -179,7 +246,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 		if _, err := database.Collection(applicationVersionsCollectionName).UpdateOne(t.Context(), bson.M{"versionId": version.ID().String()}, bson.M{"$set": bson.M{"revision": int64(9)}}); err != nil {
 			t.Fatal(err)
 		}
-		repository = NewApplicationVersionManagementRepository(database)
+		repository = newApplicationVersionManagementTestRepository(t, database)
 		if _, err := repository.List(t.Context(), application.AdminID(), application.ID(), nil, 20, ""); !errors.Is(err, versionport.ErrManagementStateInconsistent) {
 			t.Fatalf("review relation error=%v", err)
 		}
