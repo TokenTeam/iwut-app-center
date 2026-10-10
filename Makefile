@@ -14,6 +14,7 @@ help:
 	@echo "  make test          run the unit/transport/architecture suite"
 	@echo "  make test-mongo    run the MongoDB integration and all HTTP/gRPC E2E suites"
 	@echo "  make test-auth-app run the production-identity Auth+App double-service E2E"
+	@echo "  make test-uc033-auth-app run the published-Auth UC033 OAuth archival E2E"
 	@echo "  make vet           run go vet"
 	@echo "  make wire-check    fail if wire_gen.go is stale"
 	@echo "  make api-check     fail if generated API code drifted from Proto"
@@ -58,6 +59,10 @@ test-mongo:
 .PHONY: test-auth-app
 test-auth-app:
 	./scripts/test-auth-app-integration.sh
+
+.PHONY: test-uc033-auth-app
+test-uc033-auth-app:
+	./scripts/test-uc033-auth-app-integration.sh
 
 .PHONY: vet
 vet:
