@@ -4,31 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	publicationport "iwut-app-center/internal/publication/port"
-	"math"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-	drivermongo "go.mongodb.org/mongo-driver/v2/mongo"
+	m "go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readconcern"
-	catalogdomain "iwut-app-center/internal/catalog/domain"
-	catalogport "iwut-app-center/internal/catalog/port"
+	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
+	cd "iwut-app-center/internal/catalog/domain"
+	cp "iwut-app-center/internal/catalog/port"
 	"iwut-app-center/internal/shared"
 )
 
-// TestLaunchResolver combines existing facts in one read-only snapshot. Unlike
-// write commands it deliberately acquires no coordination fence: a successful
-// descriptor describes its snapshot, not a lease on future membership or slots.
-type TestLaunchResolver struct{ database *drivermongo.Database }
+// TestLaunchResolver retains UC012's single-target RPC semantics and delegates
+// pure Test fact loading/resolution to the same batch core as UC038.
+type TestLaunchResolver struct{ database *m.Database }
 
-func NewTestLaunchResolver(database *drivermongo.Database) *TestLaunchResolver {
-	return &TestLaunchResolver{database: database}
-}
+func NewTestLaunchResolver(db *m.Database) *TestLaunchResolver { return &TestLaunchResolver{db} }
 
-var _ catalogport.TestLaunchResolver = (*TestLaunchResolver)(nil)
+var _ cp.TestLaunchResolver = (*TestLaunchResolver)(nil)
 
-func (r *TestLaunchResolver) ResolveForTester(ctx context.Context, appID shared.ApplicationID, authID shared.AuthID, major int32, host []catalogdomain.CapabilityName) (*catalogdomain.TestLaunchDescriptor, error) {
-	if r == nil || r.database == nil || !appID.IsValid() || !authID.IsValid() || major < 1 {
+func (r *TestLaunchResolver) ResolveForTester(ctx context.Context, app shared.ApplicationID, caller shared.AuthID, major int32, host []cd.CapabilityName) (*cd.TestLaunchDescriptor, error) {
+	if r == nil || r.database == nil || !app.IsValid() || !caller.IsValid() || major < 1 {
 		return nil, fmt.Errorf("resolve test launch: invalid repository input")
 	}
 	session, err := r.database.Client().StartSession()
@@ -36,121 +32,52 @@ func (r *TestLaunchResolver) ResolveForTester(ctx context.Context, appID shared.
 		return nil, safeTestLaunchError(err)
 	}
 	defer session.EndSession(ctx)
-	result, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) {
-		return r.resolveSnapshot(tx, appID, authID, major, host)
-	}, options.Transaction().SetReadConcern(readconcern.Snapshot()))
+	value, err := session.WithTransaction(ctx, func(tx context.Context) (any, error) { return r.resolveSnapshot(tx, app, caller, major, host) }, options.Transaction().SetReadConcern(readconcern.Snapshot()).SetWriteConcern(writeconcern.Majority()))
 	if err != nil {
 		return nil, safeTestLaunchError(err)
 	}
-	return result.(*catalogdomain.TestLaunchDescriptor), nil
+	return value.(*cd.TestLaunchDescriptor), nil
 }
-
-func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.ApplicationID, authID shared.AuthID, major int32, host []catalogdomain.CapabilityName) (*catalogdomain.TestLaunchDescriptor, error) {
-	// Authorization precedes every publication/version read, including failures.
-	gate, err := readApplicationAvailabilityGate(ctx, r.database, appID.String())
+func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, app shared.ApplicationID, caller shared.AuthID, major int32, host []cd.CapabilityName) (*cd.TestLaunchDescriptor, error) {
+	gate, err := readApplicationAvailabilityGate(ctx, r.database, app.String())
 	if err != nil {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
+		return nil, cp.ErrApplicationTestPublicationInconsistent
 	}
 	if gate != applicationGateAvailable {
-		return nil, catalogport.ErrApplicationNotFound
+		return nil, cp.ErrApplicationNotFound
 	}
-	err = r.database.Collection(applicationTesterMembershipsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: appID.String()}, {Key: "testerAuthId", Value: authID.String()}, {Key: "status", Value: "ACTIVE"}}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
-	if errors.Is(err, drivermongo.ErrNoDocuments) {
-		return nil, catalogport.ErrApplicationTesterRequired
-	}
-	if err != nil {
-		return nil, err
-	}
-	var publication applicationPublicationDocument
-	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: appID.String()}, {Key: "rpcApiMajor", Value: major}}), &publication)
-	if errors.Is(err, drivermongo.ErrNoDocuments) {
-		return nil, catalogport.ErrApplicationTestTargetUnavailable
+	err = r.database.Collection(applicationTesterMembershipsCollectionName).FindOne(ctx, bson.M{"applicationId": app.String(), "testerAuthId": caller.String(), "status": "ACTIVE"}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+	if errors.Is(err, m.ErrNoDocuments) {
+		return nil, cp.ErrApplicationTesterRequired
 	}
 	if err != nil {
 		return nil, err
 	}
-	if _, err := applicationPublicationFromDocument(publication); err != nil {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
+	facts, err := loadPureTestFacts(ctx, r.database, []string{app.String()}, major)
+	if errors.Is(err, cd.ErrMyTestApplicationStateInconsistent) {
+		return nil, cp.ErrApplicationTestPublicationInconsistent
 	}
-	if err := checkTestPublicationHistory(ctx, r.database, publication); err != nil {
-		if errors.Is(err, publicationport.ErrApplicationPublicationStateInconsistent) {
-			return nil, catalogport.ErrApplicationTestPublicationInconsistent
-		}
+	if err != nil {
 		return nil, err
 	}
-	if publication.TestVersionID == nil {
-		return nil, catalogport.ErrApplicationTestTargetUnavailable
-	}
-	var history applicationPublicationHistoryDocument
-	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.D{{Key: "publicationId", Value: publication.PublicationID}, {Key: "publicationRevision", Value: bson.D{{Key: "$lte", Value: publication.Revision}}}, {Key: "action", Value: "SET_TEST_VERSION"}, {Key: "newVersionId", Value: *publication.TestVersionID}}, options.FindOne().SetSort(bson.D{{Key: "publicationRevision", Value: -1}})), &history)
+	target, missing, err := resolvePureTest(app, major, host, facts)
 	if err != nil {
-		return nil, missingTestLaunchFact(err)
+		return nil, cp.ErrApplicationTestPublicationInconsistent
 	}
-	if history.ApplicationID != appID.String() || history.RPCAPIMajor != major || history.NewVersionID == nil || *history.NewVersionID != *publication.TestVersionID || history.Action != "SET_TEST_VERSION" || history.ApprovedReviewID == nil || !shared.IsUUIDv7(*history.ApprovedReviewID) {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
+	if len(missing) > 0 {
+		return nil, cd.NewHostCapabilitiesInsufficientError(missing)
 	}
-	var version applicationVersionDocument
-	err = decodeTestLaunchDocument(r.database.Collection(applicationVersionsCollectionName).FindOne(ctx, bson.D{{Key: "versionId", Value: *publication.TestVersionID}, {Key: "applicationId", Value: appID.String()}}), &version)
-	if err != nil {
-		return nil, missingTestLaunchFact(err)
+	if target == nil {
+		return nil, cp.ErrApplicationTestTargetUnavailable
 	}
-	if _, err := applicationVersionFromDocument(version); err != nil || version.ReviewStatus != "APPROVED" || major < version.RPCApiMinVersion || major >= version.RPCApiMaxVersionExclusive {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
-	}
-	var review applicationReviewDocument
-	err = decodeTestLaunchDocument(r.database.Collection(applicationReviewsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: appID.String()}, {Key: "versionId", Value: version.VersionID}}, options.FindOne().SetSort(bson.D{{Key: "attempt", Value: -1}})), &review)
-	if err != nil {
-		return nil, missingTestLaunchFact(err)
-	}
-	approved, err := applicationReviewFromDocument(review)
-	if err != nil || review.ReviewID != *history.ApprovedReviewID || review.Status != "APPROVED" || review.Decision == nil || review.Decision.Outcome != "APPROVED" || review.SourceVersionRevision > math.MaxInt64-2 || version.Revision != review.SourceVersionRevision+2 {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
-	}
-	_, _, snapshot, err := applicationVersionDocumentToDecisionVersion(version)
-	if err != nil || !snapshot.Equal(approved.Snapshot()) || version.UpdatedBy != review.Decision.DecidedBy || !version.UpdatedAt.Equal(review.Decision.DecidedAt) {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
-	}
-	required := make([]catalogdomain.CapabilityName, len(version.RequiredCapabilities))
-	for i, name := range version.RequiredCapabilities {
-		required[i] = catalogdomain.CapabilityName(name)
-	}
-	if missing := catalogdomain.MissingCapabilities(required, host); len(missing) != 0 {
-		return nil, catalogdomain.NewHostCapabilitiesInsufficientError(missing)
-	}
-	descriptor, err := catalogdomain.NewTestLaunchDescriptor(appID, publication.PublicationID, publication.Revision, major, version.VersionID, version.VersionLabel, version.LaunchURL, version.RPCApiMinVersion, version.RPCApiMaxVersionExclusive, required, version.RequiredScopes, version.OptionalScopes)
-	if err != nil {
-		return nil, catalogport.ErrApplicationTestPublicationInconsistent
-	}
-	return descriptor, nil
+	return target, nil
 }
-
-// Decode errors describe corrupt stored facts, while operation errors retain
-// their driver labels until WithTransaction finishes its retry decisions.
-func decodeTestLaunchDocument(result *drivermongo.SingleResult, target any) error {
-	raw, err := result.Raw()
-	if err != nil {
-		return err
-	}
-	if err := bson.Unmarshal(raw, target); err != nil {
-		return catalogport.ErrApplicationTestPublicationInconsistent
-	}
-	return nil
-}
-
-func missingTestLaunchFact(err error) error {
-	if errors.Is(err, drivermongo.ErrNoDocuments) {
-		return catalogport.ErrApplicationTestPublicationInconsistent
-	}
-	return err
-}
-
 func safeTestLaunchError(err error) error {
-	for _, business := range []error{catalogport.ErrApplicationNotFound, catalogport.ErrApplicationTesterRequired, catalogport.ErrApplicationTestTargetUnavailable, catalogport.ErrApplicationTestPublicationInconsistent, catalogdomain.ErrHostCapabilitiesInsufficient} {
-		if errors.Is(err, business) {
+	for _, known := range []error{cp.ErrApplicationNotFound, cp.ErrApplicationTesterRequired, cp.ErrApplicationTestTargetUnavailable, cp.ErrApplicationTestPublicationInconsistent, cd.ErrHostCapabilitiesInsufficient} {
+		if errors.Is(err, known) {
 			return err
 		}
 	}
-	// Database error messages may contain arbitrary persisted user content.
 	class := "storage failure"
 	if errors.Is(err, context.Canceled) {
 		class = "canceled"

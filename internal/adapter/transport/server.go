@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	testcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/test_application_catalog"
 	"io"
+	catalogdomain "iwut-app-center/internal/catalog/domain"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	"net/http"
 	"strings"
@@ -221,8 +223,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, testerManagementService *ApplicationTesterManagementService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, testerManagementService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, testerManagementService *ApplicationTesterManagementService, testCatalogService *TestApplicationCatalogService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, testerManagementService, testCatalogService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -287,8 +289,14 @@ func NewServers(
 	var operationsService *ApplicationOperationsService
 	var archivalService *ApplicationArchivalService
 	var testerManagementService *ApplicationTesterManagementService
+	var testCatalogService *TestApplicationCatalogService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
+		case *TestApplicationCatalogService:
+			if value == nil || testCatalogService != nil {
+				return nil, errors.New("transport servers: test application catalog service is invalid")
+			}
+			testCatalogService = value
 		case *ApplicationTesterManagementService:
 			if value == nil || testerManagementService != nil {
 				return nil, errors.New("transport servers: tester management service is invalid")
@@ -389,6 +397,9 @@ func NewServers(
 	}
 	profilev1.RegisterApplicationProfileRevisionHTTPServer(httpServer, profileService)
 	catalogv1.RegisterCatalogHTTPServer(httpServer, catalogService)
+	if testCatalogService != nil {
+		testcatalogv1.RegisterTestApplicationCatalogServiceHTTPServer(httpServer, testCatalogService)
+	}
 	if runtimeResolutionService != nil {
 		runtimev1.RegisterRuntimeResolutionServiceHTTPServer(httpServer, runtimeResolutionService)
 	}
@@ -442,6 +453,9 @@ func NewServers(
 	}
 	profilev1.RegisterApplicationProfileRevisionServer(grpcServer, profileService)
 	catalogv1.RegisterCatalogServer(grpcServer, catalogService)
+	if testCatalogService != nil {
+		testcatalogv1.RegisterTestApplicationCatalogServiceServer(grpcServer, testCatalogService)
+	}
 	if runtimeResolutionService != nil {
 		runtimev1.RegisterRuntimeResolutionServiceServer(grpcServer, runtimeResolutionService)
 	}
@@ -493,6 +507,8 @@ func NewServers(
 // code, so overriding it here is safe and transport-local.
 func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error {
 	switch response := v.(type) {
+	case *testcatalogv1.MyTestApplicationPage, *testcatalogv1.MyTestApplicationDetail:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *profilereviewv1.DecideApplicationProfileRevisionReviewResponse:
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetProfileRevision().GetRevision()))
 	case *profilereviewv1.SubmitApplicationProfileRevisionReviewResponse:
@@ -598,6 +614,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isMyTestApplicationRequest(r) {
+		myTestApplicationSafeErrorEncoder(w, r, err)
+		return
+	}
 	if isTesterManagementRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		if _, ok := testermanagementv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
@@ -962,6 +982,37 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isMyTestApplicationRequest(r) {
+				w.Header().Set("Cache-Control", "private, no-store")
+				operation := ListMyTestApplicationsGRPCMethod
+				if r.URL.Path != "/v1/test-applications:search" {
+					operation = GetMyTestApplicationGRPCMethod
+				}
+				identityErr := error(nil)
+				for _, key := range legacyIdentityHeaders {
+					if len(r.Header.Values(key)) != 0 {
+						identityErr = errIdentityInvalid
+					}
+				}
+				values := r.Header.Values(IdentityHeader)
+				if identityErr == nil {
+					if len(values) == 0 {
+						identityErr = errIdentityRequired
+					} else if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+						identityErr = errIdentityInvalid
+					} else {
+						_, identityErr = verifier.Verify(strings.TrimSpace(values[0]))
+					}
+				}
+				if identityErr != nil {
+					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if !validMyTestApplicationHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, toTransportError(catalogdomain.ErrInvalidMyTestApplicationQuery))
+					return
+				}
+			}
 			if isClearTestSlotRequest(r) {
 				w.Header().Set("Cache-Control", "private, no-store")
 				values := r.Header.Values(IdentityHeader)

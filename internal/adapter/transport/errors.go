@@ -419,6 +419,11 @@ var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
 }
 
 var catalogDomainErrorSpecs = map[catalogdomain.ErrorCode]errorSpec{
+	catalogdomain.ErrorCodeInvalidMyTestApplicationQuery:          {code: codes.InvalidArgument, reason: "ERROR_REASON_INVALID_MY_TEST_APPLICATION_QUERY", message: "test participation query is invalid"},
+	catalogdomain.ErrorCodeInvalidMyTestApplicationPageToken:      {code: codes.InvalidArgument, reason: "ERROR_REASON_INVALID_MY_TEST_APPLICATION_PAGE_TOKEN", message: "test participation page token is invalid"},
+	catalogdomain.ErrorCodeMyTestApplicationNotFound:              {code: codes.NotFound, reason: "ERROR_REASON_MY_TEST_APPLICATION_NOT_FOUND", message: "test participation not found"},
+	catalogdomain.ErrorCodeMyTestApplicationStateInconsistent:     {code: codes.Internal, reason: "ERROR_REASON_MY_TEST_APPLICATION_STATE_INCONSISTENT", message: "test participation state is inconsistent"},
+	catalogdomain.ErrorCodeMyTestApplicationUnavailable:           {code: codes.Unavailable, reason: "ERROR_REASON_MY_TEST_APPLICATION_UNAVAILABLE", message: "test participation query is unavailable"},
 	catalogdomain.ErrorCodeAuthenticatedUserRequired:              {code: codes.Unauthenticated, reason: ReasonAuthenticatedUserRequired, message: "authenticated user is required"},
 	catalogdomain.ErrorCodeInvalidApplicationID:                   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationID, message: "application ID is invalid"},
 	catalogdomain.ErrorCodeInvalidHostRPCAPIMajor:                 {code: codes.InvalidArgument, reason: ReasonInvalidHostRPCAPIMajor, message: "host RPC API major is invalid"},
