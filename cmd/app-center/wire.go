@@ -36,6 +36,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	panic(wire.Build(
 		generator.ProviderSet,
 		provideApplicationVersionManagementCursorKey,
+		provideTesterManagementCursorKey,
+		testerusecase.NewManagementQuery,
+		wire.Bind(new(transport.TesterManagementQueryHandler), new(*testerusecase.ManagementQuery)),
 		managementusecase.NewQuery,
 		wire.Bind(new(transport.ApplicationManagementQueryHandler), new(*managementusecase.Query)),
 		usecase.NewApplicationAdminTransferHandlers,

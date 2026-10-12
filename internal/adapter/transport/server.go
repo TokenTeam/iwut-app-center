@@ -39,6 +39,7 @@ import (
 	oauthclientv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/oauth_client"
 	runtimev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/runtime_resolution"
 	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
+	testermanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_management"
 	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 )
 
@@ -220,8 +221,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, testerManagementService *ApplicationTesterManagementService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, testerManagementService, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -285,8 +286,14 @@ func NewServers(
 	var closureService *ApplicationClosureService
 	var operationsService *ApplicationOperationsService
 	var archivalService *ApplicationArchivalService
+	var testerManagementService *ApplicationTesterManagementService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
+		case *ApplicationTesterManagementService:
+			if value == nil || testerManagementService != nil {
+				return nil, errors.New("transport servers: tester management service is invalid")
+			}
+			testerManagementService = value
 		case *RuntimeResolutionService:
 			if value == nil || runtimeResolutionService != nil {
 				return nil, errors.New("transport servers: runtime resolution service is invalid")
@@ -391,6 +398,9 @@ func NewServers(
 	if managementService != nil {
 		applicationmanagementv1.RegisterApplicationManagementQueryServiceHTTPServer(httpServer, managementService)
 	}
+	if testerManagementService != nil {
+		testermanagementv1.RegisterApplicationTesterManagementServiceHTTPServer(httpServer, testerManagementService)
+	}
 	testermembershipv1.RegisterTesterMembershipHTTPServer(httpServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
@@ -440,6 +450,9 @@ func NewServers(
 	}
 	if managementService != nil {
 		applicationmanagementv1.RegisterApplicationManagementQueryServiceServer(grpcServer, managementService)
+	}
+	if testerManagementService != nil {
+		testermanagementv1.RegisterApplicationTesterManagementServiceServer(grpcServer, testerManagementService)
 	}
 	testermembershipv1.RegisterTesterMembershipServer(grpcServer, testerMembershipService)
 	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
@@ -585,6 +598,16 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isTesterManagementRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		if _, ok := testermanagementv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = toTransportError(testerdomain.ErrInvalidApplicationTesterManagementQuery)
+			} else {
+				err = toTransportError(testerdomain.ErrInternal)
+			}
+		}
+	}
 	if isClearTestSlotRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		converted := kerrors.FromError(err)
@@ -966,9 +989,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					return
 				}
 			}
-			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
+			if isTesterManagementRequest(r) || isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
-				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
+				if isTesterManagementRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
 				}
 				var identityErr error
@@ -1054,6 +1077,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					if isApplicationOperationsRequest(r) {
 						operation = applicationOperationsOperation(r)
 					}
+					if isTesterManagementRequest(r) {
+						operation = testermanagementv1.OperationApplicationTesterManagementServiceGetApplicationTesterManagement
+					}
 					if isApplicationVersionManagementRequest(r) {
 						operation = applicationVersionManagementOperation(r)
 					}
@@ -1095,6 +1121,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if isRuntimeResolutionRequest(r) && !validRuntimeResolutionHTTPInput(r) {
 					credentialSafeErrorEncoder(w, r, invalidResolveLaunchTargetRequest())
+					return
+				}
+				if isTesterManagementRequest(r) && !validTesterManagementHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, toTransportError(testerdomain.ErrInvalidApplicationTesterManagementQuery))
 					return
 				}
 				if isPublicCatalogRequest(r) && !validApplicationCatalogHTTPInput(r) {

@@ -95,6 +95,10 @@ func provideApplicationVersionManagementCursorKey(configuration config.Config) (
 	return mongo.DeriveApplicationVersionManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
 }
 
+func provideTesterManagementCursorKey(configuration config.Config) (mongo.TesterManagementCursorKey, error) {
+	return mongo.DeriveTesterManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
+}
+
 func provideServiceIdentitySigner(configuration config.Config, clock port.Clock) (*authadapter.ServiceIdentitySigner, error) {
 	return authadapter.NewServiceIdentitySigner(authadapter.ServiceIdentitySignerConfig{
 		ServiceID:     configuration.ServiceIdentityID,
