@@ -30,7 +30,9 @@ def git(root, *args):
 def checkout_docs(repository, ref):
     """Clone the selected docs revision without depending on workspace layout."""
     checkout = tempfile.TemporaryDirectory(prefix="iwut-docs-")
-    path = Path(checkout.name)
+    # The authoritative docs tools resolve their workspace parent and then
+    # append "docs"; preserve that layout inside the isolated checkout.
+    path = Path(checkout.name) / "docs"
     try:
         subprocess.run(
             ["git", "clone", "--quiet", "--depth", "1", "--single-branch", "--branch", ref, repository, str(path)],

@@ -62,6 +62,7 @@ class VerificationTests(unittest.TestCase):
         branch = self.call_git("branch", "--show-current").decode().strip()
         checkout, docs = verify.checkout_docs(str(self.root), branch)
         self.addCleanup(checkout.cleanup)
+        self.assertEqual(docs, Path(checkout.name) / "docs")
         self.assertEqual((docs / "source.txt").read_text(), "original\n")
         self.assertEqual(verify.git(docs, "rev-parse", "HEAD"), verify.git(self.root, "rev-parse", "HEAD"))
 
