@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publicationport "iwut-app-center/internal/publication/port"
 	"math"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -62,7 +63,7 @@ func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.A
 	}
 	var publication applicationPublicationDocument
 	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationsCollectionName).FindOne(ctx, bson.D{{Key: "applicationId", Value: appID.String()}, {Key: "rpcApiMajor", Value: major}}), &publication)
-	if errors.Is(err, drivermongo.ErrNoDocuments) || (err == nil && publication.TestVersionID == nil) {
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, catalogport.ErrApplicationTestTargetUnavailable
 	}
 	if err != nil {
@@ -70,6 +71,15 @@ func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, appID shared.A
 	}
 	if _, err := applicationPublicationFromDocument(publication); err != nil {
 		return nil, catalogport.ErrApplicationTestPublicationInconsistent
+	}
+	if err := checkTestPublicationHistory(ctx, r.database, publication); err != nil {
+		if errors.Is(err, publicationport.ErrApplicationPublicationStateInconsistent) {
+			return nil, catalogport.ErrApplicationTestPublicationInconsistent
+		}
+		return nil, err
+	}
+	if publication.TestVersionID == nil {
+		return nil, catalogport.ErrApplicationTestTargetUnavailable
 	}
 	var history applicationPublicationHistoryDocument
 	err = decodeTestLaunchDocument(r.database.Collection(applicationPublicationHistoryCollectionName).FindOne(ctx, bson.D{{Key: "publicationId", Value: publication.PublicationID}, {Key: "publicationRevision", Value: bson.D{{Key: "$lte", Value: publication.Revision}}}, {Key: "action", Value: "SET_TEST_VERSION"}, {Key: "newVersionId", Value: *publication.TestVersionID}}, options.FindOne().SetSort(bson.D{{Key: "publicationRevision", Value: -1}})), &history)

@@ -946,7 +946,7 @@ func TestApplicationPublicationMigrationIntegration(t *testing.T) {
 			{"zero major", applicationPublicationsCollectionName, base, "rpcApiMajor", int32(0), false},
 			{"zero revision", applicationPublicationsCollectionName, base, "revision", int64(0), false},
 			{"missing audit", applicationPublicationsCollectionName, base, "updatedAt", nil, true},
-			{"invalid history action", applicationPublicationHistoryCollectionName, history, "action", "CLEAR_TEST_VERSION", false},
+			{"invalid history action", applicationPublicationHistoryCollectionName, history, "action", "UNKNOWN_ACTION", false},
 			{"missing approved review", applicationPublicationHistoryCollectionName, history, "approvedReviewId", nil, true},
 			{"missing catalog revision", applicationPublicationHistoryCollectionName, history, "scopeCatalogRevision", nil, true},
 			{"zero catalog revision", applicationPublicationHistoryCollectionName, history, "scopeCatalogRevision", int64(0), false},

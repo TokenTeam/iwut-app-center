@@ -20,6 +20,7 @@ const (
 	ErrorCodeDeveloperIdentityRequired               ErrorCode = "DeveloperIdentityRequired"
 	ErrorCodeDeveloperApprovalRequired               ErrorCode = "DeveloperApprovalRequired"
 	ErrorCodeInvalidRpcApiMajor                      ErrorCode = "InvalidRpcApiMajor"
+	ErrorCodeInvalidApplicationID                    ErrorCode = "InvalidApplicationId"
 	ErrorCodeInvalidApplicationVersionId             ErrorCode = "InvalidApplicationVersionId"
 	ErrorCodeInvalidApplicationPublicationRevision   ErrorCode = "InvalidApplicationPublicationRevision"
 	ErrorCodeInvalidGreyExposureBasisPoints          ErrorCode = "InvalidGreyExposureBasisPoints"
@@ -30,6 +31,7 @@ const (
 	ErrorCodeApplicationVersionRpcApiIncompatible    ErrorCode = "ApplicationVersionRpcApiIncompatible"
 	ErrorCodeApplicationPublicationAlreadyExists     ErrorCode = "ApplicationPublicationAlreadyExists"
 	ErrorCodeApplicationPublicationNotFound          ErrorCode = "ApplicationPublicationNotFound"
+	ErrorCodeApplicationPublicationNotAllowed        ErrorCode = "ApplicationPublicationNotAllowed"
 	ErrorCodeApplicationPublicationRevisionConflict  ErrorCode = "ApplicationPublicationRevisionConflict"
 	ErrorCodeInvalidApplicationScope                 ErrorCode = "InvalidApplicationScope"
 	ErrorCodeScopeCatalogUnavailable                 ErrorCode = "ScopeCatalogUnavailable"
@@ -88,6 +90,7 @@ var (
 	ErrDeveloperIdentityRequired               = newError(ErrorCategoryAuthentication, ErrorCodeDeveloperIdentityRequired, "developer identity is required", nil)
 	ErrDeveloperApprovalRequired               = newError(ErrorCategoryAuthorization, ErrorCodeDeveloperApprovalRequired, "approved developer status is required", nil)
 	ErrInvalidRpcApiMajor                      = newError(ErrorCategoryValidation, ErrorCodeInvalidRpcApiMajor, "RPC API major is invalid", nil)
+	ErrInvalidApplicationID                    = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationID, "application ID is invalid", nil)
 	ErrInvalidApplicationVersionId             = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationVersionId, "application version ID is invalid", nil)
 	ErrInvalidApplicationPublicationRevision   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationPublicationRevision, "publication revision is invalid", nil)
 	ErrInvalidGreyExposureBasisPoints          = newError(ErrorCategoryValidation, ErrorCodeInvalidGreyExposureBasisPoints, "grey exposure basis points are invalid", nil)
@@ -98,6 +101,7 @@ var (
 	ErrApplicationVersionRpcApiIncompatible    = newError(ErrorCategoryValidation, ErrorCodeApplicationVersionRpcApiIncompatible, "application version RPC API range is incompatible", nil)
 	ErrApplicationPublicationAlreadyExists     = newError(ErrorCategoryConflict, ErrorCodeApplicationPublicationAlreadyExists, "application publication already exists", nil)
 	ErrApplicationPublicationNotFound          = newError(ErrorCategoryNotFound, ErrorCodeApplicationPublicationNotFound, "application publication not found", nil)
+	ErrApplicationPublicationNotAllowed        = newError(ErrorCategoryConflict, ErrorCodeApplicationPublicationNotAllowed, "application publication change is not allowed", nil)
 	ErrApplicationPublicationRevisionConflict  = newError(ErrorCategoryConflict, ErrorCodeApplicationPublicationRevisionConflict, "application publication revision conflicts", nil)
 	ErrInvalidApplicationScope                 = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationScope, "application scope request is invalid", nil)
 	ErrScopeCatalogUnavailable                 = newError(ErrorCategoryDependencyUnavailable, ErrorCodeScopeCatalogUnavailable, "scope catalog is unavailable", nil)

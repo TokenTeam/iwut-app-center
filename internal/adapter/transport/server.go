@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	publicationdomain "iwut-app-center/internal/publication/domain"
 	"net/http"
 	"strings"
 	"time"
@@ -89,6 +90,9 @@ const (
 	ClearStableSlotInternalPath                = SetApprovedVersionInStableSlotInternalPath
 	ClearStableSlotExternalPath                = SetApprovedVersionInStableSlotExternalPath
 	ClearStableSlotGRPCMethod                  = publicationv1.OperationApplicationPublicationClearStableSlot
+	ClearTestSlotInternalPath                  = PlaceApprovedVersionInTestSlotInternalPath
+	ClearTestSlotExternalPath                  = PlaceApprovedVersionInTestSlotExternalPath
+	ClearTestSlotGRPCMethod                    = publicationv1.OperationApplicationPublicationClearTestSlot
 	SetGreyRolloutInternalPath                 = "/v1/applications/{application_id}/publications/{rpc_api_major}/grey-rollout"
 	SetGreyRolloutExternalPath                 = ServicePrefix + SetGreyRolloutInternalPath
 	SetGreyRolloutGRPCMethod                   = publicationv1.OperationApplicationPublicationSetGreyRollout
@@ -527,6 +531,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.Header().Set("ETag", fmt.Sprintf("\"%d\"", response.GetRevision()))
 	case *applicationversionv1.AbandonApplicationVersionDraftResponse:
 		w.Header().Set("Cache-Control", "private, no-store")
+	case *publicationv1.ClearTestSlotResponse:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationversionv1.OwnedApplicationVersionPage, *applicationversionv1.OwnedApplicationVersionDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationreviewv1.SubmitApplicationVersionReviewResponse:
@@ -579,6 +585,17 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isClearTestSlotRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		converted := kerrors.FromError(err)
+		if _, ok := publicationv1.ErrorReason_value[converted.Reason]; !ok {
+			if converted.Code == http.StatusBadRequest {
+				err = transportStatus(codes.InvalidArgument, ReasonInvalidApplicationPublicationRevision, "publication revision is invalid")
+			} else {
+				err = transportStatus(codes.Internal, ReasonInternal, "internal failure")
+			}
+		}
+	}
 	if isApplicationVersionAbandonmentRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 		converted := kerrors.FromError(err)
@@ -922,6 +939,33 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isClearTestSlotRequest(r) {
+				w.Header().Set("Cache-Control", "private, no-store")
+				values := r.Header.Values(IdentityHeader)
+				identityErr := error(nil)
+				for _, key := range legacyIdentityHeaders {
+					if len(r.Header.Values(key)) != 0 {
+						identityErr = errIdentityInvalid
+					}
+				}
+				if identityErr == nil {
+					if len(values) == 0 {
+						identityErr = errIdentityRequired
+					} else if len(values) != 1 {
+						identityErr = errIdentityInvalid
+					} else {
+						_, identityErr = verifier.Verify(values[0])
+					}
+				}
+				if identityErr != nil {
+					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, ClearTestSlotGRPCMethod))
+					return
+				}
+				if !validTestClearHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, toTransportError(publicationdomain.ErrInvalidApplicationPublicationRevision))
+					return
+				}
+			}
 			if isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
 				if isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
@@ -1077,4 +1121,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isClearTestSlotRequest(r *http.Request) bool {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodDelete && len(parts) == 6 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "publications" && parts[5] == "test-slot"
 }

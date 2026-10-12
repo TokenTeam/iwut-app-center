@@ -18,7 +18,9 @@ import (
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
+	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -306,5 +308,26 @@ func TestE2E_UCAPP007_BR_PUB_001_010_TestPlacement(t *testing.T) {
 		if version.ReviewStatus != "APPROVED" || version.Revision != 3 {
 			t.Fatalf("publication changed version=%#v", version)
 		}
+	}
+	// UC036 exercises native gRPC mutation and its error metadata, followed by
+	// the actual generated HTTP client's query and path binding for a no-op.
+	var clearHeaders metadata.MD
+	clearedTest, err := client.ClearTestSlot(grpcCtx, &publicationv1.ClearTestSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, ExpectedPublicationRevision: 8}, grpc.Header(&clearHeaders))
+	if err != nil || !clearedTest.GetChanged() || clearedTest.GetPublication().TestVersionId != nil || clearedTest.GetPublication().GetRevision() != 9 || clearedTest.GetHistory().GetAction() != "CLEAR_TEST_VERSION" || clearHeaders.Get("cache-control")[0] != "private, no-store" {
+		t.Fatalf("Test clear=%v headers=%v err=%v", clearedTest, clearHeaders, err)
+	}
+	clearHeaders = nil
+	if _, err := client.ClearTestSlot(grpcCtx, &publicationv1.ClearTestSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, ExpectedPublicationRevision: 8}, grpc.Header(&clearHeaders)); status.Code(err) != codes.Aborted || len(clearHeaders.Get("cache-control")) != 1 || clearHeaders.Get("cache-control")[0] != "private, no-store" {
+		t.Fatalf("stale Test clear=%v headers=%v", err, clearHeaders)
+	}
+	httpClient, err := khttp.NewClient(ctx, khttp.WithEndpoint("http://"+httpAddress))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpClient.Close()
+	headers := http.Header{transport.IdentityHeader: []string{adminToken}}
+	noOp, err := publicationv1.NewApplicationPublicationHTTPClient(httpClient).ClearTestSlot(ctx, &publicationv1.ClearTestSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 3, ExpectedPublicationRevision: 9}, khttp.Header(&headers))
+	if err != nil || noOp.GetChanged() || noOp.GetHistory() != nil || noOp.GetPublication().GetRevision() != 9 || headers.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("generated HTTP no-op=%v headers=%v err=%v", noOp, headers, err)
 	}
 }

@@ -301,6 +301,8 @@ type uc033OAuthClient struct {
 	authTarget   string
 	serviceKey   *rsa.PrivateKey
 	serviceKID   string
+	channel      string
+	major        string
 }
 
 func newUC033OAuthClient(t *testing.T, ctx context.Context, authHTTP, callback, clientID, clientSecret, sessionToken, policyDigest, clockFile string) *uc033OAuthClient {
@@ -313,6 +315,7 @@ func newUC033OAuthClient(t *testing.T, ctx context.Context, authHTTP, callback, 
 		verifier: verifier, challenge: base64.RawURLEncoding.EncodeToString(digest[:]),
 		policyDigest: policyDigest, clockFile: clockFile, authTarget: os.Getenv(authCenterIntegrationTargetEnv),
 		serviceKey: uc033ServicePrivateKey(t), serviceKID: os.Getenv(config.ServiceIdentityKIDEnv),
+		channel: "STABLE", major: "1",
 	}
 }
 
@@ -361,7 +364,7 @@ func (o *uc033OAuthClient) authorizeQuery() url.Values {
 		"response_type": {"code"}, "client_id": {o.clientID}, "redirect_uri": {o.callback},
 		"scope": {"openid offline_access items.read"}, "state": {state}, "nonce": {nonce},
 		"code_challenge": {o.challenge}, "code_challenge_method": {"S256"},
-		"iwut_channel": {"STABLE"}, "iwut_rpc_api_major": {"1"}, "prompt": {"consent"},
+		"iwut_channel": {o.channel}, "iwut_rpc_api_major": {o.major}, "prompt": {"consent"},
 	}
 }
 

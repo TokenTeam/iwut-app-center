@@ -141,6 +141,7 @@ func mapRepositoryError(err error) error {
 		{port.ErrApplicationVersionRpcApiIncompatible, domain.ErrApplicationVersionRpcApiIncompatible},
 		{port.ErrApplicationPublicationAlreadyExists, domain.ErrApplicationPublicationAlreadyExists},
 		{port.ErrApplicationPublicationNotFound, domain.ErrApplicationPublicationNotFound},
+		{port.ErrApplicationPublicationNotAllowed, domain.ErrApplicationPublicationNotAllowed},
 		{port.ErrApplicationPublicationRevisionConflict, domain.ErrApplicationPublicationRevisionConflict},
 		{port.ErrOAuthClientRegistrationRequired, domain.ErrOAuthClientRegistrationRequired},
 		{port.ErrApplicationProfileRequired, domain.ErrApplicationProfileRequired},

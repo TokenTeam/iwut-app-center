@@ -57,6 +57,9 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
+				if operation == ClearTestSlotGRPCMethod {
+					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
+				}
 				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod || isApplicationArchivalOperation(operation) || isApplicationVersionManagementOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}

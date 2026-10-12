@@ -203,6 +203,7 @@ type PublicationAction string
 
 const (
 	PublicationActionSetTestVersion     PublicationAction = "SET_TEST_VERSION"
+	PublicationActionClearTestVersion   PublicationAction = "CLEAR_TEST_VERSION"
 	PublicationActionSetStableVersion   PublicationAction = "SET_STABLE_VERSION"
 	PublicationActionClearStableVersion PublicationAction = "CLEAR_STABLE_VERSION"
 	PublicationActionSetGreyRollout     PublicationAction = "SET_GREY_ROLLOUT"

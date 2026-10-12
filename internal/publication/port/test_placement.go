@@ -20,6 +20,7 @@ var (
 	ErrApplicationVersionRpcApiIncompatible    = errors.New("application version RPC API range is incompatible")
 	ErrApplicationPublicationAlreadyExists     = errors.New("application publication already exists")
 	ErrApplicationPublicationNotFound          = errors.New("application publication not found")
+	ErrApplicationPublicationNotAllowed        = errors.New("application publication change is not allowed")
 	ErrApplicationPublicationRevisionConflict  = errors.New("application publication revision conflict")
 	ErrOAuthClientRegistrationRequired         = errors.New("OAuth client registration required")
 	ErrApplicationProfileRequired              = errors.New("application profile required")

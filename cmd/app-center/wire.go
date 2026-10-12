@@ -97,6 +97,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		wire.Bind(new(transport.SetApprovedVersionInStableSlotHandler), new(*publicationusecase.SetApprovedVersionInStableSlotHandler)),
 		publicationusecase.NewClearStableSlotHandler,
 		wire.Bind(new(transport.ClearStableSlotHandler), new(*publicationusecase.ClearStableSlotHandler)),
+		publicationusecase.NewClearTestSlotHandler,
+		wire.Bind(new(transport.ClearTestSlotHandler), new(*publicationusecase.ClearTestSlotHandler)),
 		publicationusecase.NewSetGreyRolloutHandler,
 		wire.Bind(new(transport.SetGreyRolloutHandler), new(*publicationusecase.SetGreyRolloutHandler)),
 		publicationusecase.NewClearGreyRolloutHandler,

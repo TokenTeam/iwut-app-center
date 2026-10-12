@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publicationport "iwut-app-center/internal/publication/port"
 	"math"
 	"sort"
 	"time"
@@ -277,6 +278,14 @@ func (r *OAuthProviderRepository) publishedVersion(ctx context.Context, applicat
 		return publication, nil, oauthport.ErrStateInconsistent
 	}
 	versionID := publicationVersionForChannel(publication, channel)
+	if channel == oauthdomain.ChannelTest {
+		if err := checkTestPublicationHistory(ctx, r.database, publication); err != nil {
+			if errors.Is(err, publicationport.ErrApplicationPublicationStateInconsistent) {
+				return publication, nil, oauthport.ErrStateInconsistent
+			}
+			return publication, nil, err
+		}
+	}
 	if versionID == nil {
 		return publication, nil, oauthport.ErrRuntimeUnavailable
 	}
@@ -440,6 +449,12 @@ func (r *OAuthProviderRepository) GetPublishedRedirects(ctx context.Context, app
 			}
 			if _, restoreErr := applicationPublicationFromDocument(publication); restoreErr != nil {
 				return nil, oauthport.ErrStateInconsistent
+			}
+			if err := checkTestPublicationHistory(tx, r.database, publication); err != nil {
+				if errors.Is(err, publicationport.ErrApplicationPublicationStateInconsistent) {
+					return nil, oauthport.ErrStateInconsistent
+				}
+				return nil, err
 			}
 			for _, channel := range []oauthdomain.Channel{oauthdomain.ChannelStable, oauthdomain.ChannelGrey, oauthdomain.ChannelTest} {
 				versionID := publicationVersionForChannel(publication, channel)

@@ -92,6 +92,7 @@ const (
 	ReasonApplicationVersionRpcApiIncompatible    = "ERROR_REASON_APPLICATION_VERSION_RPC_API_INCOMPATIBLE"
 	ReasonApplicationPublicationAlreadyExists     = "ERROR_REASON_APPLICATION_PUBLICATION_ALREADY_EXISTS"
 	ReasonApplicationPublicationNotFound          = "ERROR_REASON_APPLICATION_PUBLICATION_NOT_FOUND"
+	ReasonApplicationPublicationNotAllowed        = "ERROR_REASON_APPLICATION_PUBLICATION_NOT_ALLOWED"
 	ReasonApplicationPublicationRevisionConflict  = "ERROR_REASON_APPLICATION_PUBLICATION_REVISION_CONFLICT"
 	ReasonOAuthClientRegistrationRequired         = "ERROR_REASON_OAUTH_CLIENT_REGISTRATION_REQUIRED"
 	ReasonApplicationProfileRequired              = "ERROR_REASON_APPLICATION_PROFILE_REQUIRED"
@@ -362,6 +363,7 @@ var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
 }
 
 var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
+	publicationdomain.ErrorCodeInvalidApplicationID:                    {code: codes.InvalidArgument, reason: "ERROR_REASON_INVALID_APPLICATION_ID", message: "application ID is invalid"},
 	publicationdomain.ErrorCodeInvalidRpcApiMajor:                      {code: codes.InvalidArgument, reason: ReasonInvalidRpcApiMajor, message: "RPC API major is invalid"},
 	publicationdomain.ErrorCodeInvalidApplicationVersionId:             {code: codes.InvalidArgument, reason: ReasonInvalidApplicationVersionId, message: "application version ID is invalid"},
 	publicationdomain.ErrorCodeInvalidApplicationPublicationRevision:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationPublicationRevision, message: "publication revision is invalid"},
@@ -370,6 +372,7 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 	publicationdomain.ErrorCodeApplicationVersionRpcApiIncompatible:    {code: codes.InvalidArgument, reason: ReasonApplicationVersionRpcApiIncompatible, message: "application version RPC API range is incompatible"},
 	publicationdomain.ErrorCodeApplicationPublicationAlreadyExists:     {code: codes.AlreadyExists, reason: ReasonApplicationPublicationAlreadyExists, message: "application publication already exists"},
 	publicationdomain.ErrorCodeApplicationPublicationNotFound:          {code: codes.NotFound, reason: ReasonApplicationPublicationNotFound, message: "application publication not found"},
+	publicationdomain.ErrorCodeApplicationPublicationNotAllowed:        {code: codes.FailedPrecondition, reason: ReasonApplicationPublicationNotAllowed, message: "application publication change is not allowed"},
 	publicationdomain.ErrorCodeApplicationPublicationRevisionConflict:  {code: codes.Aborted, reason: ReasonApplicationPublicationRevisionConflict, message: "publication revision conflicts"},
 	publicationdomain.ErrorCodeOAuthClientRegistrationRequired:         {code: codes.FailedPrecondition, reason: ReasonOAuthClientRegistrationRequired, message: "OAuth client registration is required"},
 	publicationdomain.ErrorCodeApplicationProfileRequired:              {code: codes.FailedPrecondition, reason: ReasonApplicationProfileRequired, message: "application profile is required"},

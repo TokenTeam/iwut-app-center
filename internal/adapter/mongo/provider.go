@@ -60,6 +60,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(publicationport.ApplicationPublicationRepository), new(*ApplicationPublicationRepository)),
 	wire.Bind(new(publicationport.StablePublicationRepository), new(*ApplicationPublicationRepository)),
 	wire.Bind(new(publicationport.GreyPublicationRepository), new(*ApplicationPublicationRepository)),
+	wire.Bind(new(publicationport.TestPublicationClearRepository), new(*ApplicationPublicationRepository)),
 	NewApplicationRepository,
 	NewApplicationVersionRepository,
 	NewApplicationReviewRepository,

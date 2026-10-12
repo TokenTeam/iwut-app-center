@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	kratoserrors "github.com/go-kratos/kratos/v2/errors"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
@@ -26,6 +28,9 @@ type SetApprovedVersionInStableSlotHandler interface {
 type ClearStableSlotHandler interface {
 	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.ClearStableSlotCommand) (*publicationdomain.PlaceInTestResult, error)
 }
+type ClearTestSlotHandler interface {
+	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.ClearTestSlotCommand) (*publicationdomain.PlaceInTestResult, error)
+}
 type SetGreyRolloutHandler interface {
 	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, int32, publicationusecase.SetGreyRolloutCommand) (*publicationdomain.PlaceInTestResult, error)
 }
@@ -40,6 +45,7 @@ type ApplicationPublicationService struct {
 	clearHandler     ClearStableSlotHandler
 	setGreyHandler   SetGreyRolloutHandler
 	clearGreyHandler ClearGreyRolloutHandler
+	clearTestHandler ClearTestSlotHandler
 }
 
 var _ publicationv1.ApplicationPublicationHTTPServer = (*ApplicationPublicationService)(nil)
@@ -53,6 +59,55 @@ func NewApplicationPublicationServiceWithStable(test PlaceApprovedVersionInTestS
 }
 func NewApplicationPublicationServiceWithGrey(test PlaceApprovedVersionInTestSlotHandler, stable SetApprovedVersionInStableSlotHandler, clearStable ClearStableSlotHandler, setGrey SetGreyRolloutHandler, clearGrey ClearGreyRolloutHandler) *ApplicationPublicationService {
 	return &ApplicationPublicationService{testHandler: test, stableHandler: stable, clearHandler: clearStable, setGreyHandler: setGrey, clearGreyHandler: clearGrey}
+}
+func NewApplicationPublicationServiceWithTestClear(test PlaceApprovedVersionInTestSlotHandler, stable SetApprovedVersionInStableSlotHandler, clearStable ClearStableSlotHandler, setGrey SetGreyRolloutHandler, clearGrey ClearGreyRolloutHandler, clearTest ClearTestSlotHandler) *ApplicationPublicationService {
+	s := NewApplicationPublicationServiceWithGrey(test, stable, clearStable, setGrey, clearGrey)
+	s.clearTestHandler = clearTest
+	return s
+}
+
+func (service *ApplicationPublicationService) ClearTestSlot(ctx context.Context, request *publicationv1.ClearTestSlotRequest) (*publicationv1.ClearTestSlotResponse, error) {
+	setPrivateNoStore(ctx)
+	if service == nil || service.clearTestHandler == nil || request == nil {
+		return nil, toTransportError(publicationdomain.NewInternalError(nil))
+	}
+	identity, ok := developerIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(publicationdomain.ErrDeveloperIdentityRequired)
+	}
+	app, ok := shared.ParseApplicationID(request.GetApplicationId())
+	if !ok {
+		return nil, toTransportError(publicationdomain.ErrInvalidApplicationID)
+	}
+	if r, ok := khttp.RequestFromServerContext(ctx); ok && !validTestClearHTTPInput(r) {
+		return nil, toTransportError(publicationdomain.ErrInvalidApplicationPublicationRevision)
+	}
+	result, err := service.clearTestHandler.Handle(ctx, identity, app, request.GetRpcApiMajor(), publicationusecase.ClearTestSlotCommand{ExpectedPublicationRevision: request.GetExpectedPublicationRevision()})
+	if err != nil {
+		return nil, publicationTransportError(ctx, err)
+	}
+	p, history, changed, err := publicationResources(result)
+	if err != nil {
+		return nil, err
+	}
+	return &publicationv1.ClearTestSlotResponse{Changed: changed, Publication: p, History: history}, nil
+}
+
+func validTestClearHTTPInput(r *http.Request) bool {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(query) != 1 || len(query["expected_publication_revision"]) != 1 {
+		return false
+	}
+	raw := query["expected_publication_revision"][0]
+	revision, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || revision < 1 || strconv.FormatInt(revision, 10) != raw {
+		return false
+	}
+	if r.Body == nil {
+		return true
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1))
+	return err == nil && len(body) == 0
 }
 
 func (service *ApplicationPublicationService) PlaceApprovedVersionInTestSlot(ctx context.Context, request *publicationv1.PlaceApprovedVersionInTestSlotRequest) (*publicationv1.PlaceApprovedVersionInTestSlotResponse, error) {
@@ -212,6 +267,9 @@ func publicationRequestIdentity(ctx context.Context, rawApplicationID string) (s
 }
 
 func publicationTransportError(ctx context.Context, err error) error {
+	if isHTTP(ctx) && errors.Is(err, publicationdomain.ErrApplicationPublicationNotAllowed) {
+		return kratoserrors.New(http.StatusUnprocessableEntity, ReasonApplicationPublicationNotAllowed, "application publication change is not allowed")
+	}
 	if errors.Is(err, publicationdomain.ErrApplicationProfileStateInconsistent) || errors.Is(err, publicationdomain.ErrApplicationPublicationStateInconsistent) {
 		reason := ReasonApplicationProfileStateInconsistent
 		if errors.Is(err, publicationdomain.ErrApplicationPublicationStateInconsistent) {

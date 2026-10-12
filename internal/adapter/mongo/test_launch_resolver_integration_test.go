@@ -105,7 +105,33 @@ func TestTestLaunchResolverIntegration(t *testing.T) {
 		if got, err := f.resolve(t, repo, f.membership.TesterAuthID(), 2, []catalogdomain.CapabilityName{"camera.read.v1"}); got != nil || !errors.Is(err, catalogport.ErrApplicationTestTargetUnavailable) {
 			t.Fatalf("major fallback: %v %v", got, err)
 		}
-		setTestLaunchFields(t, f.db, applicationPublicationsCollectionName, bson.D{}, bson.D{{Key: "testVersionId", Value: nil}, {Key: "greyVersionId", Value: f.seed.versionID.String()}, {Key: "stableVersionId", Value: f.seed.versionID.String()}})
+		// Establish valid Stable/Grey facts and clear Test through the real
+		// command. Nulling the pointer while retaining SET history is corruption,
+		// not a legitimate empty slot under UC036.
+		publications := NewApplicationPublicationRepository(f.db)
+		expected := int64(1)
+		stable, err := publications.LoadStablePlacementCandidate(t.Context(), f.seed.applicationID, 1, publicationdomain.ApplicationVersionID(f.seed.versionID), f.seed.adminID, &expected)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stableResult, err := publications.SetStable(t.Context(), stable, nil, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), f.seed.adminID, publicationTestValidation(), time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		grey, err := publications.LoadGreyPlacementCandidate(t.Context(), f.seed.applicationID, 1, publicationdomain.ApplicationVersionID(f.seed.versionID), 10000, f.seed.adminID, stableResult.Publication().Revision())
+		if err != nil {
+			t.Fatal(err)
+		}
+		cohort, _ := publicationdomain.NewCohortSeed(make([]byte, 32))
+		rollout := publicationdomain.GreyRolloutID(nextIntegrationApplicationReviewID(t))
+		validation := publicationTestValidation()
+		greyResult, err := publications.SetGrey(t.Context(), grey, &rollout, &cohort, publicationdomain.ApplicationPublicationHistoryID(nextIntegrationApplicationReviewID(t)), f.seed.adminID, &validation, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := publications.ClearTest(t.Context(), f.seed.applicationID, 1, f.seed.adminID, greyResult.Publication().Revision(), clearTestAudit(t)); err != nil {
+			t.Fatal(err)
+		}
 		if got, err := f.resolve(t, repo, f.membership.TesterAuthID(), 1, []catalogdomain.CapabilityName{"camera.read.v1"}); got != nil || !errors.Is(err, catalogport.ErrApplicationTestTargetUnavailable) {
 			t.Fatalf("slot fallback: %v %v", got, err)
 		}

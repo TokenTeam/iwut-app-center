@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	publicationport "iwut-app-center/internal/publication/port"
 	"math"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -95,6 +96,14 @@ func (resolver *UnifiedLaunchResolver) resolveSnapshot(ctx context.Context, appl
 		return nil, catalogport.ErrApplicationRuntimeStateInconsistent
 	}
 
+	if activeTester {
+		if err := checkTestPublicationHistory(ctx, resolver.database, publicationDocument); err != nil {
+			if errors.Is(err, publicationport.ErrApplicationPublicationStateInconsistent) {
+				return nil, catalogport.ErrApplicationRuntimeStateInconsistent
+			}
+			return nil, err
+		}
+	}
 	if activeTester && publicationDocument.TestVersionID != nil {
 		descriptor, compatible, candidateErr := resolver.resolveCandidate(ctx, applicationID, publicationDocument, *publicationDocument.TestVersionID, major, catalogdomain.LaunchChannelTest, []string{"SET_TEST_VERSION"}, host)
 		if candidateErr != nil {

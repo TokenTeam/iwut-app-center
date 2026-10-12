@@ -356,6 +356,18 @@ func (r *PublicCatalogRepository) catalogItem(publication applicationPublication
 		activeTester = true
 	}
 	var target *catalogdomain.LaunchTargetDescriptor
+	if activeTester {
+		var latest *applicationPublicationHistoryDocument
+		for _, h := range f.histories {
+			if h.PublicationID == publication.PublicationID && h.PublicationRevision <= publication.Revision && (h.Action == "SET_TEST_VERSION" || h.Action == "CLEAR_TEST_VERSION") && (latest == nil || h.PublicationRevision > latest.PublicationRevision) {
+				copy := h
+				latest = &copy
+			}
+		}
+		if err := checkLatestTestHistory(publication, latest); err != nil {
+			return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		}
+	}
 	if activeTester && publication.TestVersionID != nil {
 		target, _, err = resolveCatalogCandidate(applicationID, publication, *publication.TestVersionID, major, catalogdomain.LaunchChannelTest, []string{"SET_TEST_VERSION"}, host, f)
 	}

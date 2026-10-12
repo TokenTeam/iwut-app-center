@@ -69,12 +69,19 @@ func greyApplicationPublicationValidator() bson.D {
 }
 
 func greyApplicationPublicationHistoryValidator() bson.D {
+	return applicationPublicationHistoryValidatorWithTestClear(false)
+}
+
+func applicationPublicationHistoryValidatorWithTestClear(testClear bool) bson.D {
 	nullableVersion := bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, uuidV7Schema()}}}
 	nullableLong := bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, positiveLongSchema()}}}
 	nullablePolicy := bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, bson.D{{Key: "bsonType", Value: "string"}, {Key: "pattern", Value: "^[A-Za-z0-9._-]{1,50}$"}}}}}
 	nullableExposure := bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, bson.D{{Key: "bsonType", Value: "int"}, {Key: "minimum", Value: int32(1)}, {Key: "maximum", Value: int32(10_000)}}}}}
 	nullableSeed := bson.D{{Key: "oneOf", Value: bson.A{bson.D{{Key: "bsonType", Value: "null"}}, bson.D{{Key: "bsonType", Value: "binData"}}}}}
 	actions := bson.A{"SET_TEST_VERSION", "SET_STABLE_VERSION", "CLEAR_STABLE_VERSION", "SET_GREY_ROLLOUT", "INCREASE_GREY_EXPOSURE", "DECREASE_GREY_EXPOSURE", "REPLACE_GREY_VERSION", "CLEAR_GREY_ROLLOUT"}
+	if testClear {
+		actions = append(actions, "CLEAR_TEST_VERSION")
+	}
 	schema := publicationObjectSchema(
 		bson.A{"historyId", "publicationId", "applicationId", "rpcApiMajor", "publicationRevision", "action", "previousVersionId", "newVersionId", "approvedReviewId", "scopeCatalogRevision", "preflightPolicyVersion", "greyRolloutId", "previousExposureBasisPoints", "newExposureBasisPoints", "cohortSeed", "changedBy", "changedAt"},
 		bson.D{
@@ -87,6 +94,9 @@ func greyApplicationPublicationHistoryValidator() bson.D {
 		},
 	)
 	legacy := bson.A{"SET_TEST_VERSION", "SET_STABLE_VERSION", "CLEAR_STABLE_VERSION"}
+	if testClear {
+		legacy = append(legacy, "CLEAR_TEST_VERSION")
+	}
 	expression := bson.D{{Key: "$expr", Value: bson.D{{Key: "$or", Value: bson.A{
 		legacyHistoryExpression(legacy),
 		greyHistoryExpression(),
@@ -95,9 +105,10 @@ func greyApplicationPublicationHistoryValidator() bson.D {
 }
 
 func legacyHistoryExpression(actions bson.A) bson.D {
-	isClear := bson.D{{Key: "$eq", Value: bson.A{"$action", "CLEAR_STABLE_VERSION"}}}
+	isClear := bson.D{{Key: "$in", Value: bson.A{"$action", bson.A{"CLEAR_STABLE_VERSION", "CLEAR_TEST_VERSION"}}}}
 	return bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$in", Value: bson.A{"$action", actions}}},
+		bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "$ne", Value: bson.A{"$action", "CLEAR_TEST_VERSION"}}}, bson.D{{Key: "$gte", Value: bson.A{"$publicationRevision", int64(2)}}}}}},
 		bson.D{{Key: "$eq", Value: bson.A{"$greyRolloutId", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$previousExposureBasisPoints", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$newExposureBasisPoints", nil}}}, bson.D{{Key: "$eq", Value: bson.A{"$cohortSeed", nil}}},
 		bson.D{{Key: "$cond", Value: bson.A{
 			isClear,
