@@ -38,20 +38,20 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-035 — abandon an unsubmitted ApplicationVersion draft.**
-Read `app-center/briefs/UC-APP-035.md`, the engineering baseline, and the
-implements README. Implement BR-VER-026 through BR-VER-033 across the API
-submodule, Version domain/usecase/port, MongoDB transaction adapter, migration
-0028, HTTP/gRPC transport, composition wiring, and automated acceptance tests.
-Only a DRAFT with no ApplicationReview attempt can be abandoned; atomically
-delete its active Version and OAuth configuration while retaining one minimal
-immutable abandonment fact. Preserve version identity/sequence non-reuse,
-revision-based idempotency, current-admin authorization, shared-fence ordering,
-strict relationship checks, and no-store/minimal-disclosure responses. Do not
-delete reviewed Versions or Review/Publication history, add an ABANDONED review
-status, call Auth, or implement recovery, bulk cleanup, expiry, or approved-
-qualification revocation. Required final tier: `make check-full`; do not claim
-`make check-auth-app`. Keep all commits local.
+**UC-APP-036 — clear the exact-major Test publication slot.**
+Read `app-center/briefs/UC-APP-036.md`, the engineering baseline, and the
+implements README from the authoritative docs workspace. Implement BR-PUB-031
+through BR-PUB-036 across the API submodule, Publication domain/usecase/port,
+majority transaction adapter, migration 0029, runtime/history consumers,
+HTTP/gRPC, Wire, and real Mongo/Auth acceptance. Preserve other slots and
+Memberships, current APPROVED-admin/ACTIVE checks, shared Publication OCC,
+no-op without Clock/ID/fence, immutable CLEAR_TEST_VERSION history and
+private no-store. Clear may remove a structurally valid but no longer runnable
+target without reading its old eligibility. Do not implement UC037/038 yet.
+Required final tier: `make check-auth-app`, plus the specific UC036 real
+Auth OAuth scenarios. Use the published Auth image verification overlay.
+Keep all commits local and preserve the five pre-existing dirty verification
+files; do not stage or commit them. Freeze all inputs during final verification.
 
 ## Verification entry points
 
