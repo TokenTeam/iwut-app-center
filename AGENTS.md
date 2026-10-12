@@ -38,20 +38,26 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-036 — clear the exact-major Test publication slot.**
-Read `app-center/briefs/UC-APP-036.md`, the engineering baseline, and the
-implements README from the authoritative docs workspace. Implement BR-PUB-031
-through BR-PUB-036 across the API submodule, Publication domain/usecase/port,
-majority transaction adapter, migration 0029, runtime/history consumers,
-HTTP/gRPC, Wire, and real Mongo/Auth acceptance. Preserve other slots and
-Memberships, current APPROVED-admin/ACTIVE checks, shared Publication OCC,
-no-op without Clock/ID/fence, immutable CLEAR_TEST_VERSION history and
-private no-store. Clear may remove a structurally valid but no longer runnable
-target without reading its old eligibility. Do not implement UC037/038 yet.
-Required final tier: `make check-auth-app`, plus the specific UC036 real
-Auth OAuth scenarios. Use the published Auth image verification overlay.
-Keep all commits local and preserve the five pre-existing dirty verification
-files; do not stage or commit them. Freeze all inputs during final verification.
+**UC-APP-037 — query the current administrator's Tester management view.**
+Read `app-center/briefs/UC-APP-037.md`, the engineering baseline, and the
+implements README from the authoritative docs workspace. Implement BR-TST-037
+through BR-TST-043 across independent Tester query domain/usecase/port,
+the `app_center.v1.tester_management` API, majority read-only Mongo snapshots,
+explicit query-index migration 0030, HTTP/gRPC, Wire, and real Mongo acceptance.
+Provide capacity/current-link overview and Membership/link keyset pages.
+Authorize only the snapshot's current administrator without Developer status,
+including retained lifecycle/platform/archive history. Keep REMOVED/ALL backend
+pagination; no frontend history entry is required. Bind domain-isolated signed
+cursors to caller/Application/ownershipRevision/query/filter/position and
+validate required sources/replacements in batches. Never return credentials,
+hashes, user profiles or historical actors; no Auth calls, writes, fences or
+new audit facts. Responses and errors remain private, no-store.
+UC036 is complete. Do not implement UC038 or any new Tester write capability.
+Required final tier: `make check-full`. Use Go 1.25.5 and the local committed
+docs Git source. Stage owned new files before diff checks and freeze all inputs
+during final verification. Keep all commits local. Preserve the five existing
+dirty verification files; do not stage or commit them. Work and reports must
+stay in this persistent checkout, not in a temporary worktree.
 
 ## Verification entry points
 
