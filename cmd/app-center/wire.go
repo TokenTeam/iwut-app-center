@@ -6,6 +6,7 @@ package main
 import (
 	"github.com/go-kratos/kratos/v2"
 	"github.com/goforj/wire"
+	profileport "iwut-app-center/internal/profile/port"
 
 	"iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
@@ -38,6 +39,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		provideApplicationVersionManagementCursorKey,
 		provideTesterManagementCursorKey,
 		provideMyTestApplicationCursorKey,
+		provideProfileManagementCursorKey,
 		catalogusecase.NewMyTestApplications,
 		wire.Bind(new(transport.MyTestApplicationsHandler), new(*catalogusecase.MyTestApplications)),
 		testerusecase.NewManagementQuery,
@@ -61,6 +63,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		wire.Bind(new(transport.OAuthClientProviderHandlers), new(*oauthclientusecase.ProviderHandlers)),
 		profileusecase.NewCreateApplicationProfileRevisionHandler,
 		profileusecase.NewProfileReviewQuery,
+		profileusecase.NewManagementQuery,
+		wire.Bind(new(transport.ApplicationProfileManagementQueryHandler), new(*profileusecase.ManagementQuery)),
+		wire.Bind(new(profileport.ManagementResponseSizer), new(*transport.ProfileManagementResponseSizer)),
 		wire.Bind(new(transport.ApplicationProfileReviewQueryHandler), new(*profileusecase.ProfileReviewQuery)),
 		profileusecase.NewDecideApplicationProfileRevisionReviewHandler,
 		wire.Bind(new(transport.DecideApplicationProfileRevisionReviewHandler), new(*profileusecase.DecideApplicationProfileRevisionReviewHandler)),

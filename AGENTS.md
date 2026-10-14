@@ -38,29 +38,29 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-038 — query the authenticated user's test participation.**
-Read `app-center/briefs/UC-APP-038.md`, the engineering baseline, and the
-implements README from the authoritative docs workspace. Implement BR-CAT-011
-through BR-CAT-017 across Catalog query domain/usecase/port, independent
-`app_center.v1.test_application_catalog` API, one majority read-only snapshot,
-explicit own-membership scan migration 0031, HTTP/gRPC, Wire, and real Mongo
-acceptance. Only the caller's unique ACTIVE Membership plus an online
-ACTIVE/AVAILABLE/UNARCHIVED Application establishes a candidate; no implicit
-administrator/Reviewer participation or Stable requirement. Return current
-approved public Profile and either a pure UC012 Test descriptor or the precise
-unavailable card. Hide gated applications entirely. Never fall back to Grey,
-Stable or another major, and never read, distribute or evaluate Filter.
-Reuse a batch pure-Test core inside the snapshot, not per-item RPCs/transactions.
-Validate necessary source/Profile/Test/Review/OAuth/SET-CLEAR facts fail closed.
-Use canonical UUID keyset, domain-isolated signed caller/runtime-bound cursors,
-500-candidate scan and safe page/byte-budget continuation without skipped items.
-No Auth/Scope/DNS calls, writes, fences, audit or materialized availability.
-UC036/037 are complete. Do not add Tester commands, Auth contracts or frontend.
-Required final tier: `make check-full`. Use Go 1.25.5 and the local committed
-docs Git source. Stage owned new files before diff checks, complete the full
-acceptance matrix before freezing, and freeze all inputs during final tests.
-Keep commits local. Preserve the five existing dirty verification files;
-do not stage or commit them. Work and reports stay in this persistent checkout.
+**UC-APP-039 — query administrator-owned ApplicationProfileRevision list/detail.**
+Read `app-center/briefs/UC-APP-039.md`, the engineering baseline and implements
+README from the authoritative local docs workspace. User accepted UC039 on
+2026-10-14. Implement BR-PRF-047–056: current-admin-only retained-state queries,
+original REJECTED text, minimal projections and paged review history, latest
+review consistency, domain-isolated ownership/caller/query-bound HMAC cursors,
+one read-only majority snapshot, strict required-source/lookahead validation,
+2 MiB exact HTTP/gRPC response budgets without skipped items, migration 0032,
+existing ProfileRevision API service, Wire and full real Mongo acceptance.
+No new write capability, Auth/Scope/DNS calls, fence/audit, current Reviewer
+policy, frontend or public client Catalog work. Preserve existing draft/edit
+and Reviewer API behavior. Source/Proto/generated code changes are App-scoped.
+
+Previous backlog audit and HTTP observability repair are complete. After UC039
+full acceptance, prepare Tester self-exit design and pause for user review.
+Any new UC/BR/business changes require a concrete reviewed proposal. Do not
+modify Auth/Gateway/Console code or message their agents; prepare handoff items
+for the user. Client Catalog/Filter evaluation, approval revocation, reliable
+alert delivery and managed icon assets remain deferred.
+Use Go 1.25.5 and local committed docs. Final tier: `make check-full`. Freeze all
+inputs during final tests; stage owned new files before diff checks. Preserve
+all pre-existing dirty files and do not stage/commit unrelated changes. Keep
+API/source/history local and use this persistent checkout. No push/deployment.
 
 ## Verification entry points
 

@@ -186,7 +186,17 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	applicationProfileRevisionRepository := mongo.NewApplicationProfileRevisionRepository(database)
 	createApplicationProfileRevisionHandler := usecase8.NewCreateApplicationProfileRevisionHandler(applicationProfileRevisionUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
 	updateDraftApplicationProfileRevisionHandler := usecase8.NewUpdateDraftApplicationProfileRevisionHandler(systemClock, applicationProfileRevisionRepository)
-	applicationProfileRevisionService := transport.NewApplicationProfileRevisionService(createApplicationProfileRevisionHandler, updateDraftApplicationProfileRevisionHandler)
+	profileManagementCursorKey, err := provideProfileManagementCursorKey(configuration)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	profileManagementResponseSizer := transport.NewProfileManagementResponseSizer()
+	profileManagementRepository := mongo.NewProfileManagementRepository(database, profileManagementCursorKey, profileManagementResponseSizer)
+	usecaseManagementQuery := usecase8.NewManagementQuery(profileManagementRepository)
+	applicationProfileRevisionService := transport.NewApplicationProfileRevisionServiceWithQuery(createApplicationProfileRevisionHandler, updateDraftApplicationProfileRevisionHandler, usecaseManagementQuery)
 	applicationProfileReviewUUIDv7Generator := generator.NewApplicationProfileReviewUUIDv7Generator()
 	submitApplicationProfileRevisionReviewHandler := usecase8.NewSubmitApplicationProfileRevisionReviewHandler(applicationProfileReviewUUIDv7Generator, systemClock, applicationProfileRevisionRepository)
 	decideApplicationProfileRevisionReviewHandler := usecase8.NewDecideApplicationProfileRevisionReviewHandler(systemClock, applicationProfileRevisionRepository)
@@ -234,8 +244,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		return nil, nil, err
 	}
 	applicationTesterManagementRepository := mongo.NewApplicationTesterManagementRepository(database, testerManagementCursorKey)
-	usecaseManagementQuery := usecase5.NewManagementQuery(applicationTesterManagementRepository)
-	applicationTesterManagementService := transport.NewApplicationTesterManagementService(usecaseManagementQuery)
+	managementQuery2 := usecase5.NewManagementQuery(applicationTesterManagementRepository)
+	applicationTesterManagementService := transport.NewApplicationTesterManagementService(managementQuery2)
 	myTestApplicationCursorKey, err := provideMyTestApplicationCursorKey(configuration)
 	if err != nil {
 		cleanup3()

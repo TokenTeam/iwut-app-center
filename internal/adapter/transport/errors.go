@@ -474,6 +474,13 @@ var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
 	profiledomain.ErrorCodeApplicationAdminRequired:                    {code: codes.PermissionDenied, reason: ReasonApplicationAdminRequired, message: "application administrator is required"},
 	profiledomain.ErrorCodeApplicationProfileWorkRevisionAlreadyExists: {code: codes.Aborted, reason: ReasonApplicationProfileWorkRevisionAlreadyExists, message: "application profile work revision already exists"},
 	profiledomain.ErrorCodeApplicationProfileStateInconsistent:         {code: codes.Internal, reason: ReasonApplicationProfileStateInconsistent, message: "application profile state is inconsistent"},
+	profiledomain.ErrorCodeProfileManagementNotFound:                   {code: codes.NotFound, reason: ReasonProfileManagementNotFound, message: "application profile management resource not found"},
+	profiledomain.ErrorCodeInvalidProfileManagementQuery:               {code: codes.InvalidArgument, reason: ReasonInvalidProfileManagementQuery, message: "application profile management query is invalid"},
+	profiledomain.ErrorCodeInvalidProfileManagementPageToken:           {code: codes.InvalidArgument, reason: ReasonInvalidProfileManagementPageToken, message: "application profile management page token is invalid"},
+	profiledomain.ErrorCodeProfileManagementStateInconsistent:          {code: codes.Internal, reason: ReasonProfileManagementStateInconsistent, message: "application profile management state is inconsistent"},
+	profiledomain.ErrorCodeProfileManagementUnavailable:                {code: codes.Unavailable, reason: ReasonProfileManagementUnavailable, message: "application profile management is unavailable"},
+	profiledomain.ErrorCodeProfileManagementResponseTooLarge:           {code: codes.ResourceExhausted, reason: ReasonProfileManagementResponseTooLarge, message: "application profile management response is too large"},
+	profiledomain.ErrorCodeUserIdentityRequired:                        {code: codes.Unauthenticated, reason: ReasonUserIdentityRequired, message: "user identity is required"},
 	profiledomain.ErrorCodeInternal:                                    internalSpec,
 }
 

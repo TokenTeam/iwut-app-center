@@ -23,7 +23,7 @@ func TestApplicationProfileMigrationIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("BR-PRF-001 BR-PRF-006 identity sequence and working partial unique indexes", func(t *testing.T) {
-		assertIndexNames(t, collection, []string{"_id_", profileRevisionIDUniqueIndexName, profileRevisionSequenceUniqueIndexName, profileWorkingRevisionUniqueIndexName})
+		assertIndexNames(t, collection, []string{"_id_", profileRevisionIDUniqueIndexName, profileRevisionSequenceUniqueIndexName, profileWorkingRevisionUniqueIndexName, profileManagementStatusIndex})
 		assertIndexNames(t, db.Collection(applicationProfilesCollectionName), []string{"_id_", profileApplicationUniqueIndexName})
 		for _, test := range []struct {
 			name   string

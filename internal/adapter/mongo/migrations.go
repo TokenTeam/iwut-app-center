@@ -94,6 +94,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: testPublicationClearMigrationID, apply: migrator.applyTestPublicationClearMigration},
 		{id: testerManagementMigrationID, apply: migrator.applyTesterManagementMigration},
 		{id: myTestApplicationMigrationID, apply: migrator.applyMyTestApplicationMigration},
+		{id: profileManagementMigrationID, apply: migrator.applyProfileManagementMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {

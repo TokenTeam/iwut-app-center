@@ -30,6 +30,7 @@ type ApplicationProfileRevisionService struct {
 	profilev1.UnimplementedApplicationProfileRevisionServer
 	createHandler CreateApplicationProfileRevisionHandler
 	updateHandler UpdateDraftApplicationProfileRevisionHandler
+	queryHandler  ApplicationProfileManagementQueryHandler
 }
 
 var _ profilev1.ApplicationProfileRevisionServer = (*ApplicationProfileRevisionService)(nil)

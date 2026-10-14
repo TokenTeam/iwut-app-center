@@ -63,7 +63,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 				if operation == ClearTestSlotGRPCMethod {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
-				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod || isApplicationArchivalOperation(operation) || isApplicationVersionManagementOperation(operation) || isTesterManagementOperation(operation) {
+				if operation == ResolveTestLaunchTargetGRPCMethod || operation == ResolveLaunchTargetGRPCMethod || operation == ListPublicApplicationsGRPCMethod || operation == GetPublicApplicationGRPCMethod || isApplicationArchivalOperation(operation) || isApplicationVersionManagementOperation(operation) || isProfileManagementOperation(operation) || isTesterManagementOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if operation == testermembershipv1.OperationTesterMembershipJoinApplicationAsTester || operation == testermembershipv1.OperationTesterMembershipRemoveApplicationTester {
@@ -107,7 +107,7 @@ func toIdentityTransportError(err error, operation string) error {
 		}
 		return transportStatus(codes.Unauthenticated, ReasonInvalidUserIdentity, "user identity is invalid")
 	}
-	if isApplicationVersionManagementOperation(operation) || isTesterManagementOperation(operation) {
+	if isApplicationVersionManagementOperation(operation) || isProfileManagementOperation(operation) || isTesterManagementOperation(operation) {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonUserIdentityRequired, "user identity is required")
 		}

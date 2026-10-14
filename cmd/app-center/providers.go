@@ -223,3 +223,7 @@ var _ transport.OAuthClientHandlers = (*oauthclientusecase.Handlers)(nil)
 func provideTesterJoinURLPrefix(configuration config.Config) string {
 	return configuration.TesterJoinURLPrefix
 }
+
+func provideProfileManagementCursorKey(configuration config.Config) (mongo.ProfileManagementCursorKey, error) {
+	return mongo.DeriveProfileManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
+}

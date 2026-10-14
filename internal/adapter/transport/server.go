@@ -9,6 +9,7 @@ import (
 	testcatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/test_application_catalog"
 	"io"
 	catalogdomain "iwut-app-center/internal/catalog/domain"
+	profiledomain "iwut-app-center/internal/profile/domain"
 	publicationdomain "iwut-app-center/internal/publication/domain"
 	"net/http"
 	"strings"
@@ -529,6 +530,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationreviewqueryv1.PendingApplicationVersionReviewPage, *applicationreviewqueryv1.ApplicationVersionReviewDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
+	case *profilev1.OwnedApplicationProfileRevisionPage, *profilev1.OwnedApplicationProfileRevisionDetail:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationprofilereviewqueryv1.PendingApplicationProfileReviewPage, *applicationprofilereviewqueryv1.ApplicationProfileReviewDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
@@ -982,6 +985,38 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if kind := profileManagementHTTPKind(r); kind != "" {
+				w.Header().Set("Cache-Control", "private, no-store")
+				operation := profilev1.OperationApplicationProfileRevisionListApplicationProfileRevisions
+				if kind == "GET" {
+					operation = profilev1.OperationApplicationProfileRevisionGetApplicationProfileRevision
+				}
+				var identityErr error
+				for _, key := range legacyIdentityHeaders {
+					if len(r.Header.Values(key)) != 0 {
+						identityErr = errIdentityInvalid
+					}
+				}
+				values := r.Header.Values(IdentityHeader)
+				if identityErr == nil {
+					if len(values) == 0 {
+						identityErr = errIdentityRequired
+					} else if len(values) != 1 {
+						identityErr = errIdentityInvalid
+					} else {
+						_, identityErr = verifier.Verify(values[0])
+					}
+				}
+				if identityErr != nil {
+					credentialSafeErrorEncoder(w, r, toIdentityTransportError(identityErr, operation))
+					return
+				}
+				if !validProfileManagementHTTPInput(r, kind) {
+					credentialSafeErrorEncoder(w, r, toTransportError(profiledomain.ErrInvalidProfileManagementQuery))
+					return
+				}
+			}
+
 			if isMyTestApplicationRequest(r) {
 				w.Header().Set("Cache-Control", "private, no-store")
 				operation := ListMyTestApplicationsGRPCMethod

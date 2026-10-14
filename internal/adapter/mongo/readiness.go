@@ -11,9 +11,9 @@ import (
 
 // RequiredMigrationID is the newest migration the running service requires
 // before it will serve traffic. It mirrors the last entry of Migrator.Migrate:
-// the composed service ships the UC-APP-035 Version abandonment schema, so an
+// the composed service ships the UC-APP-039 profile management query index, so an
 // older revision is not sufficient.
-const RequiredMigrationID = myTestApplicationMigrationID
+const RequiredMigrationID = profileManagementMigrationID
 
 // MigrationLedgerCollectionName is the read-only ledger written by Migrator.
 // Startup only reads it; it never creates the collection or an index.
