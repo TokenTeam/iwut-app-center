@@ -393,6 +393,9 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 }
 
 var testerDomainErrorSpecs = map[testerdomain.ErrorCode]errorSpec{
+	testerdomain.ErrorCodeUserIdentityRequired:                         {code: codes.Unauthenticated, reason: ReasonUserIdentityRequired, message: "user identity is required"},
+	testerdomain.ErrorCodeInvalidTesterExitRequest:                     {code: codes.InvalidArgument, reason: "ERROR_REASON_INVALID_TESTER_EXIT_REQUEST", message: "tester exit accepts only application and membership path IDs"},
+	testerdomain.ErrorCodeApplicationTesterExitUnavailable:             {code: codes.Unavailable, reason: "ERROR_REASON_APPLICATION_TESTER_EXIT_UNAVAILABLE", message: "tester exit is unavailable"},
 	testerdomain.ErrorCodeInvalidApplicationTesterManagementQuery:      {code: codes.InvalidArgument, reason: "ERROR_REASON_INVALID_APPLICATION_TESTER_MANAGEMENT_QUERY", message: "application tester management query is invalid"},
 	testerdomain.ErrorCodeInvalidApplicationTesterManagementPageToken:  {code: codes.InvalidArgument, reason: "ERROR_REASON_INVALID_APPLICATION_TESTER_MANAGEMENT_PAGE_TOKEN", message: "application tester management page token is invalid"},
 	testerdomain.ErrorCodeApplicationTesterManagementNotFound:          {code: codes.NotFound, reason: "ERROR_REASON_APPLICATION_TESTER_MANAGEMENT_NOT_FOUND", message: "application tester management resource not found"},

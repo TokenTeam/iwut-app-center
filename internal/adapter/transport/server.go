@@ -76,6 +76,9 @@ const (
 	RevokeTesterJoinLinkInternalPath           = "/v1/applications/{application_id}/tester-join-links/{join_link_id}"
 	RevokeTesterJoinLinkExternalPath           = ServicePrefix + RevokeTesterJoinLinkInternalPath
 	RevokeTesterJoinLinkGRPCMethod             = testerjoinlinkv1.OperationTesterJoinLinkRevokeTesterJoinLink
+	LeaveApplicationAsTesterInternalPath       = "/v1/applications/{application_id}/tester-memberships/{membership_id}:leave"
+	LeaveApplicationAsTesterExternalPath       = ServicePrefix + LeaveApplicationAsTesterInternalPath
+	LeaveApplicationAsTesterGRPCMethod         = testermembershipv1.OperationTesterMembershipLeaveApplicationAsTester
 	RemoveApplicationTesterInternalPath        = "/v1/applications/{application_id}/tester-memberships/{membership_id}"
 	RemoveApplicationTesterExternalPath        = ServicePrefix + RemoveApplicationTesterInternalPath
 	RemoveApplicationTesterGRPCMethod          = testermembershipv1.OperationTesterMembershipRemoveApplicationTester
@@ -536,6 +539,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *testerjoinlinkv1.RevokeTesterJoinLinkResponse:
 		w.Header().Set("Cache-Control", "no-store")
+	case *testermembershipv1.LeaveApplicationAsTesterResponse:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *testermembershipv1.RemoveApplicationTesterResponse:
 		w.Header().Set("Cache-Control", "no-store")
 	case *testermembershipv1.JoinApplicationAsTesterResponse:
@@ -729,6 +734,16 @@ func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err erro
 				err = invalidRevokeTesterJoinLinkRequest()
 			} else {
 				err = toTransportError(testerdomain.NewInternalError(nil))
+			}
+		}
+	}
+	if isTesterExitRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		if _, ok := testermembershipv1.ErrorReason_value[kerrors.FromError(err).Reason]; !ok {
+			if kerrors.FromError(err).Code == http.StatusBadRequest {
+				err = toTransportError(testerdomain.ErrInvalidTesterExitRequest)
+			} else {
+				err = toTransportError(testerdomain.ErrApplicationTesterStateInconsistent)
 			}
 		}
 	}
@@ -956,6 +971,22 @@ func isOAuthClientManagementRequest(r *http.Request) bool {
 	return len(parts) >= 4 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "oauth-registrations"
 }
 
+func isTesterExitRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodPost && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "tester-memberships" && strings.HasSuffix(parts[4], ":leave")
+}
+func validTesterExitHTTPInput(r *http.Request) bool {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		return false
+	}
+	if r.Body == nil {
+		return true
+	}
+	// No body means no bytes, including whitespace or JSON null.
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1))
+	return err == nil && len(body) == 0
+}
+
 func isTesterRemovalRequest(r *http.Request) bool {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 	return r.Method == http.MethodDelete && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "tester-memberships"
@@ -1075,9 +1106,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 					return
 				}
 			}
-			if isTesterManagementRequest(r) || isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
+			if isTesterExitRequest(r) || isTesterManagementRequest(r) || isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
-				if isTesterManagementRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
+				if isTesterExitRequest(r) || isTesterManagementRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
 				}
 				var identityErr error
@@ -1112,6 +1143,9 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if identityErr != nil {
 					operation := JoinApplicationAsTesterGRPCMethod
+					if isTesterExitRequest(r) {
+						operation = LeaveApplicationAsTesterGRPCMethod
+					}
 					if isOAuthClientManagementRequest(r) {
 						operation = RegisterOAuthClientGRPCMethod
 					}
@@ -1223,6 +1257,10 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 				}
 				if isTesterJoinLinkRevocationRequest(r) && !validTesterRemovalHTTPInput(r) {
 					credentialSafeErrorEncoder(w, r, invalidRevokeTesterJoinLinkRequest())
+					return
+				}
+				if isTesterExitRequest(r) && !validTesterExitHTTPInput(r) {
+					credentialSafeErrorEncoder(w, r, toTransportError(testerdomain.ErrInvalidTesterExitRequest))
 					return
 				}
 				if isTesterRemovalRequest(r) && !validTesterRemovalHTTPInput(r) {

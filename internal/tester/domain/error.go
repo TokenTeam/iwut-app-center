@@ -21,6 +21,9 @@ const (
 type ErrorCode string
 
 const (
+	ErrorCodeUserIdentityRequired                   ErrorCode = "UserIdentityRequired"
+	ErrorCodeApplicationTesterExitUnavailable       ErrorCode = "ApplicationTesterExitUnavailable"
+	ErrorCodeInvalidTesterExitRequest               ErrorCode = "InvalidTesterExitRequest"
 	ErrorCodeAuthenticatedUserRequired              ErrorCode = "AuthenticatedUserRequired"
 	ErrorCodeInvalidTesterJoinSecret                ErrorCode = "InvalidTesterJoinSecret"
 	ErrorCodeTesterJoinLinkInvalid                  ErrorCode = "TesterJoinLinkInvalid"
@@ -62,6 +65,9 @@ func (e *Error) Is(target error) bool {
 }
 
 var (
+	ErrUserIdentityRequired                       = newError(ErrorCategoryAuthentication, ErrorCodeUserIdentityRequired, "user identity is required", nil)
+	ErrApplicationTesterExitUnavailable           = newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationTesterExitUnavailable, "tester exit is unavailable", nil)
+	ErrInvalidTesterExitRequest                   = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterExitRequest, "tester exit accepts only target IDs", nil)
 	ErrApplicationTesterJoinLinkStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationTesterJoinLinkStateInconsistent, "application tester join link state is inconsistent", nil)
 	ErrInvalidTesterMembershipId                  = newError(ErrorCategoryValidation, ErrorCodeInvalidTesterMembershipId, "tester membership ID is invalid", nil)
 	ErrApplicationTesterMembershipNotFound        = newError(ErrorCategoryNotFound, ErrorCodeApplicationTesterMembershipNotFound, "application tester membership not found", nil)

@@ -38,21 +38,17 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-039 — query administrator-owned ApplicationProfileRevision list/detail.**
-Read `app-center/briefs/UC-APP-039.md`, the engineering baseline and implements
-README from the authoritative local docs workspace. User accepted UC039 on
-2026-10-14. Implement BR-PRF-047–056: current-admin-only retained-state queries,
-original REJECTED text, minimal projections and paged review history, latest
-review consistency, domain-isolated ownership/caller/query-bound HMAC cursors,
-one read-only majority snapshot, strict required-source/lookahead validation,
-2 MiB exact HTTP/gRPC response budgets without skipped items, migration 0032,
-existing ProfileRevision API service, Wire and full real Mongo acceptance.
-No new write capability, Auth/Scope/DNS calls, fence/audit, current Reviewer
-policy, frontend or public client Catalog work. Preserve existing draft/edit
-and Reviewer API behavior. Source/Proto/generated code changes are App-scoped.
+**UC-APP-040 — leave an owned Application tester membership episode.**
+Read `app-center/briefs/UC-APP-040.md`, the engineering baseline and implements
+README from the authoritative local docs workspace. User accepted UC040 on
+2026-10-15. Implement BR-TST-044–051: trusted USER exact-episode ownership,
+retained lifecycle self-exit, immutable REMOVED audit and no-clock idempotency,
+shared Application fence and atomic derived capacity, strict necessary-source
+validation, minimal private/no-store responses, existing TesterMembership API,
+Wire, real Mongo concurrency/rollback and full HTTP/gRPC acceptance.
+Preserve administrator removal, Join gates, current queries and Auth behavior.
+No Auth/Scope/DNS calls, frontend, new membership status/counter/history model.
 
-Previous backlog audit and HTTP observability repair are complete. After UC039
-full acceptance, prepare Tester self-exit design and pause for user review.
 Any new UC/BR/business changes require a concrete reviewed proposal. Do not
 modify Auth/Gateway/Console code or message their agents; prepare handoff items
 for the user. Client Catalog/Filter evaluation, approval revocation, reliable

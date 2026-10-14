@@ -58,6 +58,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(catalogport.PublicApplicationCatalogRepository), new(*PublicCatalogRepository)),
 	NewApplicationTesterMembershipRepository,
 	wire.Bind(new(testerport.ApplicationTesterMembershipRepository), new(*ApplicationTesterMembershipRepository)),
+	wire.Bind(new(testerport.ApplicationTesterExitRepository), new(*ApplicationTesterMembershipRepository)),
 	wire.Bind(new(testerport.ApplicationTesterRemovalRepository), new(*ApplicationTesterMembershipRepository)),
 	NewApplicationTesterJoinLinkRepository,
 	wire.Bind(new(testerport.ApplicationTesterJoinLinkRepository), new(*ApplicationTesterJoinLinkRepository)),

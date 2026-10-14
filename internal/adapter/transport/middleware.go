@@ -57,7 +57,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if isMyTestApplicationOperation(operation) {
+				if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if operation == ClearTestSlotGRPCMethod {
@@ -101,7 +101,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
-	if isMyTestApplicationOperation(operation) {
+	if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonUserIdentityRequired, "user identity is required")
 		}

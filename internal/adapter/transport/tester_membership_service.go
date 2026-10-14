@@ -23,10 +23,15 @@ type RemoveApplicationTesterHandler interface {
 	Handle(context.Context, shared.DeveloperIdentity, shared.ApplicationID, testerdomain.ApplicationTesterMembershipID) (*testerdomain.RemoveApplicationTesterResult, error)
 }
 
+type LeaveApplicationAsTesterHandler interface {
+	Handle(context.Context, shared.AuthenticatedUserIdentity, shared.ApplicationID, testerdomain.ApplicationTesterMembershipID) (*testerdomain.LeaveApplicationAsTesterResult, error)
+}
+
 type TesterMembershipService struct {
 	testermembershipv1.UnimplementedTesterMembershipServer
 	handler       JoinApplicationAsTesterHandler
 	removeHandler RemoveApplicationTesterHandler
+	exitHandler   LeaveApplicationAsTesterHandler
 }
 
 var _ testermembershipv1.TesterMembershipHTTPServer = (*TesterMembershipService)(nil)
@@ -34,6 +39,44 @@ var _ testermembershipv1.TesterMembershipServer = (*TesterMembershipService)(nil
 
 func NewTesterMembershipService(handler JoinApplicationAsTesterHandler, removeHandler RemoveApplicationTesterHandler) *TesterMembershipService {
 	return &TesterMembershipService{handler: handler, removeHandler: removeHandler}
+}
+
+func NewTesterMembershipServiceWithExit(handler JoinApplicationAsTesterHandler, removeHandler RemoveApplicationTesterHandler, exitHandler LeaveApplicationAsTesterHandler) *TesterMembershipService {
+	return &TesterMembershipService{handler: handler, removeHandler: removeHandler, exitHandler: exitHandler}
+}
+func (service *TesterMembershipService) LeaveApplicationAsTester(ctx context.Context, request *testermembershipv1.LeaveApplicationAsTesterRequest) (*testermembershipv1.LeaveApplicationAsTesterResponse, error) {
+	if transporter, ok := kratostransport.FromServerContext(ctx); ok {
+		transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
+	}
+	identity, ok := authenticatedUserIdentityFromContext(ctx)
+	if !ok {
+		return nil, toTransportError(testerdomain.ErrUserIdentityRequired)
+	}
+	if request == nil || len(request.ProtoReflect().GetUnknown()) != 0 {
+		return nil, toTransportError(testerdomain.ErrInvalidTesterExitRequest)
+	}
+	if service == nil || service.exitHandler == nil {
+		return nil, toTransportError(testerdomain.ErrApplicationTesterExitUnavailable)
+	}
+	result, err := service.exitHandler.Handle(ctx, identity, shared.ApplicationID(request.GetApplicationId()), testerdomain.ApplicationTesterMembershipID(request.GetMembershipId()))
+	if err != nil {
+		if errors.Is(err, testerdomain.ErrApplicationTesterStateInconsistent) {
+			slog.ErrorContext(ctx, "application tester state invariant failed", "reason", ReasonApplicationTesterStateInconsistent)
+		}
+		return nil, toTransportError(err)
+	}
+	if result == nil {
+		return nil, toTransportError(testerdomain.ErrApplicationTesterStateInconsistent)
+	}
+	m := result.Membership()
+	if m == nil || m.Status() != testerdomain.MembershipStatusRemoved || m.RemovedAt() == nil {
+		return nil, toTransportError(testerdomain.ErrApplicationTesterStateInconsistent)
+	}
+	joined, removed := timestamppb.New(m.JoinedAt()), timestamppb.New(*m.RemovedAt())
+	if joined.CheckValid() != nil || removed.CheckValid() != nil {
+		return nil, toTransportError(testerdomain.ErrApplicationTesterStateInconsistent)
+	}
+	return &testermembershipv1.LeaveApplicationAsTesterResponse{Left: result.Left(), Membership: &testermembershipv1.TesterExitMembership{MembershipId: m.MembershipID().String(), ApplicationId: m.ApplicationID().String(), Status: string(m.Status()), JoinedAt: joined, RemovedAt: removed}}, nil
 }
 
 func (service *TesterMembershipService) RemoveApplicationTester(ctx context.Context, request *testermembershipv1.RemoveApplicationTesterRequest) (*testermembershipv1.RemoveApplicationTesterResponse, error) {
