@@ -54,6 +54,7 @@ class VerificationTests(unittest.TestCase):
         self.assertIn("-race", mongo)
         self.assertNotIn("-run", mongo)
         self.assertEqual(cross[len(backend):], [
+            ("uc002-gateway-auth-e2e-race", self.root, ["bash", "scripts/test-uc002-gateway-auth-integration.sh"]),
             ("auth-app-e2e-race", self.root, ["bash", "scripts/test-auth-app-integration.sh"]),
             ("uc033-auth-oauth-e2e-race", self.root, ["bash", "scripts/test-uc033-auth-app-integration.sh"]),
             ("uc036-auth-oauth-e2e-race", self.root, ["bash", "scripts/test-uc036-auth-app-integration.sh"]),

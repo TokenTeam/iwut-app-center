@@ -38,22 +38,25 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-040 — leave an owned Application tester membership episode.**
-Read `app-center/briefs/UC-APP-040.md`, the engineering baseline and implements
-README from the authoritative local docs workspace. User accepted UC040 on
-2026-10-15. Implement BR-TST-044–051: trusted USER exact-episode ownership,
-retained lifecycle self-exit, immutable REMOVED audit and no-clock idempotency,
-shared Application fence and atomic derived capacity, strict necessary-source
-validation, minimal private/no-store responses, existing TesterMembership API,
-Wire, real Mongo concurrency/rollback and full HTTP/gRPC acceptance.
-Preserve administrator removal, Join gates, current queries and Auth behavior.
-No Auth/Scope/DNS calls, frontend, new membership status/counter/history model.
+**UC-APP-002 — real Auth/Gateway version-creation integration acceptance.**
+Read `app-center/briefs/UC-APP-002.md`, the engineering baseline and implements
+README from the authoritative local docs workspace. User authorized advancing
+UC002 integration on 2026-10-15. Verify BR-VER-001–009/018 through real Auth
+USER issuance, an immutable Gateway source snapshot, exact public HTTP/native
+gRPC/gRPC-Web routing, persistent Auth Scope Catalog, authorization, scope
+revision/cache expiry/failure and atomic Version/OAuth persistence. Implement
+App-owned integration tests and disposable orchestration only; preserve current
+accepted business behavior. Do not change Auth/Gateway/Console sources or their
+UCs. Prepare concrete integration handoffs for missing neighboring behavior.
+Preserve the pre-existing API checkout update to a5d504c; do not stage it as an
+unrelated part of this test package. Pin and record all external inputs.
+Final tier: make check-auth-app, including a new UC002 real Gateway/Auth gate.
 
 Any new UC/BR/business changes require a concrete reviewed proposal. Do not
 modify Auth/Gateway/Console code or message their agents; prepare handoff items
 for the user. Client Catalog/Filter evaluation, approval revocation, reliable
 alert delivery and managed icon assets remain deferred.
-Use Go 1.25.5 and local committed docs. Final tier: `make check-full`. Freeze all
+Use Go 1.25.5 and local committed docs. Final tier: `make check-auth-app`. Freeze all
 inputs during final tests; stage owned new files before diff checks. Preserve
 all pre-existing dirty files and do not stage/commit unrelated changes. Keep
 API/source/history local and use this persistent checkout. No push/deployment.

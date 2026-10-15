@@ -71,6 +71,7 @@ link rotation and enforce the fixed limit of 100 ACTIVE testers.
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
 | `make test-mongo` | Run MongoDB integration and the UC-APP-001–012 end-to-end suites against an isolated replica set (Docker) |
+| `make test-uc002-gateway-auth` | Run UC002 through real Traefik/Gateway, Auth Session-to-USER issuance and the persistent Scope Catalog |
 | `make test-auth-app` | Pull the published Auth Center `latest` image, start it with isolated Mongo, and run the service-JWS cross-service E2E |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
@@ -78,7 +79,7 @@ link rotation and enforce the fixed limit of 100 ACTIVE testers.
 | `make doctor` | Check quick prerequisites only; no acceptance claim |
 | `make check` | Quick tier: script tests, format/build/unit/transport/architecture, vet, Wire/Proto, docs/brief/registry, staged and working diff checks |
 | `make check-full` | Quick tier + Go race + all MongoDB and HTTP/gRPC E2E tests with race |
-| `make check-auth-app` | Full backend tier + the real Auth/App service-JWS E2E with race |
+| `make check-auth-app` | Full backend tier + UC002 Gateway/Auth, Auth/App service-JWS and UC033/036 OAuth E2E with race |
 | `make test-race` / `make test-scripts` | Individual race or verification-tooling regression checks |
 | `make migrate` | Apply pending MongoDB migrations and exit |
 | `make run` | Start the HTTP and gRPC servers |
@@ -88,8 +89,13 @@ link rotation and enforce the fixed limit of 100 ACTIVE testers.
 Use `make check` while implementing and `make check-full` before backend delivery.
 Changes involving Auth consumers or shared Auth identity/contracts also require
 `make check-auth-app`. Quick success does **not** mean Mongo, E2E or race passed.
-The real Auth/App check currently covers the named UC005 service-JWS scenario;
-it is not proof of every Auth UC, production Gateway or frontend flow.
+The UC002 gate covers public HTTP, native gRPC and gRPC-Web creation, permission
+failures, persistent Scope revision/cache expiry/outage/rollback/recovery, and
+no partial Version/OAuth state. It seeds an already authenticated device Session
+in isolated Auth Mongo; the real Auth service signs the USER identity consumed
+by Gateway and App. Registration, password/email login and frontend flows need
+their own acceptance. Other cross-service gates cover the named UC005 service-JWS
+and UC033/036 OAuth scenarios.
 
 From the repository root, run the Python 3 standard-library runner directly:
 
@@ -102,7 +108,9 @@ From the repository root, run the Python 3 standard-library runner directly:
 Prerequisites are checked before gates: Go, Git, Make, Bash, gofmt, Python 3,
 and the pinned Proto toolchain; integration tiers also need Docker and GNU
 `timeout`, and the cross-service tier needs OpenSSL/base64 plus registry access
-to pull the published Auth Center image.
+to pull the published Auth Center image and the Gateway-pinned Traefik image.
+UC002 also needs a local Gateway Git checkout with its initialized API submodule;
+the gate builds committed snapshots in a temporary directory.
 `make -C api proto-tools` prints/checks availability; it does not install tools.
 Missing tools or inaccessible Docker fail rather than skip the tier.
 
@@ -113,6 +121,10 @@ Missing tools or inaccessible Docker fail rather than skip the tier.
 - `AUTH_CENTER_IMAGE`: override the Auth image used by the cross-service gate
   (default `docker.cnb.cool/tokenteam/iwut-auth-center:latest`). The gate always
   pulls the tag before startup and records the resolved image ID in its log.
+- `GATEWAY_SOURCE_DIR`: Gateway checkout for UC002 (default sibling
+  `../iwut-gateway`). The gate archives its service/API HEADs, records both in
+  `gateway-inputs.txt` and builds those immutable snapshots without changing the
+  neighboring checkout. Uncommitted Gateway changes are excluded.
 - `MONGODB_INTEGRATION_PORT`: optional fixed host port. By default Docker assigns
   a separate port per run; parallel runs use separate containers and databases.
 - `AUTH_CENTER_INTEGRATION_PORT`: optional Auth port; by default chosen from a

@@ -85,7 +85,8 @@ def stages(root, docs, tier):
     ]
     plan += [(f"syntax-{script}", root, ["bash", "-n", f"scripts/{script}.sh"])
              for script in ("integration-lib", "test-mongo-integration", "test-auth-app-integration",
-                            "test-uc033-auth-app-integration", "test-uc036-auth-app-integration")]
+                            "test-uc033-auth-app-integration", "test-uc036-auth-app-integration",
+                            "test-uc002-gateway-auth-integration")]
     plan += [(name, root, ["make", target]) for name, target in (
         ("format", "fmt-check"), ("build", "build"), ("unit-transport-architecture", "test"),
         ("vet", "vet"), ("wire", "wire-check"), ("proto", "api-check"))]
@@ -102,6 +103,7 @@ def stages(root, docs, tier):
         plan += [("race", root, ["make", "test-race"]),
                  ("mongo-and-http-grpc-e2e-race", root, ["bash", "scripts/test-mongo-integration.sh", "-race"])]
     if tier == "cross-service":
+        plan.append(("uc002-gateway-auth-e2e-race", root, ["bash", "scripts/test-uc002-gateway-auth-integration.sh"]))
         plan.append(("auth-app-e2e-race", root, ["bash", "scripts/test-auth-app-integration.sh"]))
         plan.append(("uc033-auth-oauth-e2e-race", root, ["bash", "scripts/test-uc033-auth-app-integration.sh"]))
         plan.append(("uc036-auth-oauth-e2e-race", root, ["bash", "scripts/test-uc036-auth-app-integration.sh"]))
