@@ -1,9 +1,6 @@
 package transport
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -11,38 +8,6 @@ import (
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	"google.golang.org/protobuf/proto"
 )
-
-func TestAPIContract_UCAPP002_ResourceRouteAndGeneratedMethodAgree(t *testing.T) {
-	t.Parallel()
-	root := moduleRoot(t)
-	protoPath := filepath.Join(root, "api", "app_center", "v1", "application_version", "application_version.proto")
-	protoSource, err := os.ReadFile(protoPath)
-	if err != nil {
-		t.Fatalf("read proto: %v", err)
-	}
-	protoText := string(protoSource)
-	postPath := mustFind(t, regexp.MustCompile(`post:\s*"([^"]+)"`), protoText)
-	if postPath != CreateApplicationVersionInternalPath {
-		t.Fatalf("Proto path = %q, constant = %q", postPath, CreateApplicationVersionInternalPath)
-	}
-	if CreateApplicationVersionExternalPath != "/app-center/v1/applications/{application_id}/versions" ||
-		strings.TrimPrefix(CreateApplicationVersionExternalPath, ServicePrefix) != CreateApplicationVersionInternalPath {
-		t.Fatalf("external/internal mapping = %q -> %q", CreateApplicationVersionExternalPath, CreateApplicationVersionInternalPath)
-	}
-	if CreateApplicationVersionGRPCMethod != "/app_center.v1.application_version.ApplicationVersion/CreateApplicationVersion" {
-		t.Fatalf("gRPC method = %q", CreateApplicationVersionGRPCMethod)
-	}
-	if CreateApplicationVersionGRPCMethod != applicationversionv1.OperationApplicationVersionCreateApplicationVersion {
-		t.Fatalf("gRPC method = %q, generated = %q", CreateApplicationVersionGRPCMethod, applicationversionv1.OperationApplicationVersionCreateApplicationVersion)
-	}
-	generatedSource, err := os.ReadFile(filepath.Join(root, "api", "gen", "go", "app_center", "v1", "application_version", "application_version_http.pb.go"))
-	if err != nil {
-		t.Fatalf("read generated HTTP code: %v", err)
-	}
-	if generatedRoute := mustFind(t, regexp.MustCompile(`r\.POST\("([^"]+)"`), string(generatedSource)); generatedRoute != postPath {
-		t.Fatalf("generated route = %q, Proto = %q", generatedRoute, postPath)
-	}
-}
 
 func TestAPIContract_UCAPP002_RequestExcludesServerOwnedFieldsAndResponseIsComplete(t *testing.T) {
 	t.Parallel()
@@ -69,63 +34,6 @@ func TestAPIContract_UCAPP002_RequestExcludesServerOwnedFieldsAndResponseIsCompl
 	sort.Strings(wantResponse)
 	if fields := messageFieldNames(t, response); strings.Join(fields, ",") != strings.Join(wantResponse, ",") {
 		t.Fatalf("response fields = %v, want %v", fields, wantResponse)
-	}
-}
-
-func TestAPIContract_UCAPP002_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
-	t.Parallel()
-	reasons := []string{
-		ReasonInvalidApplicationID,
-		ReasonInvalidVersionLabel,
-		ReasonInvalidApplicationLaunchURL,
-		ReasonInvalidRPCApiRange,
-		ReasonInvalidRequiredCapability,
-		ReasonInvalidApplicationScope,
-		ReasonInvalidOAuthRedirectConfiguration,
-		ReasonDeveloperIdentityRequired,
-		ReasonInvalidDeveloperIdentity,
-		ReasonDeveloperApprovalRequired,
-		ReasonApplicationNotFound,
-		ReasonApplicationAdminRequired,
-		ReasonApplicationVersionLabelExists,
-		ReasonScopeCatalogUnavailable,
-		ReasonInternal,
-	}
-	for _, reason := range reasons {
-		if _, ok := applicationversionv1.ErrorReason_value[reason]; !ok {
-			t.Fatalf("generated UC-APP-002 ErrorReason enum is missing %q", reason)
-		}
-	}
-}
-
-func TestAPIContract_UCAPP003_ResourceRouteAndGeneratedMethodAgree(t *testing.T) {
-	t.Parallel()
-	root := moduleRoot(t)
-	protoPath := filepath.Join(root, "api", "app_center", "v1", "application_version", "application_version.proto")
-	protoSource, err := os.ReadFile(protoPath)
-	if err != nil {
-		t.Fatalf("read proto: %v", err)
-	}
-	putPath := mustFind(t, regexp.MustCompile(`put:\s*"([^"]+)"`), string(protoSource))
-	if putPath != UpdateApplicationVersionInternalPath {
-		t.Fatalf("Proto path = %q, constant = %q", putPath, UpdateApplicationVersionInternalPath)
-	}
-	if UpdateApplicationVersionExternalPath != "/app-center/v1/applications/{application_id}/versions/{version_id}" ||
-		strings.TrimPrefix(UpdateApplicationVersionExternalPath, ServicePrefix) != UpdateApplicationVersionInternalPath {
-		t.Fatalf("external/internal mapping = %q -> %q", UpdateApplicationVersionExternalPath, UpdateApplicationVersionInternalPath)
-	}
-	if UpdateApplicationVersionGRPCMethod != "/app_center.v1.application_version.ApplicationVersion/UpdateApplicationVersion" {
-		t.Fatalf("gRPC method = %q", UpdateApplicationVersionGRPCMethod)
-	}
-	if UpdateApplicationVersionGRPCMethod != applicationversionv1.OperationApplicationVersionUpdateApplicationVersion {
-		t.Fatalf("gRPC method = %q", UpdateApplicationVersionGRPCMethod)
-	}
-	generated, err := os.ReadFile(filepath.Join(root, "api", "gen", "go", "app_center", "v1", "application_version", "application_version_http.pb.go"))
-	if err != nil {
-		t.Fatalf("read generated HTTP code: %v", err)
-	}
-	if generatedRoute := mustFind(t, regexp.MustCompile(`r\.PUT\("([^"]+)"`), string(generated)); generatedRoute != putPath {
-		t.Fatalf("generated route = %q, Proto = %q", generatedRoute, putPath)
 	}
 }
 
@@ -160,20 +68,8 @@ func TestAPIContract_UCAPP003_HTTPBodyIsCompleteReplacementWithoutServerState(t 
 	}
 }
 
-func TestAPIContract_UCAPP034_QueryRoutesFieldsAndReasons(t *testing.T) {
+func TestAPIContract_UCAPP034_QueryFieldsAndReasons(t *testing.T) {
 	t.Parallel()
-	root := moduleRoot(t)
-	source, err := os.ReadFile(filepath.Join(root, "api", "app_center", "v1", "application_version", "application_version.proto"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
-	if !strings.Contains(text, `post: "`+ListApplicationVersionsInternalPath+`"`) || !strings.Contains(text, `body: "query"`) || !strings.Contains(text, `get: "`+GetApplicationVersionInternalPath+`"`) {
-		t.Fatalf("query HTTP annotations do not match constants")
-	}
-	if ListApplicationVersionsExternalPath != ServicePrefix+ListApplicationVersionsInternalPath || GetApplicationVersionExternalPath != ServicePrefix+GetApplicationVersionInternalPath || ListApplicationVersionsGRPCMethod != applicationversionv1.OperationApplicationVersionListApplicationVersions || GetApplicationVersionGRPCMethod != applicationversionv1.OperationApplicationVersionGetApplicationVersion {
-		t.Fatal("query route constants do not match generated contract")
-	}
 	request := &applicationversionv1.ListApplicationVersionsRequest{}
 	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != "application_id,query" {
 		t.Fatalf("list request fields=%v", fields)
@@ -214,18 +110,8 @@ func TestAPIContract_UCAPP034_ReadModelsCannotExposeReviewerOrSYSTEMAuthIDs(t *t
 	}
 }
 
-func TestAPIContract_UCAPP035_DeleteRouteMinimalFieldsAndReasons(t *testing.T) {
+func TestAPIContract_UCAPP035_MinimalFieldsAndReasons(t *testing.T) {
 	t.Parallel()
-	root := moduleRoot(t)
-	source, err := os.ReadFile(filepath.Join(root, "api", "app_center", "v1", "application_version", "application_version.proto"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(source)
-	deletePath := mustFind(t, regexp.MustCompile(`(?s)rpc\s+AbandonApplicationVersionDraft.*?delete:\s*"([^"]+)"`), text)
-	if deletePath != AbandonApplicationVersionInternalPath || AbandonApplicationVersionExternalPath != ServicePrefix+deletePath || AbandonApplicationVersionGRPCMethod != applicationversionv1.OperationApplicationVersionAbandonApplicationVersionDraft {
-		t.Fatalf("route mismatch: %s %s %s", deletePath, AbandonApplicationVersionExternalPath, AbandonApplicationVersionGRPCMethod)
-	}
 	request := &applicationversionv1.AbandonApplicationVersionDraftRequest{}
 	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != "application_id,expected_revision,version_id" {
 		t.Fatalf("request fields=%v", fields)

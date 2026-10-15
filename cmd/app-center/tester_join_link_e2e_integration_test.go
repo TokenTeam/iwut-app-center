@@ -29,6 +29,7 @@ import (
 )
 
 func TestE2E_UCAPP008_BR_TST_001_009_CreateAndRotate(t *testing.T) {
+	e2eRequireMongoIntegration(t)
 	for _, prefixOverride := range []string{"", "http://localhost:4321/custom/join/"} {
 		name := "default"
 		if prefixOverride != "" {

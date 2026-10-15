@@ -1737,14 +1737,20 @@ func TestE2E_UCAPP006_RestoreRejectedApplicationVersionToDraft(t *testing.T) {
 	}
 }
 
-// e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
-// database. migrate controls whether migrations are applied explicitly.
-func e2eIsolatedDatabase(t *testing.T, ctx context.Context, migrate bool) (*drivermongo.Client, *drivermongo.Database) {
+func e2eRequireMongoIntegration(t *testing.T) string {
 	t.Helper()
 	uri := os.Getenv(mongoIntegrationURIEnv)
 	if uri == "" {
 		t.Skipf("set %s or run scripts/test-mongo-integration.sh", mongoIntegrationURIEnv)
 	}
+	return uri
+}
+
+// e2eIsolatedDatabase connects to the integration MongoDB and returns a unique
+// database. migrate controls whether migrations are applied explicitly.
+func e2eIsolatedDatabase(t *testing.T, ctx context.Context, migrate bool) (*drivermongo.Client, *drivermongo.Database) {
+	t.Helper()
+	uri := e2eRequireMongoIntegration(t)
 	client, err := mongoadapter.NewClient(uri)
 	if err != nil {
 		t.Fatalf("connect integration MongoDB: %v", err)

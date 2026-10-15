@@ -29,6 +29,7 @@ func archiveIntegrationApplication(t *testing.T, db *drivermongo.Database, appID
 }
 
 func TestApplicationArchivalConsumersIntegration_BR_APP_053_CatalogResolversAndJoinFailClosed(t *testing.T) {
+	requireMongoIntegration(t)
 	t.Run("TEST descriptor", func(t *testing.T) {
 		fixture := newTestLaunchFixture(t, integrationClient(t))
 		archiveIntegrationApplication(t, fixture.db, fixture.seed.applicationID, fixture.seed.adminID)

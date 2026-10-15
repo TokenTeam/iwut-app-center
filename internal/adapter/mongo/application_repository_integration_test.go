@@ -612,12 +612,18 @@ func TestApplicationRepositoryConstructionDoesNotMutateSchema(t *testing.T) {
 	}
 }
 
-func integrationClient(t *testing.T) *drivermongo.Client {
+func requireMongoIntegration(t *testing.T) string {
 	t.Helper()
 	uri := os.Getenv(mongoIntegrationURIEnvironment)
 	if uri == "" {
 		t.Skipf("set %s or run scripts/test-mongo-integration.sh", mongoIntegrationURIEnvironment)
 	}
+	return uri
+}
+
+func integrationClient(t *testing.T) *drivermongo.Client {
+	t.Helper()
+	uri := requireMongoIntegration(t)
 	client, err := drivermongo.Connect(options.Client().ApplyURI(uri))
 	if err != nil {
 		t.Fatalf("connect MongoDB: %v", err)

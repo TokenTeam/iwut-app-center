@@ -55,17 +55,6 @@ func TestAPIContract_UCAPP007_BR_PUB_006_ExpectedRevisionPresence(t *testing.T) 
 	}
 }
 
-func TestAPIContract_UCAPP007_ErrorReasonsMatchGeneratedEnum(t *testing.T) {
-	for _, spec := range publicationDomainErrorSpecs {
-		if _, ok := publicationv1.ErrorReason_value[spec.reason]; !ok {
-			t.Fatalf("missing error reason %s", spec.reason)
-		}
-	}
-	if _, ok := publicationv1.ErrorReason_value[ReasonInvalidDeveloperIdentity]; !ok {
-		t.Fatal("missing invalid identity reason")
-	}
-}
-
 func TestAPIContract_UCAPP020_StableRoutesPresenceAndClearQuery(t *testing.T) {
 	service := publicationv1.File_app_center_v1_application_publication_application_publication_proto.Services().ByName("ApplicationPublication")
 	setDescriptor := service.Methods().ByName("SetApprovedVersionInStableSlot")

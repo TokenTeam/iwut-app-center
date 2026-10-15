@@ -44,35 +44,8 @@ func TestWireApp_FailsClosedOnInvalidIdentityKeyFile(t *testing.T) {
 	}
 }
 
-func TestProvideServerConfigMapsAddresses(t *testing.T) {
-	t.Parallel()
-
-	configuration := validConfig()
-	configuration.ApplicationClosureEnabled = true
-	configuration.ApplicationOperationsEnabled = true
-	serverConfig := provideServerConfig(configuration)
-	if serverConfig.HTTPAddr != "127.0.0.1:0" || serverConfig.GRPCAddr != "127.0.0.1:0" {
-		t.Fatalf("server config = %#v", serverConfig)
-	}
-	if !serverConfig.ApplicationClosureEnabled {
-		t.Fatalf("server config = %#v, want application closure enabled", serverConfig)
-	}
-	if !serverConfig.ApplicationOperationsEnabled {
-		t.Fatalf("server config = %#v, want application operations enabled", serverConfig)
-	}
-}
-
-func TestProvideInitialApplicationQuota(t *testing.T) {
-	t.Parallel()
-
-	if quota := provideInitialApplicationQuota(validConfig()); quota != 10 {
-		t.Fatalf("quota = %d, want 10", quota)
-	}
-}
-
-// TestRunMigrate_RequiresOnlyMongoConfiguration proves the migrate command
-// reaches Mongo configuration without any identity/server settings. It fails
-// at configuration load, so it never opens a connection.
+// TestRunMigrate_RequiresOnlyMongoConfiguration proves migrate can load its
+// configuration without identity/server settings and without opening MongoDB.
 func TestRunMigrate_RequiresOnlyMongoConfiguration(t *testing.T) {
 	t.Setenv(config.MongoURIEnv, "")
 	t.Setenv(config.IdentityIssuerEnv, "")

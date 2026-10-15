@@ -376,6 +376,7 @@ func TestOAuthProviderRepositoryIntegration_UCAPP021_GreyCohort(t *testing.T) {
 }
 
 func TestOAuthProviderRepositoryFailsClosedOnEligibilityChanges(t *testing.T) {
+	requireMongoIntegration(t)
 	t.Run("tester removal", func(t *testing.T) {
 		f := newOAuthProviderFixture(t)
 		repository := NewOAuthProviderRepository(f.db, providerTestSecretVerifier{})
@@ -432,6 +433,7 @@ func TestOAuthProviderRepositoryFailsClosedOnEligibilityChanges(t *testing.T) {
 }
 
 func TestOAuthProviderRepositoryProfileSwitchUsesOneSnapshot(t *testing.T) {
+	requireMongoIntegration(t)
 	for _, order := range []string{"before", "after"} {
 		t.Run("BR-OAC-008 profile switch "+order+" application read", func(t *testing.T) {
 			f := newOAuthProviderFixture(t)
