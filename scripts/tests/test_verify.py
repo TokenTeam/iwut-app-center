@@ -53,7 +53,11 @@ class VerificationTests(unittest.TestCase):
         mongo = next(command for name, _, command in backend if name == "mongo-and-http-grpc-e2e-race")
         self.assertIn("-race", mongo)
         self.assertNotIn("-run", mongo)
-        self.assertEqual(cross[-1][0], "auth-app-e2e-race")
+        self.assertEqual(cross[len(backend):], [
+            ("auth-app-e2e-race", self.root, ["bash", "scripts/test-auth-app-integration.sh"]),
+            ("uc033-auth-oauth-e2e-race", self.root, ["bash", "scripts/test-uc033-auth-app-integration.sh"]),
+            ("uc036-auth-oauth-e2e-race", self.root, ["bash", "scripts/test-uc036-auth-app-integration.sh"]),
+        ])
         for name, cwd, _ in quick:
             if name in ("docs-tests", "brief-freshness", "registry"):
                 self.assertEqual(cwd, self.root / "docs")
@@ -65,6 +69,14 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual(docs, Path(checkout.name) / "docs")
         self.assertEqual((docs / "source.txt").read_text(), "original\n")
         self.assertEqual(verify.git(docs, "rev-parse", "HEAD"), verify.git(self.root, "rev-parse", "HEAD"))
+
+    def test_cross_service_sources_do_not_require_an_auth_worktree(self):
+        sources = verify.source_paths(self.root, self.root / "docs", "cross-service")
+        self.assertEqual(set(sources), {"service", "api", "docs"})
+        self.assertEqual(
+            verify.DEFAULT_AUTH_CENTER_IMAGE,
+            "docker.cnb.cool/tokenteam/iwut-auth-center:latest",
+        )
 
     def test_stage_failure_and_timeout_are_not_passes(self):
         failure = verify.run_stage("failure", self.root, [sys.executable, "-c", "print('diagnostic'); raise SystemExit(7)"],

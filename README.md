@@ -71,7 +71,7 @@ link rotation and enforce the fixed limit of 100 ACTIVE testers.
 | `make build` | Compile all packages |
 | `make test` | Run the unit, transport and architecture test suite |
 | `make test-mongo` | Run MongoDB integration and the UC-APP-001–012 end-to-end suites against an isolated replica set (Docker) |
-| `make test-auth-app` | Start isolated Mongo plus a separate real Auth process and run the service-JWS UC-APP-005 double-service E2E |
+| `make test-auth-app` | Pull the published Auth Center `latest` image, start it with isolated Mongo, and run the service-JWS cross-service E2E |
 | `make vet` | Run `go vet ./...` |
 | `make wire-check` | Fail if `wire_gen.go` is stale |
 | `make api-check` | Fail if the generated API code drifted from its Proto |
@@ -101,7 +101,8 @@ From the repository root, run the Python 3 standard-library runner directly:
 
 Prerequisites are checked before gates: Go, Git, Make, Bash, gofmt, Python 3,
 and the pinned Proto toolchain; integration tiers also need Docker and GNU
-`timeout`, and the cross-service tier needs OpenSSL/base64 and the Auth source.
+`timeout`, and the cross-service tier needs OpenSSL/base64 plus registry access
+to pull the published Auth Center image.
 `make -C api proto-tools` prints/checks availability; it does not install tools.
 Missing tools or inaccessible Docker fail rather than skip the tier.
 
@@ -109,8 +110,9 @@ Missing tools or inaccessible Docker fail rather than skip the tier.
   (default `https://github.com/TokenTeam/iwut-docs.git`).
 - `IWUT_DOCS_GIT_REF`: override the branch or tag cloned for verification
   (default `main`).
-- `AUTH_CENTER_SOURCE_DIR`: override the Auth worktree (default sibling
-  `iwut-auth-center-ddd`). Prefer absolute paths for overrides.
+- `AUTH_CENTER_IMAGE`: override the Auth image used by the cross-service gate
+  (default `docker.cnb.cool/tokenteam/iwut-auth-center:latest`). The gate always
+  pulls the tag before startup and records the resolved image ID in its log.
 - `MONGODB_INTEGRATION_PORT`: optional fixed host port. By default Docker assigns
   a separate port per run; parallel runs use separate containers and databases.
 - `AUTH_CENTER_INTEGRATION_PORT`: optional Auth port; by default chosen from a
@@ -121,10 +123,12 @@ Missing tools or inaccessible Docker fail rather than skip the tier.
 
 Every run writes `.artifacts/verification/<run>/report.json` and per-gate logs.
 The report records the tier, planned/executed gates, exit codes, durations, tool
-versions, source HEADs, dirty flags and SHA-256 content fingerprints before/after.
-Tracked and nonignored untracked files are included; ignored local files are not.
-It stores hashes instead of source diffs or environment dumps. Logs are local
-private diagnostics and may contain test fixture data; do not share them blindly.
+versions, local source HEADs, dirty flags and SHA-256 content fingerprints
+before/after. Cross-service reports also record the configured Auth image; the
+gate log records the immutable image ID resolved after pulling it. Tracked and
+nonignored untracked files are included; ignored local files are not. It stores
+hashes instead of source diffs or environment dumps. Logs are local private
+diagnostics and may contain test fixture data; do not share them blindly.
 
 A failure stops the pipeline; omitted gates are not claimed as successful.
 `doctor-passed` only confirms prerequisites. `source-changed` invalidates an

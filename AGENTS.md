@@ -67,7 +67,7 @@ working directory. See README for overrides, reports and troubleshooting.
 make doctor          # quick prerequisites only; not acceptance
 make check           # fast checks + scripts + generated code + external docs
 make check-full      # above + race + all real Mongo/HTTP/gRPC E2E tests
-make check-auth-app  # above + real Auth process E2E (cross-service changes)
+make check-auth-app  # above + published Auth image E2E (cross-service changes)
 ```
 
 - Use `check` during development. Use `check-full` for backend behavior,

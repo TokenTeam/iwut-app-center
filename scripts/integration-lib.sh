@@ -13,7 +13,8 @@ integration_init() {
   if [[ -n "${MONGODB_INTEGRATION_PORT:-}" ]]; then validate_port "${MONGODB_INTEGRATION_PORT}"; fi
   temporary_dir="$(mktemp -d)"
   container_name="iwut-app-integration-${temporary_dir##*/}"
-  auth_pid=""
+  network_name="${container_name}-network"
+  auth_container_name="${container_name}-auth"
   if [[ -n "${INTEGRATION_LOG_DIR:-}" ]]; then
     mkdir -p "${INTEGRATION_LOG_DIR}"
     integration_log_dir="$(cd "${INTEGRATION_LOG_DIR}" && pwd)"
@@ -34,18 +35,16 @@ validate_port() {
 integration_cleanup() {
   local code=$?
   trap - EXIT INT TERM
-  if [[ -n "${auth_pid:-}" ]]; then
-    kill "${auth_pid}" 2>/dev/null || true
-    for _ in {1..20}; do
-      kill -0 "${auth_pid}" 2>/dev/null || break
-      sleep 0.1
-    done
-    kill -KILL "${auth_pid}" 2>/dev/null || true
-    wait "${auth_pid}" 2>/dev/null || true
+  if [[ -n "${auth_container_name:-}" ]] && docker inspect "${auth_container_name}" >/dev/null 2>&1; then
+    timeout 10s docker logs "${auth_container_name}" >"${integration_log_dir}/auth-center.log" 2>&1 || true
+    timeout 15s docker rm -f "${auth_container_name}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${container_name:-}" ]]; then
     timeout 10s docker logs "${container_name}" >"${integration_log_dir}/mongo.log" 2>&1 || true
     timeout 15s docker rm -f "${container_name}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${network_name:-}" ]]; then
+    timeout 15s docker network rm "${network_name}" >/dev/null 2>&1 || true
   fi
   rm -rf "${temporary_dir}"
   if (( code != 0 )); then
@@ -66,7 +65,9 @@ wait_for_mongo() {
 start_integration_mongo() {
   # Docker atomically allocates the host port. directConnection avoids discovery
   # of the replica-set address private to this container.
+  docker network create "${network_name}" >/dev/null
   docker run --detach --rm --name "${container_name}" --ulimit nofile=65536:65536 \
+    --network "${network_name}" --network-alias mongo \
     --publish "127.0.0.1:${MONGODB_INTEGRATION_PORT:-}:27017" \
     mongo:8.2.12 mongod --replSet rs0 --bind_ip_all --port 27017 >/dev/null
   local mapping

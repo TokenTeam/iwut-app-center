@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TIERS = ("quick", "backend", "cross-service")
 DEFAULT_DOCS_GIT_URL = "https://github.com/TokenTeam/iwut-docs.git"
 DEFAULT_DOCS_GIT_REF = "main"
+DEFAULT_AUTH_CENTER_IMAGE = "docker.cnb.cool/tokenteam/iwut-auth-center:latest"
 
 
 def utc_now():
@@ -73,10 +74,8 @@ def fingerprint(root):
     return {"path": str(root), "head": head, "dirty": bool(status), "sha256": digest.hexdigest()}
 
 
-def source_paths(root, docs, auth, tier):
+def source_paths(root, docs, tier):
     result = {"service": root, "api": root / "api", "docs": docs}
-    if tier == "cross-service":
-        result.update(auth=auth, auth_api=auth / "api")
     return result
 
 
@@ -85,7 +84,8 @@ def stages(root, docs, tier):
         ("script-tests", root, [sys.executable, "-B", "-m", "unittest", "discover", "-s", "scripts/tests"]),
     ]
     plan += [(f"syntax-{script}", root, ["bash", "-n", f"scripts/{script}.sh"])
-             for script in ("integration-lib", "test-mongo-integration", "test-auth-app-integration")]
+             for script in ("integration-lib", "test-mongo-integration", "test-auth-app-integration",
+                            "test-uc033-auth-app-integration", "test-uc036-auth-app-integration")]
     plan += [(name, root, ["make", target]) for name, target in (
         ("format", "fmt-check"), ("build", "build"), ("unit-transport-architecture", "test"),
         ("vet", "vet"), ("wire", "wire-check"), ("proto", "api-check"))]
@@ -103,10 +103,12 @@ def stages(root, docs, tier):
                  ("mongo-and-http-grpc-e2e-race", root, ["bash", "scripts/test-mongo-integration.sh", "-race"])]
     if tier == "cross-service":
         plan.append(("auth-app-e2e-race", root, ["bash", "scripts/test-auth-app-integration.sh"]))
+        plan.append(("uc033-auth-oauth-e2e-race", root, ["bash", "scripts/test-uc033-auth-app-integration.sh"]))
+        plan.append(("uc036-auth-oauth-e2e-race", root, ["bash", "scripts/test-uc036-auth-app-integration.sh"]))
     return plan
 
 
-def preflight(root, docs, auth, tier):
+def preflight(root, docs, tier):
     required = ["git", "go", "make", "gofmt", "bash", "protoc", "protoc-gen-go", "protoc-gen-go-grpc", "protoc-gen-go-http"]
     if tier != "quick":
         required += ["docker", "timeout", "python3"]
@@ -114,8 +116,6 @@ def preflight(root, docs, auth, tier):
         required += ["openssl", "base64"]
     missing = [tool for tool in required if shutil.which(tool) is None]
     files = [root / "api/go.mod", docs / "tools/gen_brief.py", docs / "tools/registry.py"]
-    if tier == "cross-service":
-        files += [auth / "go.mod", auth / "cmd/auth-center/main.go", auth / "api/go.mod"]
     missing += [str(path) for path in files if not path.is_file()]
     if missing:
         raise RuntimeError("Missing prerequisites: " + ", ".join(missing))
@@ -203,7 +203,7 @@ def main(argv=None):
     docs_ref = os.environ.get("IWUT_DOCS_GIT_REF", DEFAULT_DOCS_GIT_REF).strip()
     if not docs_repository or not docs_ref:
         parser.error("IWUT_DOCS_GIT_URL and IWUT_DOCS_GIT_REF must not be empty")
-    auth = Path(os.environ.get("AUTH_CENTER_SOURCE_DIR", ROOT / "../iwut-auth-center-ddd")).resolve()
+    auth_image = os.environ.get("AUTH_CENTER_IMAGE", DEFAULT_AUTH_CENTER_IMAGE)
     artifacts = ROOT / ".artifacts/verification"
     artifacts.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ-"), dir=artifacts))
@@ -212,6 +212,8 @@ def main(argv=None):
               "docs_git_ref": docs_ref,
               "not_in_scope": (["race", "MongoDB/HTTP/gRPC E2E", "real Auth+App E2E"] if args.tier == "quick" else
                                ["real Auth+App E2E"] if args.tier == "backend" else [])}
+    if args.tier == "cross-service":
+        report["external_inputs"] = {"auth_center_image": auth_image}
     write_report(report_path, report)
     print(f"Verification report: {report_path}", flush=True)
     docs_checkout = None
@@ -221,8 +223,8 @@ def main(argv=None):
     previous = signal.signal(signal.SIGTERM, interrupted)
     try:
         docs_checkout, docs = checkout_docs(docs_repository, docs_ref)
-        paths = source_paths(ROOT, docs, auth, args.tier)
-        report["tool_versions"] = preflight(ROOT, docs, auth, args.tier)
+        paths = source_paths(ROOT, docs, args.tier)
+        report["tool_versions"] = preflight(ROOT, docs, args.tier)
         report["sources_start"] = {name: fingerprint(path) for name, path in paths.items()}
         if args.doctor:
             report["status"] = "doctor-passed"
@@ -230,7 +232,7 @@ def main(argv=None):
             environment = os.environ.copy()
             for key in ("MONGODB_INTEGRATION_URI", "AUTH_CENTER_INTEGRATION_TARGET", "AUTH_CENTER_INTEGRATION_DATABASE"):
                 environment.pop(key, None)
-            environment["AUTH_CENTER_SOURCE_DIR"] = str(auth)
+            environment["AUTH_CENTER_IMAGE"] = auth_image
             plan = stages(ROOT, docs, args.tier)
             report["planned_stages"] = [name for name, _, _ in plan]
             for number, (name, cwd, command) in enumerate(plan, 1):
