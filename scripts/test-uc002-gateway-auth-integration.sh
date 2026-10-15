@@ -7,7 +7,7 @@ for tool in openssl base64 tar; do command -v "${tool}" >/dev/null || { echo "Mi
 gateway_source="${GATEWAY_SOURCE_DIR:-${app_dir}/../iwut-gateway}"
 gateway_source="$(cd "${gateway_source}" && pwd)"
 gateway_head="$(git -C "${gateway_source}" rev-parse HEAD)"
-gateway_api_head="$(git -C "${gateway_source}/api" rev-parse HEAD)"
+gateway_api_head="$(git -C "${gateway_source}" rev-parse "${gateway_head}:api")"
 # Build immutable committed snapshots; never edit the neighboring checkout.
 mkdir -p "${temporary_dir}/gateway-source/api"
 git -C "${gateway_source}" archive "${gateway_head}" | tar -x -C "${temporary_dir}/gateway-source"
@@ -56,18 +56,19 @@ done
 export APP_CENTER_SERVICE_IDENTITY_ID=iwut-app-center APP_CENTER_SERVICE_IDENTITY_KID=uc002-app
 export APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64="$(base64 -w0 < "${temporary_dir}/app-service.pem")"
 export AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH="${temporary_dir}/auth-identity.pub.pem"
+export UC002_AUTH_CONTAINER_NAME="${auth_container_name}" UC002_BOOTSTRAP_LOG="${integration_log_dir}/bootstrap.log"
 export UC002_GATEWAY_KEY_FILE="${temporary_dir}/gateway-service.pem"
 export AUTH_CENTER_INTEGRATION_TARGET="127.0.0.1:${auth_grpc}" AUTH_CENTER_INTEGRATION_DATABASE=iwut_auth_uc002
 app_public="$(base64 -w0 < "${temporary_dir}/app-service.pub.pem")"
 gateway_public="$(base64 -w0 < "${temporary_dir}/gateway-service.pub.pem")"
-callers="$(printf '{"iwut-app-center":{"status":"ACTIVE","keys":{"uc002-app":{"publicKeyPemB64":"%s"}},"permissions":["auth.scope-catalog.read"]},"iwut-gateway":{"status":"ACTIVE","keys":{"uc002-gateway":{"publicKeyPemB64":"%s"}},"permissions":["auth.identity.issue"],"identityAudiences":["iwut-app-center"]}}' "${app_public}" "${gateway_public}" | base64 -w0)"
+callers="$(printf '{"iwut-app-center":{"status":"ACTIVE","keys":{"uc002-app":{"publicKeyPemB64":"%s"}},"permissions":["auth.scope-catalog.read","auth.developer-status.read","auth.system-principal.resolve"],"systemPrincipalPurposes":["app-center.review-auto-rejection"]},"iwut-gateway":{"status":"ACTIVE","keys":{"uc002-gateway":{"publicKeyPemB64":"%s"}},"permissions":["auth.identity.issue"],"identityAudiences":["iwut-app-center","iwut-auth-center"]}}' "${app_public}" "${gateway_public}" | base64 -w0)"
 
 python3 - "${temporary_dir}" "${UC002_APP_GRPC_ADDR}" "${ports[6]}" "${ports[7]}" <<'PY'
 import json,pathlib,sys
 root=pathlib.Path(sys.argv[1]);base='/run/iwut-uc002/'
 def write(name,value):(root/name).write_text(json.dumps(value,separators=(',',':')))
 write('profile-catalog.json',{'definitions':[]})
-write('scopes.json',[{'Name':name,'Label':name,'Description':'UC002 integration fixture','Kind':'RESOURCE','Audience':'resource-service','Enabled':enabled} for name,enabled in [('items.disabled',False),('items.read',True)]])
+write('scopes.json',[{'Name':name,'Label':name,'Description':'UC002 integration fixture','Kind':'RESOURCE','Audience':'resource-service','Enabled':enabled} for name,enabled in [('items.disabled',False),('items.read',True),('items.write',True)]])
 write('routes.json',{'version':1,'routes':[],'callers':{}})
 write('oauth.json',{'resourceScopesReady':True,'issuer':'https://auth.e2e.test/oidc','portalOrigin':'https://auth.e2e.test','portalLoginURL':'https://auth.e2e.test/login','sectorSuffix':'sectors.example.test','catalogFile':base+'scopes.json','appTarget':sys.argv[2],'appPlaintextLoopback':True,'serviceKeyFile':base+'auth-service.pem','serviceKeyId':'uc002-auth-service','oidcKeyFile':base+'oidc.pem','oidcKeyId':'uc002-oidc','delegationKeyFile':base+'delegation.pem','delegationKeyId':'uc002-delegation','routePolicyFile':base+'routes.json'})
 static=(root/'gateway-source/deploy/traefik/static.yaml').read_text().replace('address: :8080','address: 127.0.0.1:'+sys.argv[3]).replace('address: :8081','address: 127.0.0.1:'+sys.argv[4])
@@ -117,4 +118,4 @@ for port in map(int,sys.argv[1:-1]):
 PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
-go test -count=1 -race -timeout=5m -run '^TestE2E_UCAPP002GatewayAuthIntegration$' ./cmd/app-center
+go test -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center

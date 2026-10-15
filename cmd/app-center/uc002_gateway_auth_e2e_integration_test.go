@@ -98,7 +98,11 @@ func uc002AuthConnection(t *testing.T, key []byte, id, kid, target string) *grpc
 }
 func uc002HTTPRequest(t *testing.T, ctx context.Context, path, session string, body []byte, extra http.Header) (int, http.Header, []byte) {
 	t.Helper()
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+path, bytes.NewReader(body))
+	return gatewayHTTP(t, ctx, http.MethodPost, path, session, body, extra)
+}
+func gatewayHTTP(t *testing.T, ctx context.Context, method, path, session string, body []byte, extra http.Header) (int, http.Header, []byte) {
+	t.Helper()
+	r, err := http.NewRequestWithContext(ctx, method, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+path, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +133,12 @@ func uc002VersionRequest(app, label, scope string) *vv.CreateApplicationVersionR
 }
 func uc002Web(t *testing.T, ctx context.Context, session string, request *vv.CreateApplicationVersionRequest) (*vv.CreateApplicationVersionResponse, int) {
 	t.Helper()
+	result := &vv.CreateApplicationVersionResponse{}
+	code := gatewayWeb(t, ctx, session, vv.ApplicationVersion_CreateApplicationVersion_FullMethodName, request, result)
+	return result, code
+}
+func gatewayWeb(t *testing.T, ctx context.Context, session, method string, request, result proto.Message) int {
+	t.Helper()
 	payload, err := proto.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +146,7 @@ func uc002Web(t *testing.T, ctx context.Context, session string, request *vv.Cre
 	frame := make([]byte, 5+len(payload))
 	binary.BigEndian.PutUint32(frame[1:5], uint32(len(payload)))
 	copy(frame[5:], payload)
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+vv.ApplicationVersion_CreateApplicationVersion_FullMethodName, bytes.NewReader(frame))
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+method, bytes.NewReader(frame))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +168,6 @@ func uc002Web(t *testing.T, ctx context.Context, session string, request *vv.Cre
 	if resp.Header.Get("X-Iwut-Identity") != "" {
 		t.Fatal("gRPC-Web disclosed identity")
 	}
-	result := &vv.CreateApplicationVersionResponse{}
 	code := -1
 	readStatus := func(value string) {
 		if value == "" {
@@ -194,7 +203,7 @@ func uc002Web(t *testing.T, ctx context.Context, session string, request *vv.Cre
 	if len(body) != 0 || code < 0 {
 		t.Fatal("missing gRPC-Web status")
 	}
-	return result, code
+	return code
 }
 func TestE2E_UCAPP002GatewayAuthIntegration(t *testing.T) {
 	if os.Getenv("UC002_EDGE_HTTP_ADDR") == "" {

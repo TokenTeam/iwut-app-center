@@ -13,7 +13,7 @@ help:
 	@echo "  make build         compile all packages"
 	@echo "  make test          run the unit/transport/architecture suite"
 	@echo "  make test-mongo    run the MongoDB integration and all HTTP/gRPC E2E suites"
-	@echo "  make test-uc002-gateway-auth run real Gateway/Auth UC002 acceptance"
+	@echo "  make test-uc002-gateway-auth run real Gateway/Auth UC002–005 acceptance"
 	@echo "  make test-auth-app run the production-identity Auth+App double-service E2E"
 	@echo "  make test-uc033-auth-app run the published-Auth UC033 OAuth archival E2E"
 	@echo "  make test-uc036-auth-app run the published-Auth UC036 OAuth Test clear E2E"
@@ -22,7 +22,7 @@ help:
 	@echo "  make api-check     fail if generated API code drifted from Proto"
 	@echo "  make check         quick gates (no Mongo, race or real Auth)"
 	@echo "  make check-full    quick + race + isolated Mongo/HTTP/gRPC E2E"
-	@echo "  make check-auth-app full backend + UC002 Gateway/Auth and Auth/App OAuth E2E"
+	@echo "  make check-auth-app full backend + UC002–005 Gateway/Auth and Auth/App OAuth E2E"
 	@echo "  make doctor        quick prerequisite check only"
 	@echo "  make migrate       apply MongoDB migrations (Mongo settings only)"
 	@echo "  make run           start the HTTP + gRPC server"
@@ -112,3 +112,7 @@ run:
 .PHONY: test-uc002-gateway-auth
 test-uc002-gateway-auth:
 	./scripts/test-uc002-gateway-auth-integration.sh
+
+# Keep the original UC002 entry point as a compatible alias for this chain.
+.PHONY: test-version-review-gateway-auth
+test-version-review-gateway-auth: test-uc002-gateway-auth

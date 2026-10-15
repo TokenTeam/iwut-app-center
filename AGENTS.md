@@ -38,28 +38,30 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-002 — real Auth/Gateway version-creation integration acceptance.**
-Read `app-center/briefs/UC-APP-002.md`, the engineering baseline and implements
-README from the authoritative local docs workspace. User authorized advancing
-UC002 integration on 2026-10-15. Verify BR-VER-001–009/018 through real Auth
-USER issuance, an immutable Gateway source snapshot, exact public HTTP/native
-gRPC/gRPC-Web routing, persistent Auth Scope Catalog, authorization, scope
-revision/cache expiry/failure and atomic Version/OAuth persistence. Implement
-App-owned integration tests and disposable orchestration only; preserve current
-accepted business behavior. Do not change Auth/Gateway/Console sources or their
-UCs. Prepare concrete integration handoffs for missing neighboring behavior.
-Preserve the pre-existing API checkout update to a5d504c; do not stage it as an
-unrelated part of this test package. Pin and record all external inputs.
-Final tier: make check-auth-app, including a new UC002 real Gateway/Auth gate.
+**UC-APP-003 → UC-APP-004 → UC-APP-005 — sequential real Gateway/Auth acceptance.**
+Read each generated brief before its step, plus the engineering baseline and
+implements README from local authoritative docs. User authorized advancing the
+remaining integration work on 2026-10-15. First verify BR-VER-010–017: real USER
+Session, Scope changes, complete replacement, no-op/OCC, dependent OAuth config
+and rollback. Then verify BR-REV-001–009 edited-version submission, immutable
+snapshot and current Scope boundaries. Finally verify accepted UC005 rules with
+real Auth Reviewer grant/revoke/USER issuance and real PENDING decisions.
+Own App integration fixtures, tests, orchestration and implementation records;
+preserve accepted UC/BR semantics. Reuse UC002 real Auth/Mongo/Traefik/Gateway
+inputs and pin/record external commits/images. Final tier: make check-auth-app.
 
-Any new UC/BR/business changes require a concrete reviewed proposal. Do not
-modify Auth/Gateway/Console code or message their agents; prepare handoff items
-for the user. Client Catalog/Filter evaluation, approval revocation, reliable
-alert delivery and managed icon assets remain deferred.
-Use Go 1.25.5 and local committed docs. Final tier: `make check-auth-app`. Freeze all
-inputs during final tests; stage owned new files before diff checks. Preserve
-all pre-existing dirty files and do not stage/commit unrelated changes. Keep
-API/source/history local and use this persistent checkout. No push/deployment.
+User separately authorized delegating Gateway and Console integration. Gateway
+agent owns that repository and its accepted App API dependency update to
+`a1cf9d8`; Console agent owns its assigned PROPOSED read-management/review UCs,
+registry and implementation navigation. User authorized drafting both groups;
+page implementation waits for design acceptance. Root owns App and App records.
+Do not change Auth code or shared API sources. Preserve the pre-existing App API
+checkout update to a5d504c; do not stage it as this package's gitlink update.
+Any new UC/BR/business changes require a concrete reviewed proposal and pause.
+Client Catalog/Filter evaluation, approval revocation, reliable alert delivery
+and managed icon assets remain deferred. Use Go 1.25.5, local committed docs,
+and this checkout; no push/deployment. Freeze all inputs during final tests;
+stage owned new files before diff checks. Preserve all pre-existing dirty files.
 
 ## Verification entry points
 

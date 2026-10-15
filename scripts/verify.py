@@ -103,7 +103,7 @@ def stages(root, docs, tier):
         plan += [("race", root, ["make", "test-race"]),
                  ("mongo-and-http-grpc-e2e-race", root, ["bash", "scripts/test-mongo-integration.sh", "-race"])]
     if tier == "cross-service":
-        plan.append(("uc002-gateway-auth-e2e-race", root, ["bash", "scripts/test-uc002-gateway-auth-integration.sh"]))
+        plan.append(("uc002-005-gateway-auth-e2e-race", root, ["bash", "scripts/test-uc002-gateway-auth-integration.sh"]))
         plan.append(("auth-app-e2e-race", root, ["bash", "scripts/test-auth-app-integration.sh"]))
         plan.append(("uc033-auth-oauth-e2e-race", root, ["bash", "scripts/test-uc033-auth-app-integration.sh"]))
         plan.append(("uc036-auth-oauth-e2e-race", root, ["bash", "scripts/test-uc036-auth-app-integration.sh"]))
