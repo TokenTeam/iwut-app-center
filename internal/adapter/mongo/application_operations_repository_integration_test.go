@@ -12,7 +12,7 @@ import (
 )
 
 func TestApplicationOperationsRepositoryIntegration_UCAPP028_TransactionalStateAndOutbox(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "operations-admin", "operations-app")
 	repository := NewApplicationOperationsRepository(db)
 

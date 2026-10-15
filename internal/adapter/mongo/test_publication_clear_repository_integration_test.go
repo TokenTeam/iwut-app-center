@@ -139,7 +139,7 @@ func TestTestPublicationClearRepositoryIntegration_UCAPP036_TesterCountIndepende
 	for _, members := range []int{0, 100} {
 		for _, activeLink := range []bool{false, true} {
 			t.Run(fmt.Sprintf("BR-PUB-031035 ACTIVE=%d activeLink=%t", members, activeLink), func(t *testing.T) {
-				db := migratedIntegrationDatabase(t, client)
+				db := reusableIntegrationDatabase(t, client)
 				seed := createApprovedPublicationVersion(t, db, "clear-members")
 				repo := NewApplicationPublicationRepository(db)
 				before := placePublication(t, repo, loadPublicationCandidate(t, repo, seed, 1, nil), seed).Publication()
@@ -334,7 +334,7 @@ func TestTestPublicationClearRepositoryIntegration_UCAPP036_DeterministicPublicC
 	for _, kind := range []string{"transfer", "close", "stable", "test", "grey", "clear"} {
 		for _, winner := range []string{"clear", "other"} {
 			t.Run("BR-PUB-036 "+kind+" winner="+winner, func(t *testing.T) {
-				db := migratedIntegrationDatabase(t, client)
+				db := reusableIntegrationDatabase(t, client)
 				seed := createApprovedPublicationVersion(t, db, "clear-race")
 				repo := NewApplicationPublicationRepository(db)
 				placePublication(t, repo, loadPublicationCandidate(t, repo, seed, 1, nil), seed)

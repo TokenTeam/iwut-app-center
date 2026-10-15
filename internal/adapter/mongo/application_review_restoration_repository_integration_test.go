@@ -19,7 +19,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-REV-023 BR-REV-025 BR-REV-026 BR-REV-027 restores rejected version and records immutable audit atomically", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-admin-restore", "restore-success")
 		repository := NewApplicationReviewRestorationRepository(database)
 		restoredAt := time.Date(2026, time.September, 21, 16, 0, 0, 0, time.UTC)
@@ -47,7 +47,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-026 repeated restore keeps first audit and wins over not-rejected", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-admin-repeat", "restore-repeat")
 		repository := NewApplicationReviewRestorationRepository(database)
 		firstAt := time.Date(2026, time.September, 21, 16, 10, 0, 0, time.UTC)
@@ -65,7 +65,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-026 BR-REV-027 concurrent restores allow exactly one commit", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-admin-race-restore", "restore-race")
 		repository := NewApplicationReviewRestorationRepository(database)
 		start := make(chan struct{})
@@ -108,7 +108,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-027 explicit transaction abort rolls back review and version together", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-admin-abort-restore", "restore-abort")
 		repository := NewApplicationReviewRestorationRepository(database)
 		session, err := client.StartSession()
@@ -134,7 +134,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-021 checks current administrator", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-old-admin-restore", "restore-admin")
 		if _, err := database.Collection(applicationsCollectionName).UpdateOne(
 			t.Context(),
@@ -159,7 +159,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-021 concurrent administrator transfer prevents old-admin restoration", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-old-admin-restore-race", "restore-admin-race")
 		transferSession, err := client.StartSession()
 		if err != nil {
@@ -205,7 +205,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-022 rejects historical review before other state conflicts", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-admin-historical", "restore-historical")
 		latest := readReviewDocument(t, database, seed.reviewID)
 		latest.ReviewID = nextIntegrationApplicationReviewID(t).String()
@@ -225,7 +225,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 
 	t.Run("BR-REV-023 BR-REV-027 distinguishes non-rejected, revision and inconsistent state", func(t *testing.T) {
 		t.Run("non-rejected", func(t *testing.T) {
-			database := migratedIntegrationDatabase(t, client)
+			database := reusableIntegrationDatabase(t, client)
 			seed := createDecidableReview(t, database, "auth-admin-pending-restore", "restore-pending", "v1")
 			result, err := NewApplicationReviewRestorationRepository(database).RestoreDraft(
 				t.Context(), seed.applicationID, seed.versionID, seed.reviewID, seed.adminID, 2, time.Now(),
@@ -235,7 +235,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 			}
 		})
 		t.Run("revision", func(t *testing.T) {
-			database := migratedIntegrationDatabase(t, client)
+			database := reusableIntegrationDatabase(t, client)
 			seed := createRejectedReview(t, database, "auth-admin-stale-restore", "restore-stale")
 			result, err := NewApplicationReviewRestorationRepository(database).RestoreDraft(
 				t.Context(), seed.applicationID, seed.versionID, seed.reviewID, seed.adminID, 2, time.Now(),
@@ -246,7 +246,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 			assertRestorationDidNotPersist(t, database, seed)
 		})
 		t.Run("inconsistent", func(t *testing.T) {
-			database := migratedIntegrationDatabase(t, client)
+			database := reusableIntegrationDatabase(t, client)
 			seed := createRejectedReview(t, database, "auth-admin-inconsistent-restore", "restore-inconsistent")
 			if _, err := database.Collection(applicationVersionsCollectionName).UpdateOne(
 				t.Context(),
@@ -269,7 +269,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-024 restored draft can be edited and submitted as the next attempt", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createRejectedReview(t, database, "auth-admin-next-attempt", "restore-next-attempt")
 		if _, err := NewApplicationReviewRestorationRepository(database).RestoreDraft(
 			t.Context(), seed.applicationID, seed.versionID, seed.reviewID, seed.adminID, 3, time.Now(),
@@ -298,7 +298,7 @@ func TestApplicationReviewRestorationRepositoryIntegration(t *testing.T) {
 
 func TestApplicationReviewRestorationValidatorIntegration(t *testing.T) {
 	client := integrationClient(t)
-	database := migratedIntegrationDatabase(t, client)
+	database := reusableIntegrationDatabase(t, client)
 	seed := createRejectedReview(t, database, "auth-admin-restore-validator", "restore-validator")
 	reviews := database.Collection(applicationReviewsCollectionName)
 

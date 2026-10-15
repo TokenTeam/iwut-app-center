@@ -25,7 +25,7 @@ import (
 func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 	t.Run("BR-PUB-002 BR-PUB-004 BR-PUB-006 BR-PUB-007 BR-PUB-010 create replace noop partition and immutable sources", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		seed := createApprovedPublicationVersion(t, db, "publication-success")
 		repo := NewApplicationPublicationRepository(db)
 		initialVersion := readVersionDocument(t, db, seed.versionID.String())
@@ -73,7 +73,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 		}
 	})
 	t.Run("BR-PUB-009 history failure rolls back publication and fences", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		seed := createApprovedPublicationVersion(t, db, "publication-rollback")
 		repo := NewApplicationPublicationRepository(db)
 		first := placePublication(t, repo, loadPublicationCandidate(t, repo, seed, 1, nil), seed)
@@ -109,7 +109,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 		}
 	})
 	t.Run("BR-PUB-006 BR-PUB-009 concurrent creates and replaces have exactly one winner", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		seed := createApprovedPublicationVersion(t, db, "publication-race")
 		repo := NewApplicationPublicationRepository(db)
 		candidates := []*publicationdomain.TestPlacementCandidate{loadPublicationCandidate(t, repo, seed, 1, nil), loadPublicationCandidate(t, repo, seed, 1, nil)}
@@ -136,7 +136,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 			{"version revision drift", applicationVersionsCollectionName, bson.D{{Key: "$inc", Value: bson.D{{Key: "revision", Value: int64(1)}}}}, publicationport.ErrApplicationReviewStateInconsistent},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				db := migratedIntegrationDatabase(t, client)
+				db := reusableIntegrationDatabase(t, client)
 				seed := createApprovedPublicationVersion(t, db, "publication-recheck")
 				repo := NewApplicationPublicationRepository(db)
 				candidate := loadPublicationCandidate(t, repo, seed, 1, nil)
@@ -193,7 +193,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 			}, publicationport.ErrApplicationProfileStateInconsistent},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				db := migratedIntegrationDatabase(t, client)
+				db := reusableIntegrationDatabase(t, client)
 				seed := createApprovedPublicationVersion(t, db, "publication-profile-gate")
 				test.mutate(t, db, seed)
 				result, err := NewApplicationPublicationRepository(db).LoadTestPlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil)
@@ -222,7 +222,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 			}, publicationport.ErrApplicationProfileStateInconsistent},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				db := migratedIntegrationDatabase(t, client)
+				db := reusableIntegrationDatabase(t, client)
 				seed := createApprovedPublicationVersion(t, db, "publication-profile-recheck")
 				repo := NewApplicationPublicationRepository(db)
 				candidate := loadPublicationCandidate(t, repo, seed, 1, nil)
@@ -250,7 +250,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 			{"review", applicationReviewsCollectionName, bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: "REVOKED"}}}}, publicationport.ErrApplicationVersionNotApproved},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				db := migratedIntegrationDatabase(t, client)
+				db := reusableIntegrationDatabase(t, client)
 				seed := createApprovedPublicationVersion(t, db, "publication-source-race")
 				repo := NewApplicationPublicationRepository(db)
 				candidate := loadPublicationCandidate(t, repo, seed, 1, nil)
@@ -293,7 +293,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 		}
 	})
 	t.Run("BR-PUB-003 BR-PUB-009 profile approval replacement shares the application write fence", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		seed := createApprovedPublicationVersion(t, db, "publication-profile-race")
 		repo := NewApplicationPublicationRepository(db)
 		candidate := loadPublicationCandidate(t, repo, seed, 1, nil)
@@ -356,7 +356,7 @@ func TestApplicationPublicationRepositoryIntegration(t *testing.T) {
 
 func TestApplicationPublicationRepositoryIntegration_BR_PUB_003_008_009_OAuthRegistrationRequirements(t *testing.T) {
 	client := integrationClient(t)
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	seed := createApprovedPublicationVersion(t, db, "publication-oauth-registration")
 	pkceURI := "https://app.example.edu/oauth/callback"
 	confidentialURI := "https://server.example.edu/oauth/callback"
@@ -415,7 +415,7 @@ func TestApplicationPublicationRepositoryIntegration_BR_PUB_003_008_009_OAuthReg
 
 func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableSetClearAndSharedRevision(t *testing.T) {
 	client := integrationClient(t)
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	seed := createApprovedPublicationVersion(t, db, "stable-publication")
 	repository := NewApplicationPublicationRepository(db)
 
@@ -532,7 +532,7 @@ func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableSetClearAndS
 
 func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableOAuthRegistrationIsIsolated(t *testing.T) {
 	client := integrationClient(t)
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	seed := createApprovedPublicationVersion(t, db, "stable-oauth-isolation")
 	redirects := oauthRedirectConfigurationDocument{PKCERedirectURIs: []string{"https://stable.example.edu/callback"}, ConfidentialRedirectURIs: []string{}}
 	for _, change := range []struct {
@@ -564,7 +564,7 @@ func TestApplicationPublicationRepositoryIntegration_UCAPP020_StableOAuthRegistr
 
 func TestApplicationPublicationRepositoryIntegration_UCAPP021_GreyLifecycle(t *testing.T) {
 	client := integrationClient(t)
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	seed := createApprovedPublicationVersion(t, db, "grey-publication")
 	repository := NewApplicationPublicationRepository(db)
 	stable, err := repository.LoadStablePlacementCandidate(t.Context(), seed.applicationID, 1, publicationdomain.ApplicationVersionID(seed.versionID), seed.adminID, nil)
@@ -666,7 +666,7 @@ func TestApplicationPublicationEligibilityIntegration(t *testing.T) {
 		{"wrong revision relation", func(v *applicationVersionDocument, r *applicationReviewDocument) { v.Revision++ }, publicationport.ErrApplicationReviewStateInconsistent},
 	} {
 		t.Run("BR-PUB-003 "+test.name, func(t *testing.T) {
-			db := migratedIntegrationDatabase(t, client)
+			db := reusableIntegrationDatabase(t, client)
 			seed := createApprovedPublicationVersion(t, db, "publication-eligibility")
 			v := readVersionDocument(t, db, seed.versionID.String())
 			r := readReviewDocument(t, db, seed.reviewID)
@@ -685,7 +685,7 @@ func TestApplicationPublicationEligibilityIntegration(t *testing.T) {
 		})
 	}
 	t.Run("BR-PUB-003 latest attempt overrides historical approval", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		seed := createApprovedPublicationVersion(t, db, "publication-latest")
 		review := readReviewDocument(t, db, seed.reviewID)
 		review.ReviewID = nextIntegrationApplicationReviewID(t).String()
@@ -707,7 +707,7 @@ func TestApplicationPublicationEligibilityIntegration(t *testing.T) {
 		assertPublicationCounts(t, db, 0, 0)
 	})
 	t.Run("BR-PUB-002 BR-PUB-006 bounds paths existence and revisions", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		seed := createApprovedPublicationVersion(t, db, "publication-bounds")
 		repo := NewApplicationPublicationRepository(db)
 		revision := int64(1)
@@ -908,7 +908,7 @@ func publicationMonitoredClient(t *testing.T, database, collection string) (*dri
 
 func TestApplicationPublicationMigrationIntegration(t *testing.T) {
 	client := integrationClient(t)
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	seed := createApprovedPublicationVersion(t, db, "publication-schema")
 	repo := NewApplicationPublicationRepository(db)
 	result := placePublication(t, repo, loadPublicationCandidate(t, repo, seed, 1, nil), seed)

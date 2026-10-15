@@ -41,7 +41,7 @@ func TestApplicationFilterRepositoryIntegration_BR_FLT_002_003_008_009_010(t *te
 	client := integrationClient(t)
 
 	t.Run("default set clear preserves immutable history and write fence", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "filter-admin", "filter_lifecycle")
 		repository := NewApplicationFilterRepository(database)
 		current, err := repository.LoadForAdmin(t.Context(), application.ID(), application.AdminID())
@@ -74,7 +74,7 @@ func TestApplicationFilterRepositoryIntegration_BR_FLT_002_003_008_009_010(t *te
 	})
 
 	t.Run("same expected revision commits at most once", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "filter-race", "filter_race")
 		repository := NewApplicationFilterRepository(database)
 		current, err := repository.LoadForAdmin(t.Context(), application.ID(), application.AdminID())
@@ -117,7 +117,7 @@ func TestApplicationFilterRepositoryIntegration_BR_FLT_002_003_008_009_010(t *te
 	})
 
 	t.Run("administrator and corrupt pointer fail closed", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "filter-owner", "filter_fail_closed")
 		repository := NewApplicationFilterRepository(database)
 		if _, err := repository.LoadForAdmin(t.Context(), application.ID(), "outsider"); !errors.Is(err, filterport.ErrApplicationAdminRequired) {

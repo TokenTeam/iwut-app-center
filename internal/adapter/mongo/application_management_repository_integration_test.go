@@ -14,7 +14,7 @@ import (
 )
 
 func TestApplicationManagementRepositoryIntegration(t *testing.T) {
-	database := migratedIntegrationDatabase(t, integrationClient(t))
+	database := reusableIntegrationDatabase(t, integrationClient(t))
 	admin := shared.AuthID("management-query-admin")
 	first := createVersionTestApplication(t, database, admin.String(), "management_query_one")
 	second := createVersionTestApplication(t, database, admin.String(), "management_query_two")

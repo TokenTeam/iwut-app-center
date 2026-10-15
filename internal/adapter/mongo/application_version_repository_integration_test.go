@@ -29,7 +29,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-VER-001 BR-VER-009 concurrent creation allocates strict unique sequences", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-sequence-race", "sequence-race")
 		repository := NewApplicationVersionRepository(database)
 		const contenders = 16
@@ -73,7 +73,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-003 label uniqueness is per application and case sensitive", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		firstApplication := createVersionTestApplication(t, database, "auth-label", "labels-one")
 		secondApplication := createVersionTestApplication(t, database, "auth-label", "labels-two")
 		repository := NewApplicationVersionRepository(database)
@@ -95,7 +95,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-002 distinguishes not found and current administrator mismatch", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-owner", "ownership")
 		repository := NewApplicationVersionRepository(database)
 
@@ -114,7 +114,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-002 completed administrator transfer rejects old administrator", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-old", "transferred")
 		result, err := database.Collection(applicationsCollectionName).UpdateOne(
 			t.Context(),
@@ -135,7 +135,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-002 BR-VER-009 concurrent committed transfer wins before old-admin write", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-old-race", "transfer-race")
 
 		transferSession, err := client.StartSession()
@@ -206,7 +206,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-002 repository rejects expected admin and created-by mismatch", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-owner", "created-by")
 		repository := NewApplicationVersionRepository(database)
 		_, err := repository.CreateDraft(t.Context(), shared.AuthID("auth-owner"), integrationApplicationVersionDraft(t, application.ID(), "auth-another", "v1"))
@@ -217,7 +217,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-009 duplicate version ID rolls back sequence allocation", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-rollback", "rollback")
 		repository := NewApplicationVersionRepository(database)
 		firstDraft := integrationApplicationVersionDraft(t, application.ID(), "auth-rollback", "seed")
@@ -238,7 +238,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-006 BR-VER-007 BR-VER-008 BR-VER-009 stores empty arrays and creation audit", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-audit", "audit")
 		repository := NewApplicationVersionRepository(database)
 		draft := integrationApplicationVersionDraftWithSets(t, application.ID(), "auth-audit", "empty", nil, nil, nil)
@@ -269,7 +269,7 @@ func TestApplicationVersionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("validators reject malformed version documents", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-validator-version", "validator-version")
 		valid := integrationApplicationVersionDocument(t, application.ID(), "auth-validator-version")
 		versions := database.Collection(applicationVersionsCollectionName)
@@ -319,7 +319,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-VER-011 BR-VER-012 BR-VER-013 BR-VER-014 BR-VER-016 atomically replaces all editable fields and preserves no-op audit", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-update", "update-success")
 		repository := NewApplicationVersionRepository(database)
 		created, err := repository.CreateDraft(
@@ -374,7 +374,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-016 coordination revision advances on success and rolls back on failure", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-coordination", "coordination")
 		repository := NewApplicationVersionRepository(database)
 		created, err := repository.CreateDraft(
@@ -411,7 +411,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-010 BR-VER-013 BR-VER-016 classifies ownership state revision and hidden path mismatch", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-classify", "update-classify")
 		otherApplication := createVersionTestApplication(t, database, "auth-classify", "update-other")
 		repository := NewApplicationVersionRepository(database)
@@ -466,7 +466,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-013 two concurrent replacements with one expected revision allow one success", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-revision-race", "revision-race")
 		repository := NewApplicationVersionRepository(database)
 		created, err := repository.CreateDraft(
@@ -520,7 +520,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-013 BR-VER-016 label conflict rolls back the entire replacement", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-label-update", "label-update")
 		repository := NewApplicationVersionRepository(database)
 		first, err := repository.CreateDraft(
@@ -548,7 +548,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-016 committed administrator transfer wins against an in-flight old-admin replacement", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-old-update", "admin-update-race")
 		seedRepository := NewApplicationVersionRepository(database)
 		created, err := seedRepository.CreateDraft(
@@ -623,7 +623,7 @@ func TestApplicationVersionRepositoryUpdateIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-010 BR-VER-016 committed submission wins against an in-flight replacement", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-submit-race", "submit-update-race")
 		seedRepository := NewApplicationVersionRepository(database)
 		created, err := seedRepository.CreateDraft(

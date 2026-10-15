@@ -41,7 +41,7 @@ func createOAuthTestApplication(t *testing.T, database *drivermongo.Database, ad
 
 func TestOAuthClientRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
-	database := migratedIntegrationDatabase(t, client)
+	database := reusableIntegrationDatabase(t, client)
 
 	t.Run("BR-OAC-001 BR-OAC-003 register both stable identities atomically", func(t *testing.T) {
 		application := createOAuthTestApplication(t, database, "oauth-admin", "oauth-both-types")

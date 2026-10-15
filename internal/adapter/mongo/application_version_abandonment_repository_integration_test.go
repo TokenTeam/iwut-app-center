@@ -33,7 +33,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-VER-026-030 atomically abandons and permits label reuse without identity reuse", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-abandon", "abandon-success")
 		repository := NewApplicationVersionRepository(database)
 		created, err := repository.CreateDraft(t.Context(), "auth-abandon", integrationApplicationVersionDraft(t, application.ID(), "auth-abandon", "reusable label"))
@@ -93,7 +93,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 			{"restored draft", "DRAFT", true},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				database := migratedIntegrationDatabase(t, client)
+				database := reusableIntegrationDatabase(t, client)
 				application := createVersionTestApplication(t, database, "auth-reviewed", fmt.Sprintf("reviewed_%d", index))
 				repository := NewApplicationVersionRepository(database)
 				created, err := repository.CreateDraft(t.Context(), "auth-reviewed", integrationApplicationVersionDraft(t, application.ID(), "auth-reviewed", "v1"))
@@ -124,7 +124,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-026 authorization and lifecycle gates", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationVersionRepository(database)
 		application := createVersionTestApplication(t, database, "auth-gates", "abandon-gates")
 		created, err := repository.CreateDraft(t.Context(), "auth-gates", integrationApplicationVersionDraft(t, application.ID(), "auth-gates", "v1"))
@@ -200,7 +200,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 			}},
 		} {
 			t.Run(test.name, func(t *testing.T) {
-				database := migratedIntegrationDatabase(t, client)
+				database := reusableIntegrationDatabase(t, client)
 				application := createVersionTestApplication(t, database, "auth-corrupt", fmt.Sprintf("corrupt_%d", index))
 				repository := NewApplicationVersionRepository(database)
 				created, err := repository.CreateDraft(t.Context(), "auth-corrupt", integrationApplicationVersionDraft(t, application.ID(), "auth-corrupt", "v1"))
@@ -219,7 +219,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-030-032 concurrent abandon writes one immutable fact", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-race", "abandon-race")
 		repository := NewApplicationVersionRepository(database)
 		created, err := repository.CreateDraft(t.Context(), "auth-race", integrationApplicationVersionDraft(t, application.ID(), "auth-race", "v1"))
@@ -264,7 +264,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-030-032 edit and abandonment serialize on the shared fence", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-edit-race", "abandon-edit-race")
 		repository := NewApplicationVersionRepository(database)
 		created, err := repository.CreateDraft(t.Context(), "auth-edit-race", integrationApplicationVersionDraft(t, application.ID(), "auth-edit-race", "v1"))
@@ -305,7 +305,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-032 submission and abandonment serialize on the shared fence", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "auth-submit-race", "abandon-submit-race")
 		versionRepository := NewApplicationVersionRepository(database)
 		created, err := versionRepository.CreateDraft(t.Context(), "auth-submit-race", integrationApplicationVersionDraft(t, application.ID(), "auth-submit-race", "v1"))
@@ -351,7 +351,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-032 administrator transfer and abandonment serialize on the shared fence", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		const oldAdmin, newAdmin = "auth-transfer-race-old", "auth-transfer-race-new"
 		application := createVersionTestApplication(t, database, oldAdmin, "abandon-transfer-race")
 		versionRepository := NewApplicationVersionRepository(database)
@@ -406,7 +406,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-032 application closure and abandonment serialize on the shared fence", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		const admin = "auth-close-race"
 		application := createVersionTestApplication(t, database, admin, "abandon-close-race")
 		versionRepository := NewApplicationVersionRepository(database)
@@ -457,7 +457,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-029-032 same-label creation and abandonment serialize with fresh identity", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		const admin = "auth-label-race"
 		application := createVersionTestApplication(t, database, admin, "abandon-label-race")
 		repository := NewApplicationVersionRepository(database)
@@ -506,7 +506,7 @@ func TestApplicationVersionAbandonmentRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-028-031 migration installs strict validator and unique identity indexes", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		bad := bson.M{
 			"abandonmentId": "01990000-0000-7000-8000-000000000301", "applicationId": "01990000-0000-7000-8000-000000000302",
 			"versionId": "01990000-0000-7000-8000-000000000303", "sequence": int32(1), "versionLabel": "v1",

@@ -29,7 +29,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-APP-003 same admin case-insensitive name is unique", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		first := integrationApplication(t, "auth-a", "Course_App")
 		second := integrationApplication(t, "auth-a", "course_app")
@@ -45,7 +45,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-003 different admins can use same name", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		for _, adminID := range []string{"auth-a", "auth-b"} {
 			if err := repository.CreateWithinQuota(t.Context(), integrationApplication(t, adminID, "Course_App"), 10); err != nil {
@@ -56,7 +56,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-005 limit ten rejects eleventh and persisted raised limit permits next", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		for index := 0; index < 10; index++ {
 			name := fmt.Sprintf("application_%02d", index)
@@ -92,7 +92,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-005 initial limit never overwrites an existing lower limit", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		quota := applicationCreationQuotaDocument{
 			AdminID: "auth-custom-quota", Limit: 1, UsedCount: 0, Revision: 0,
@@ -120,7 +120,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-001 creation initializes both next sequences", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		application := integrationApplication(t, "auth-sequence", "sequence_app")
 		if err := repository.CreateWithinQuota(t.Context(), application, 10); err != nil {
@@ -140,7 +140,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-003 concurrent equivalent names only create once", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		const contenders = 12
 		start := make(chan struct{})
@@ -172,7 +172,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-005 BR-APP-006 concurrent creation cannot exceed quota", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		const contenders = 20
 		const limit = 10
@@ -205,7 +205,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-006 failed application insert does not consume quota", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		repository := NewApplicationRepository(database)
 		collidingIDApplication := integrationApplication(t, "another-admin", "existing")
 		document, err := applicationToDocument(collidingIDApplication)
@@ -233,7 +233,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("validators reject missing and illegal fields", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		applications := database.Collection(applicationsCollectionName)
 		quotas := database.Collection(applicationCreationQuotasCollectionName)
 
@@ -258,7 +258,7 @@ func TestApplicationRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-APP-001 coordination revision fence is required and typed", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		applications := database.Collection(applicationsCollectionName)
 		valid, err := applicationToDocument(integrationApplication(t, "auth-fence", "coordination_fence"))
 		if err != nil {
@@ -632,7 +632,11 @@ func integrationClient(t *testing.T) *drivermongo.Client {
 		_ = client.Disconnect(context.Background())
 		t.Fatalf("ping MongoDB: %v", err)
 	}
+	pool := &integrationFixturePool{}
+	integrationFixturePools.Store(client, pool)
 	t.Cleanup(func() {
+		pool.close(t)
+		integrationFixturePools.Delete(client)
 		if err := client.Disconnect(context.Background()); err != nil {
 			t.Errorf("disconnect MongoDB: %v", err)
 		}

@@ -66,7 +66,7 @@ func TestVerifyDeploymentReadinessIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("migrated database is ready", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		if err := VerifyDeploymentReadiness(t.Context(), database); err != nil {
 			t.Fatalf("VerifyDeploymentReadiness() error = %v", err)
 		}

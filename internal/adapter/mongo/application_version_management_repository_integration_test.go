@@ -113,7 +113,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-VER-019-025 lists all states and returns current detail with minimal latest review", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-admin", "version_management_all_states")
 		fixture := createVersionManagementFixture(t, database, application.ID(), application.AdminID())
 		repository := newApplicationVersionManagementTestRepository(t, database)
@@ -163,7 +163,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-019 BR-VER-022 BR-VER-023 transfer changes authority and binds page token", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-old", "version_management_transfer")
 		for _, label := range []string{"one", "two"} {
 			createVersionManagementDraft(t, database, application.ID(), application.AdminID(), label)
@@ -207,7 +207,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-020 lifecycle availability and archive states retain history", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-history", "version_management_history")
 		version := createVersionManagementDraft(t, database, application.ID(), application.AdminID(), "history")
 		repository := newApplicationVersionManagementTestRepository(t, database)
@@ -228,7 +228,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-VER-024 missing OAuth and review relation corruption fail closed", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application := createVersionTestApplication(t, database, "version-management-corrupt", "version_management_corrupt")
 		version := createVersionManagementDraft(t, database, application.ID(), application.AdminID(), "corrupt")
 		repository := newApplicationVersionManagementTestRepository(t, database)
@@ -239,7 +239,7 @@ func TestApplicationVersionManagementRepositoryIntegration(t *testing.T) {
 			t.Fatalf("missing OAuth error=%v", err)
 		}
 
-		database = migratedIntegrationDatabase(t, client)
+		database = reusableIntegrationDatabase(t, client)
 		application = createVersionTestApplication(t, database, "version-management-review-corrupt", "version_management_review_corrupt")
 		version = createVersionManagementDraft(t, database, application.ID(), application.AdminID(), "submitted")
 		submitVersionManagementReview(t, database, application.ID(), application.AdminID(), version)

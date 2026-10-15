@@ -290,7 +290,7 @@ func TestApplicationTesterMembershipRepositoryIntegration(t *testing.T) {
 
 func testerMembershipFixture(t *testing.T, client *drivermongo.Client, name string) (*drivermongo.Database, *testerdomain.ApplicationTesterJoinLink) {
 	t.Helper()
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	app := createVersionTestApplication(t, db, "tester-admin", name)
 	link := createIntegrationTesterJoinLink(t, NewApplicationTesterJoinLinkRepository(db), app.ID(), app.AdminID(), nil, newIntegrationTesterJoinLink(t, app.ID(), app.AdminID())).JoinLink()
 	return db, link

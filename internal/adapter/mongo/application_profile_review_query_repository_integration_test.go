@@ -30,7 +30,7 @@ func createPendingProfileReviewQueryFixture(t *testing.T, database *drivermongo.
 }
 
 func TestApplicationProfileReviewQueryRepositoryIntegration(t *testing.T) {
-	database := migratedIntegrationDatabase(t, integrationClient(t))
+	database := reusableIntegrationDatabase(t, integrationClient(t))
 	firstRevision, firstReview := createPendingProfileReviewQueryFixture(t, database, "profile-query-admin-1", "profile_query_one", time.Date(2026, 10, 7, 1, 0, 0, 0, time.UTC))
 	_, secondReview := createPendingProfileReviewQueryFixture(t, database, "profile-query-admin-2", "profile_query_two", time.Date(2026, 10, 7, 2, 0, 0, 0, time.UTC))
 	repository := NewApplicationProfileReviewQueryRepository(database)

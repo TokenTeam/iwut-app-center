@@ -85,7 +85,7 @@ func TestUCAPP037_BR_TST_037_AllRetainedStateCombinationsIntegration(t *testing.
 func TestUCAPP037_BR_TST_040_041_042_LinkTiesCanonicalAndIndexesIntegration(t *testing.T) {
 	client := integrationClient(t)
 	t.Run("same stored time mixed states UUID binary order and page size continuation", func(t *testing.T) {
-		db := migratedIntegrationDatabase(t, client)
+		db := reusableIntegrationDatabase(t, client)
 		app := createVersionTestApplication(t, db, "admin", "link-order")
 		at := time.Now().UTC().Truncate(time.Millisecond)
 		ids := []td.ApplicationTesterJoinLinkID{"01890f47-0000-7000-8000-00000000370a", "01890f47-0000-7000-8000-00000000370b", "01890f47-0000-7000-8000-00000000370c"}

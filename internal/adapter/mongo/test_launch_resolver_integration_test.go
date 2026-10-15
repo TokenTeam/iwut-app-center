@@ -31,7 +31,7 @@ type testLaunchFixture struct {
 
 func newTestLaunchFixture(t *testing.T, client *drivermongo.Client) testLaunchFixture {
 	t.Helper()
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	seed := createApprovedPublicationVersion(t, db, "launch-resolution")
 	link := createIntegrationTesterJoinLink(t, NewApplicationTesterJoinLinkRepository(db), seed.applicationID, seed.adminID, nil, newIntegrationTesterJoinLink(t, seed.applicationID, seed.adminID)).JoinLink()
 	member := joinIntegrationTesterMembership(t, NewApplicationTesterMembershipRepository(db), link, newIntegrationTesterMembership(t, link, "ordinary-tester")).Membership()

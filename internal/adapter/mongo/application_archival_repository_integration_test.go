@@ -14,7 +14,7 @@ import (
 )
 
 func TestApplicationArchivalRepositoryIntegration_UCAPP033_AtomicOCCNoOpAndAudit(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "archive-admin", "archive-app")
 	repository := NewApplicationArchivalRepository(db)
 	admin := shared.AuthID("archive-admin")
@@ -53,7 +53,7 @@ func TestApplicationArchivalRepositoryIntegration_UCAPP033_AtomicOCCNoOpAndAudit
 }
 
 func TestApplicationArchivalRepositoryIntegration_BR_APP_052_ConcurrentCommandsUseOCCAndOneAuditEvent(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "archive-race-admin", "archive-race-app")
 	repository := NewApplicationArchivalRepository(db)
 	admin := shared.AuthID("archive-race-admin")
@@ -103,7 +103,7 @@ func TestApplicationArchivalRepositoryIntegration_BR_APP_052_ConcurrentCommandsU
 }
 
 func TestApplicationArchivalRepositoryIntegration_BR_APP_053_057_CorruptionFailsClosed(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "archive-corrupt-admin", "archive-corrupt-app")
 	repository := NewApplicationArchivalRepository(db)
 	_, err := db.Collection(applicationsCollectionName).UpdateOne(t.Context(), bson.M{"id": application.ID().String()}, bson.M{"$set": bson.M{"archiveRevision": int64(2), "lastArchiveEventId": "0199b33c-d042-7abc-8abc-123456789012"}}, options.UpdateOne().SetBypassDocumentValidation(true))
@@ -116,7 +116,7 @@ func TestApplicationArchivalRepositoryIntegration_BR_APP_053_057_CorruptionFails
 }
 
 func TestApplicationArchivalRepositoryIntegration_BR_APP_051_055_OrthogonalPlatformGateAndUnarchive(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "archive-orthogonal-admin", "archive-orthogonal-app")
 	at := time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC)
 	if _, err := NewApplicationOperationsRepository(db).Set(t.Context(), application.ID(), "platform-operator", domain.PlatformAvailabilitySuspended, 1, 1, "independent platform gate", "0199b33c-d046-7abc-8abc-123456789012", at); err != nil {
@@ -145,7 +145,7 @@ func TestApplicationArchivalRepositoryIntegration_BR_APP_051_055_OrthogonalPlatf
 }
 
 func TestApplicationArchivalRepositoryIntegration_BR_APP_051_052_056_TransferOrderings(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	ctx := t.Context()
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
 	transferRepository := NewApplicationAdminTransferRepository(db, transferSecretFactory{}, 10)
@@ -200,7 +200,7 @@ func TestApplicationArchivalRepositoryIntegration_BR_APP_051_052_056_TransferOrd
 }
 
 func TestApplicationArchivalRepositoryIntegration_BR_APP_051_052_056_ClosureOrderings(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	ctx := t.Context()
 	now := time.Date(2026, 10, 10, 13, 0, 0, 0, time.UTC)
 	archiveRepository := NewApplicationArchivalRepository(db)
@@ -258,7 +258,7 @@ func TestApplicationArchivalRepositoryIntegration_BR_APP_051_052_056_ClosureOrde
 }
 
 func TestApplicationArchivalMigrationIntegration_BR_APP_057_StrictValidatorsAndIndexes(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	application := createVersionTestApplication(t, db, "archive-schema-admin", "archive-schema-app")
 	if _, err := db.Collection(applicationsCollectionName).UpdateOne(t.Context(), bson.M{"id": application.ID().String()}, bson.M{"$set": bson.M{"archiveStatus": "UNKNOWN"}}); err == nil {
 		t.Fatal("application validator accepted unknown archive status")

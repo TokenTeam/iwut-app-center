@@ -26,7 +26,7 @@ func createPendingVersionReviewQueryFixture(t *testing.T, database *drivermongo.
 }
 
 func TestApplicationReviewQueryRepositoryIntegration(t *testing.T) {
-	database := migratedIntegrationDatabase(t, integrationClient(t))
+	database := reusableIntegrationDatabase(t, integrationClient(t))
 	firstReview, firstApplicationID := createPendingVersionReviewQueryFixture(t, database, "version-query-admin-1", "version_query_one", "v1", time.Date(2026, 10, 7, 1, 0, 0, 0, time.UTC))
 	secondReview, secondApplicationID := createPendingVersionReviewQueryFixture(t, database, "version-query-admin-2", "version_query_two", "v2", time.Date(2026, 10, 7, 2, 0, 0, 0, time.UTC))
 	repository := NewApplicationReviewQueryRepository(database)

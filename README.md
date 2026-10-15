@@ -193,6 +193,15 @@ a two-second deadline. The gRPC listener exposes the standard
 - MongoDB integration tests (schema, indexes, transactions, concurrency) run
   only when `MONGODB_INTEGRATION_URI` is set; use
   `./scripts/test-mongo-integration.sh` or `make test-mongo`.
+- Repository behavior suites can use `reusableIntegrationDatabase` with their
+  suite-owned `integrationClient`. Each live lease has an exclusive database;
+  after a successful case the fixture checks collection options and indexes,
+  clears all documents, and restores the exact post-migration seed documents.
+  Reuse stays inside that client/test suite. Failed cases or changed schemas
+  are never reused, and all owned databases are dropped at suite cleanup.
+  Migration/upgrade tests keep using `integrationDatabase` or
+  `migratedIntegrationDatabase` to exercise cold schema creation. The real
+  MongoDB validators, indexes, transactions and race checks remain enabled.
 - The UC-APP-001–012 end-to-end tests in `cmd/app-center` run only when
   `MONGODB_INTEGRATION_URI` is set. It explicitly migrates an isolated database,
   starts the real `wireApp` composition root with real Kratos HTTP and native

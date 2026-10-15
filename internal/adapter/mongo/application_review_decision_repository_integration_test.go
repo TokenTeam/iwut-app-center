@@ -27,7 +27,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-REV-012 BR-REV-013 BR-REV-014 approve persists decision, version lifecycle and audit atomically", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-approve", "decision-approve", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -68,7 +68,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-012 BR-REV-013 BR-REV-015 reject persists reason and clears approval validation", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-reject", "decision-reject", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -96,7 +96,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-011 BR-REV-014 system rejection keeps reviewer authorization separate from decision audit", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-system-reject", "decision-system-reject", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -125,7 +125,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-012 a second decision is rejected without overwriting the first", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-twice", "decision-twice", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -149,7 +149,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-011 load rejects a conflicting reviewer for every conflict source", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-conflict", "decision-conflict", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 
@@ -174,7 +174,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-013 load rejects version content that no longer matches the snapshot", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-mismatch", "decision-mismatch", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		if _, err := database.Collection(applicationVersionsCollectionName).UpdateOne(
@@ -191,7 +191,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-011 BR-REV-013 decide re-checks state and conflicts in the final transaction", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-final", "decision-final", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -214,7 +214,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-011 decide re-checks the current administrator and leaves PENDING on mismatch", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-transfer", "decision-admin-transfer", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -235,7 +235,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-012 concurrent reviewers allow at most one decision", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-admin-race", "decision-race", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		firstCandidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer-one")
@@ -288,7 +288,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-011 concurrent administrator transfer rejects the stale decision without partial state", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		seed := createDecidableReview(t, database, "auth-old-admin", "decision-transfer-race", "v1")
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
@@ -352,7 +352,7 @@ func TestApplicationReviewDecisionRepositoryConstructionDoesNotMutateSchema(t *t
 
 func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 	client := integrationClient(t)
-	database := migratedIntegrationDatabase(t, client)
+	database := reusableIntegrationDatabase(t, client)
 	seed := createDecidableReview(t, database, "auth-admin-validator", "decision-validator", "v1")
 	base := readReviewDocument(t, database, seed.reviewID)
 	reviews := database.Collection(applicationReviewsCollectionName)

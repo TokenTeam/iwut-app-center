@@ -45,7 +45,7 @@ func addUnifiedApprovedVersion(t *testing.T, database *drivermongo.Database, see
 
 func newUnifiedLaunchFixture(t *testing.T, client *drivermongo.Client) unifiedLaunchFixture {
 	t.Helper()
-	database := migratedIntegrationDatabase(t, client)
+	database := reusableIntegrationDatabase(t, client)
 	testSeed := createApprovedPublicationVersion(t, database, "unified-launch")
 	joinLink := createIntegrationTesterJoinLink(t, NewApplicationTesterJoinLinkRepository(database), testSeed.applicationID, testSeed.adminID, nil, newIntegrationTesterJoinLink(t, testSeed.applicationID, testSeed.adminID)).JoinLink()
 	testAuthID := shared.AuthID("unified-test-user")

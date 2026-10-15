@@ -29,7 +29,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	client := integrationClient(t)
 
 	t.Run("BR-REV-003 BR-REV-004 BR-REV-005 BR-REV-009 submits immutable snapshot and version transition atomically", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, version := createReviewTestVersion(t, database, "auth-review", "review-success", "v1")
 		repository := NewApplicationReviewRepository(database)
 		candidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-review", 1)
@@ -68,7 +68,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-009 review insert failure rolls back version transition", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, firstVersion := createReviewTestVersion(t, database, "auth-rollback-review", "rollback-one", "v1")
 		_, secondVersion := createReviewTestVersion(t, database, "auth-rollback-review", "rollback-two", "v2")
 		repository := NewApplicationReviewRepository(database)
@@ -89,7 +89,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-001 BR-REV-009 coordination revision advances on success and rolls back on failure", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		application, version := createReviewTestVersion(t, database, "auth-review-fence", "review-fence", "v1")
 		repository := NewApplicationReviewRepository(database)
 		candidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-review-fence", 1)
@@ -113,7 +113,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-002 BR-REV-003 BR-REV-005 BR-REV-009 concurrent same-revision submissions allow at most one", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, version := createReviewTestVersion(t, database, "auth-review-race", "review-race", "v1")
 		repository := NewApplicationReviewRepository(database)
 		candidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-review-race", 1)
@@ -154,7 +154,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-003 BR-REV-004 BR-REV-009 concurrent draft update cannot submit stale content", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, version := createReviewTestVersion(t, database, "auth-draft-race", "draft-race", "v1")
 		repository := NewApplicationReviewRepository(database)
 		candidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-draft-race", 1)
@@ -206,7 +206,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-001 BR-REV-009 concurrent administrator transfer rejects old administrator", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, version := createReviewTestVersion(t, database, "auth-old-review", "admin-race", "v1")
 		repository := NewApplicationReviewRepository(database)
 		candidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-old-review", 1)
@@ -257,7 +257,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-005 second legal submission increments attempt and preserves first snapshot", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, version := createReviewTestVersion(t, database, "auth-attempt", "attempts", "v1")
 		repository := NewApplicationReviewRepository(database)
 		firstCandidate := loadReviewCandidate(t, repository, version.ApplicationID(), version.ID(), "auth-attempt", 1)
@@ -301,7 +301,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 	})
 
 	t.Run("BR-REV-009 application and version mismatch is hidden as not found", func(t *testing.T) {
-		database := migratedIntegrationDatabase(t, client)
+		database := reusableIntegrationDatabase(t, client)
 		_, firstVersion := createReviewTestVersion(t, database, "auth-mismatch", "mismatch-one", "v1")
 		secondApplication, _ := createReviewTestVersion(t, database, "auth-mismatch", "mismatch-two", "v2")
 		repository := NewApplicationReviewRepository(database)
@@ -314,7 +314,7 @@ func TestApplicationReviewRepositoryIntegration(t *testing.T) {
 
 func TestApplicationReviewMigrationIntegration_ValidatorsAndUniqueIndexes(t *testing.T) {
 	client := integrationClient(t)
-	database := migratedIntegrationDatabase(t, client)
+	database := reusableIntegrationDatabase(t, client)
 	application, version := createReviewTestVersion(t, database, "auth-review-schema", "review-schema", "v1")
 	repository := NewApplicationReviewRepository(database)
 	candidate := loadReviewCandidate(t, repository, application.ID(), version.ID(), "auth-review-schema", 1)

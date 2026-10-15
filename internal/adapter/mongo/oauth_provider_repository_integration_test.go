@@ -49,7 +49,7 @@ type oauthProviderFixture struct {
 func newOAuthProviderFixture(t *testing.T) oauthProviderFixture {
 	t.Helper()
 	client := integrationClient(t)
-	db := migratedIntegrationDatabase(t, client)
+	db := reusableIntegrationDatabase(t, client)
 	application := createVersionTestApplication(t, db, "oauth-provider-admin", "oauth-provider")
 	versionRepo := NewApplicationVersionRepository(db)
 	created, err := versionRepo.CreateDraft(t.Context(), application.AdminID(), integrationApplicationVersionDraft(t, application.ID(), application.AdminID().String(), "oauth-v1"))

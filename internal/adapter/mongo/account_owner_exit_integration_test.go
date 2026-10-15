@@ -26,7 +26,7 @@ func exitReceipt(t *testing.T) string {
 	return id.String()
 }
 func TestBR_APP_008_009_OwnerExitMonotonicity(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	r := NewAccountOwnerExitRepository(db)
 	now := time.Now().UTC()
 	p := exitPrepare("owner", d.Withdrawal)
@@ -78,7 +78,7 @@ func TestBR_APP_008_009_OwnerExitMonotonicity(t *testing.T) {
 	}
 }
 func TestBR_APP_008_OwnershipCreateRace(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	r := NewAccountOwnerExitRepository(db)
 	repo := NewApplicationRepository(db)
 	// Pre-establish fence so simultaneous transactions compete on its write.
@@ -117,7 +117,7 @@ func TestBR_APP_008_OwnershipCreateRace(t *testing.T) {
 	}
 }
 func TestBR_APP_008_OwnedApplicationBlocksIdempotently(t *testing.T) {
-	db := migratedIntegrationDatabase(t, integrationClient(t))
+	db := reusableIntegrationDatabase(t, integrationClient(t))
 	createVersionTestApplication(t, db, "owned", "owned_app")
 	r := NewAccountOwnerExitRepository(db)
 	p := exitPrepare("owned", d.Closure)
