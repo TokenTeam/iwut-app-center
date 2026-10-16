@@ -17,6 +17,7 @@ import (
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -156,6 +157,9 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if res.Header.Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("profile decision HTTP status/cache=%d/%q", res.StatusCode, res.Header.Get("Cache-Control"))
+		}
 		return res.StatusCode, res.Header.Get("ETag"), body
 	}
 	for _, tc := range []struct {
@@ -199,7 +203,7 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if headers.Get("ETag") != `"3"` || approved.ProfileRevision.ReviewStatus != "APPROVED" || approved.ProfileRevision.Revision != 3 || approved.Review.Status != "APPROVED" || approved.CurrentPublishedProfileRevisionId.GetStringValue() != request.ProfileRevisionId || approved.ProfileRevision.UpdatedBy != "profile-reviewer" || approved.ProfileRevision.CreatedBy != "profile-admin" || approved.Review.SubmittedBy != "profile-admin" {
+	if headers.Get("Cache-Control") != "private, no-store" || headers.Get("ETag") != `"3"` || approved.ProfileRevision.ReviewStatus != "APPROVED" || approved.ProfileRevision.Revision != 3 || approved.Review.Status != "APPROVED" || approved.CurrentPublishedProfileRevisionId.GetStringValue() != request.ProfileRevisionId || approved.ProfileRevision.UpdatedBy != "profile-reviewer" || approved.ProfileRevision.CreatedBy != "profile-admin" || approved.Review.SubmittedBy != "profile-admin" {
 		t.Fatalf("approved %v etag %s", approved, headers.Get("ETag"))
 	}
 	decision := approved.Review.Decision.GetStructValue().Fields
@@ -225,9 +229,13 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 	request.ProfileRevisionId = second.ProfileRevision.ProfileRevisionId
 	request.ProfileReviewId = second.Review.ProfileReviewId
 	request.Command = &reviewv1.DecideApplicationProfileRevisionReviewCommand{ExpectedProfileRevisionRevision: 2, ExpectedPolicyVersion: "app-profile-review-v1", Outcome: reviewv1.ProfileReviewDecisionAction_REJECT, Reason: &reason}
-	rejected, err := reviewClient.DecideApplicationProfileRevisionReview(reviewerCtx, request)
+	var decisionHeaders metadata.MD
+	rejected, err := reviewClient.DecideApplicationProfileRevisionReview(reviewerCtx, request, grpc.Header(&decisionHeaders))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if values := decisionHeaders.Get("cache-control"); len(values) != 1 || values[0] != "private, no-store" {
+		t.Fatalf("profile decision gRPC cache=%q", values)
 	}
 	if rejected.ProfileRevision.ReviewStatus != "REJECTED" || rejected.ProfileRevision.Revision != 3 || rejected.Review.Decision.GetStructValue().Fields["reason"].GetStringValue() != reason || rejected.CurrentPublishedProfileRevisionId.GetStringValue() != approved.ProfileRevision.ProfileRevisionId {
 		t.Fatal(rejected)

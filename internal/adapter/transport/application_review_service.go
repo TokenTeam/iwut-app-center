@@ -71,6 +71,7 @@ func (service *ApplicationReviewService) DecideApplicationVersionReview(
 	ctx context.Context,
 	request *applicationreviewv1.DecideApplicationVersionReviewRequest,
 ) (*applicationreviewv1.DecideApplicationVersionReviewResponse, error) {
+	setPrivateNoStore(ctx)
 	if service == nil || service.decideHandler == nil || request == nil {
 		return nil, toTransportError(reviewdomain.NewInternalError(nil))
 	}

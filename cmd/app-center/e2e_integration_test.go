@@ -1155,6 +1155,7 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	developerStatusServer.SetStatus(adminID, developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_SUSPENDED)
 	grpcClient := applicationreviewv1.NewApplicationReviewClient(connection)
 	grpcCtx := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, reviewerToken))
+	var decisionHeaders metadata.MD
 	autoRejected, err := grpcClient.DecideApplicationVersionReview(grpcCtx, &applicationreviewv1.DecideApplicationVersionReviewRequest{
 		ApplicationId: application.GetId(),
 		VersionId:     suspendedReview.GetReview().GetVersionId(),
@@ -1164,9 +1165,12 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 			ExpectedPolicyVersion: "app-version-review-v3",
 			ConfirmedCheckIds:     []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 		},
-	})
+	}, grpc.Header(&decisionHeaders))
 	if err != nil {
 		t.Fatalf("gRPC auto-reject decision: %v", err)
+	}
+	if values := decisionHeaders.Get("cache-control"); len(values) != 1 || values[0] != "private, no-store" {
+		t.Fatalf("gRPC decision cache=%q", values)
 	}
 	if autoRejected.GetReview().GetStatus() != "REJECTED" || autoRejected.GetReview().GetDecision().GetDecidedBy() != systemID ||
 		autoRejected.GetReview().GetDecision().GetApprovalValidation() != nil ||
@@ -2337,6 +2341,9 @@ func e2eHTTPDecideReview(
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read decide-review response: %v", err)
+	}
+	if response.Header.Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("decide-review HTTP status/cache=%d/%q", response.StatusCode, response.Header.Get("Cache-Control"))
 	}
 	return response.StatusCode, body
 }

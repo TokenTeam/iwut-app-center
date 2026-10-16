@@ -59,7 +59,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
-				if isReviewQueryOperation(operation) {
+				if isReviewQueryOperation(operation) || isReviewDecisionOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod {
@@ -139,7 +139,7 @@ func toIdentityTransportError(err error, operation string) error {
 		}
 		return transportStatus(codes.Unauthenticated, ReasonInvalidAuthenticatedUser, "authenticated user identity is invalid")
 	}
-	if isReviewQueryOperation(operation) || operation == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview || operation == profilereviewv1.OperationApplicationProfileReviewDecideApplicationProfileRevisionReview {
+	if isReviewQueryOperation(operation) || isReviewDecisionOperation(operation) {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonReviewerIdentityRequired, "reviewer identity is required")
 		}
@@ -220,4 +220,8 @@ func isReviewQueryOperation(op string) bool {
 		return true
 	}
 	return false
+}
+
+func isReviewDecisionOperation(op string) bool {
+	return op == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview || op == profilereviewv1.OperationApplicationProfileReviewDecideApplicationProfileRevisionReview
 }

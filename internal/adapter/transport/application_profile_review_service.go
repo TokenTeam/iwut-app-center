@@ -82,6 +82,7 @@ func applicationProfileReviewResponse(r *profiledomain.ApplicationProfileReview)
 	}
 }
 func (s *ApplicationProfileReviewService) DecideApplicationProfileRevisionReview(ctx context.Context, request *reviewv1.DecideApplicationProfileRevisionReviewRequest) (*reviewv1.DecideApplicationProfileRevisionReviewResponse, error) {
+	setPrivateNoStore(ctx)
 	trusted, ok := trustedIdentityFromContext(ctx)
 	if !ok || !trusted.AuthID.IsValid() {
 		return nil, toTransportError(profiledomain.ErrReviewerIdentityRequired)

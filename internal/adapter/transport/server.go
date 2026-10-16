@@ -622,6 +622,9 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if isReviewDecisionHTTPRequest(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+	}
 	if isMyTestApplicationRequest(r) {
 		myTestApplicationSafeErrorEncoder(w, r, err)
 		return
@@ -1016,7 +1019,7 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isReviewQueryHTTPRequest(r) {
+			if isReviewQueryHTTPRequest(r) || isReviewDecisionHTTPRequest(r) {
 				w.Header().Set("Cache-Control", "private, no-store")
 			}
 			if kind := profileManagementHTTPKind(r); kind != "" {
@@ -1111,7 +1114,7 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 			}
 			if isTesterExitRequest(r) || isTesterManagementRequest(r) || isDecideApplicationProfileReviewRequest(r) || isSubmitApplicationProfileReviewRequest(r) || isTesterMembershipRequest(r) || isTesterRemovalRequest(r) || isTesterJoinLinkRevocationRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isCreateApplicationProfileRevisionRequest(r) || isUpdateApplicationProfileRevisionRequest(r) || isOAuthClientManagementRequest(r) || isApplicationFilterRequest(r) || isApplicationAdminTransferRequest(r) || isApplicationClosureRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 				w.Header().Set("Cache-Control", "no-store")
-				if isTesterExitRequest(r) || isTesterManagementRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
+				if isReviewDecisionHTTPRequest(r) || isTesterExitRequest(r) || isTesterManagementRequest(r) || isTestLaunchResolutionRequest(r) || isRuntimeResolutionRequest(r) || isPublicCatalogRequest(r) || isApplicationOperationsRequest(r) || isApplicationVersionManagementRequest(r) || isApplicationVersionAbandonmentRequest(r) {
 					w.Header().Set("Cache-Control", "private, no-store")
 				}
 				var identityErr error
@@ -1291,4 +1294,10 @@ func isReviewQueryHTTPRequest(r *http.Request) bool {
 		return parts[2] == "application-versions:search" || parts[2] == "application-profiles:search"
 	}
 	return r.Method == http.MethodGet && len(parts) == 7 && parts[0] == "v1" && parts[1] == "applications" && (parts[3] == "versions" || parts[3] == "profile-revisions") && parts[5] == "reviews"
+}
+
+func isReviewDecisionHTTPRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodPost && len(parts) == 8 && parts[0] == "v1" && parts[1] == "applications" &&
+		(parts[3] == "versions" || parts[3] == "profile-revisions") && parts[5] == "reviews" && parts[7] == "decision"
 }
