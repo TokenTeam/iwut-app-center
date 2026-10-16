@@ -141,7 +141,7 @@ func TestE2E_UCAPP036_RealAuthOAuthTestClear(t *testing.T) {
 		submission := appAPI.call(http.MethodPost, prefix+"/versions/"+versions[index]+"/reviews", ownerToken, map[string]any{"expectedRevision": "1"})
 		reviewID := uc033NestedString(t, submission, "review", "reviewId")
 		appAPI.call(http.MethodPost, prefix+"/versions/"+versions[index]+"/reviews/"+reviewID+"/decision", reviewerToken, map[string]any{
-			"outcome": "APPROVE", "expectedPolicyVersion": "app-version-review-v2",
+			"outcome": "APPROVE", "expectedPolicyVersion": "app-version-review-v3",
 			"confirmedCheckIds": []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 		})
 	}

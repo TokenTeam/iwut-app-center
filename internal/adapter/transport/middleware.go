@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	pq "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review_query"
+	vq "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review_query"
 	"github.com/go-kratos/kratos/v2/middleware"
 	"github.com/go-kratos/kratos/v2/transport"
 	"google.golang.org/grpc/codes"
@@ -57,6 +59,9 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
+				if isReviewQueryOperation(operation) {
+					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
+				}
 				if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
@@ -134,7 +139,7 @@ func toIdentityTransportError(err error, operation string) error {
 		}
 		return transportStatus(codes.Unauthenticated, ReasonInvalidAuthenticatedUser, "authenticated user identity is invalid")
 	}
-	if operation == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview || operation == profilereviewv1.OperationApplicationProfileReviewDecideApplicationProfileRevisionReview {
+	if isReviewQueryOperation(operation) || operation == applicationreviewv1.OperationApplicationReviewDecideApplicationVersionReview || operation == profilereviewv1.OperationApplicationProfileReviewDecideApplicationProfileRevisionReview {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonReviewerIdentityRequired, "reviewer identity is required")
 		}
@@ -205,6 +210,14 @@ func hasLegacyIdentityHeader(ctx context.Context) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+func isReviewQueryOperation(op string) bool {
+	switch op {
+	case vq.OperationApplicationReviewQueryServiceListPendingApplicationVersionReviews, vq.OperationApplicationReviewQueryServiceGetApplicationVersionReview, pq.OperationApplicationProfileReviewQueryServiceListPendingApplicationProfileReviews, pq.OperationApplicationProfileReviewQueryServiceGetApplicationProfileReview:
+		return true
 	}
 	return false
 }

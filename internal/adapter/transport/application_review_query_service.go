@@ -61,7 +61,7 @@ func (s *ApplicationReviewQueryService) GetApplicationVersionReview(ctx context.
 	if err != nil {
 		return nil, toTransportError(err)
 	}
-	return &queryv1.ApplicationVersionReviewDetail{Application: &queryv1.ReviewApplicationContext{ApplicationId: d.Application.ApplicationID, Name: d.Application.Name, AdminId: d.Application.AdminID, LifecycleStatus: d.Application.LifecycleStatus, PlatformAvailabilityStatus: d.Application.PlatformAvailabilityStatus}, Version: &queryv1.ReviewVersionContext{VersionId: d.Version.VersionID, Sequence: d.Version.Sequence, ReviewStatus: d.Version.ReviewStatus, Revision: d.Version.Revision, CreatedBy: d.Version.CreatedBy}, Review: applicationReviewResource(d.Review), CurrentPolicy: &queryv1.ReviewPolicyContext{Version: d.CurrentPolicy.Version, RequiredCheckIds: append([]string(nil), d.CurrentPolicy.RequiredCheckIDs...)}, DecisionEligibility: versionEligibilityResponse(d.DecisionEligibility), AsOf: timestamppb.New(d.AsOf)}, nil
+	return &queryv1.ApplicationVersionReviewDetail{Application: &queryv1.ReviewApplicationContext{ApplicationId: d.Application.ApplicationID, Name: d.Application.Name, AdminId: d.Application.AdminID, LifecycleStatus: d.Application.LifecycleStatus, PlatformAvailabilityStatus: d.Application.PlatformAvailabilityStatus}, Version: &queryv1.ReviewVersionContext{VersionId: d.Version.VersionID, Sequence: d.Version.Sequence, ReviewStatus: d.Version.ReviewStatus, Revision: d.Version.Revision, CreatedBy: d.Version.CreatedBy}, Review: applicationReviewResource(d.Review), CurrentPolicy: &queryv1.ReviewPolicyContext{Version: d.CurrentPolicy.Version, RequiredCheckIds: append([]string(nil), d.CurrentPolicy.RequiredCheckIDs...), RequiredCheckDefinitions: reviewCheckDefinitionsResponse(d.CurrentPolicy.RequiredCheckDefinitions)}, DecisionEligibility: versionEligibilityResponse(d.DecisionEligibility), AsOf: timestamppb.New(d.AsOf)}, nil
 }
 func versionEligibilityResponse(v reviewdomain.DecisionEligibility) *queryv1.ReviewDecisionEligibility {
 	out := &queryv1.ReviewDecisionEligibility{Eligible: v.Eligible}
@@ -74,6 +74,14 @@ func versionEligibilityResponse(v reviewdomain.DecisionEligibility) *queryv1.Rev
 		case reviewdomain.ConflictReviewSubmitter:
 			out.Conflicts = append(out.Conflicts, queryv1.ReviewConflict_REVIEW_SUBMITTER)
 		}
+	}
+	return out
+}
+
+func reviewCheckDefinitionsResponse(defs []reviewdomain.ReviewCheckDefinition) []*queryv1.ReviewCheckDefinition {
+	out := make([]*queryv1.ReviewCheckDefinition, len(defs))
+	for i, d := range defs {
+		out[i] = &queryv1.ReviewCheckDefinition{Id: d.ID().String(), Title: d.Title(), Description: d.Description()}
 	}
 	return out
 }

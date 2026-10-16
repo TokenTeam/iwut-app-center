@@ -91,7 +91,9 @@ func NewReviewCheckID(value string) (ReviewCheckID, error) {
 func (id ReviewCheckID) String() string { return string(id) }
 
 type ReviewCheckDefinition struct {
-	id ReviewCheckID
+	id          ReviewCheckID
+	title       string
+	description string
 }
 
 func NewReviewCheckDefinition(id ReviewCheckID) (ReviewCheckDefinition, error) {
@@ -101,7 +103,31 @@ func NewReviewCheckDefinition(id ReviewCheckID) (ReviewCheckDefinition, error) {
 	return ReviewCheckDefinition{id: id}, nil
 }
 
-func (definition ReviewCheckDefinition) ID() ReviewCheckID { return definition.id }
+// NewFormalReviewCheckDefinition validates policy-owned plain text; historical
+// ID-only definitions remain representable without retroactive interpretation.
+func NewFormalReviewCheckDefinition(id ReviewCheckID, title, description string) (ReviewCheckDefinition, error) {
+	if _, err := NewReviewCheckID(id.String()); err != nil || !validReviewDefinitionText(title, 80) || !validReviewDefinitionText(description, 2000) {
+		return ReviewCheckDefinition{}, NewInternalError(nil)
+	}
+	return ReviewCheckDefinition{id: id, title: title, description: description}, nil
+}
+func validReviewDefinitionText(value string, max int) bool {
+	if !utf8.ValidString(value) || strings.TrimSpace(value) != value || utf8.RuneCountInString(value) < 1 || utf8.RuneCountInString(value) > max {
+		return false
+	}
+	for _, c := range value {
+		if unicode.IsControl(c) {
+			return false
+		}
+	}
+	return true
+}
+func (definition ReviewCheckDefinition) ID() ReviewCheckID   { return definition.id }
+func (definition ReviewCheckDefinition) Title() string       { return definition.title }
+func (definition ReviewCheckDefinition) Description() string { return definition.description }
+func (policy *VersionReviewPolicy) RequiredChecks() []ReviewCheckDefinition {
+	return append([]ReviewCheckDefinition(nil), policy.requiredChecks...)
+}
 
 type ReviewPolicyStatus string
 

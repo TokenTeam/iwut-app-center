@@ -13,6 +13,7 @@ import (
 
 	applicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
+	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review_query"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"iwut-app-center/internal/adapter/transport"
 	"iwut-app-center/internal/config"
@@ -93,6 +95,46 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 	appID := createApp("Profile_Decision")
 	submitted := makeSubmission(appID, "Published")
 	request := &reviewv1.DecideApplicationProfileRevisionReviewRequest{ApplicationId: appID, ProfileRevisionId: submitted.ProfileRevision.ProfileRevisionId, ProfileReviewId: submitted.Review.ProfileReviewId, Command: &reviewv1.DecideApplicationProfileRevisionReviewCommand{ExpectedProfileRevisionRevision: 2, ExpectedCurrentPublishedProfileRevisionId: structpb.NewNullValue(), ExpectedPolicyVersion: "app-profile-review-v1", Outcome: reviewv1.ProfileReviewDecisionAction_APPROVE, ConfirmedCheckIds: []string{"icon-content-reviewed", "content-policy-reviewed"}}}
+	queryClient := queryv1.NewApplicationProfileReviewQueryServiceClient(connection)
+	queryRequest := &queryv1.GetApplicationProfileReviewRequest{ApplicationId: appID, ProfileRevisionId: request.ProfileRevisionId, ProfileReviewId: request.ProfileReviewId}
+	detail, err := queryClient.GetApplicationProfileReview(reviewerCtx, queryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := detail.GetCurrentPublishedProfile().GetState().(*queryv1.CurrentPublishedProfileForReview_None); !ok {
+		t.Fatal("first publication missing explicit NONE")
+	}
+	if _, err = queryClient.GetApplicationProfileReview(metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, versionReviewerToken)), queryRequest); status.Code(err) != codes.PermissionDenied {
+		t.Fatal("version permission leaked profile detail", err)
+	}
+	checkHTTPDetail := func(token string, want int, expected *queryv1.CurrentPublishedProfileForReview) {
+		t.Helper()
+		req, e := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+httpAddress+"/v1/applications/"+appID+"/profile-revisions/"+queryRequest.ProfileRevisionId+"/reviews/"+queryRequest.ProfileReviewId, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if token != "" {
+			req.Header.Set(transport.IdentityHeader, token)
+		}
+		res, e := http.DefaultClient.Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer res.Body.Close()
+		body, e := io.ReadAll(res.Body)
+		if e != nil || res.StatusCode != want || res.Header.Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("detail HTTP %d %s %v", res.StatusCode, body, e)
+		}
+		if want == 200 {
+			var decoded queryv1.ApplicationProfileReviewDetail
+			if e = protojson.Unmarshal(body, &decoded); e != nil || !proto.Equal(decoded.CurrentPublishedProfile, expected) {
+				t.Fatalf("profile projection protocol mismatch %s %v", body, e)
+			}
+		}
+	}
+	checkHTTPDetail(reviewerToken, 200, detail.CurrentPublishedProfile)
+	checkHTTPDetail("", 401, nil)
+	checkHTTPDetail(versionReviewerToken, 403, nil)
 	commandJSON := `{"expectedProfileRevisionRevision":"2","expectedCurrentPublishedProfileRevisionId":null,"expectedPolicyVersion":"app-profile-review-v1","outcome":"APPROVE","confirmedCheckIds":["icon-content-reviewed","content-policy-reviewed"]}`
 	decideHTTP := func(token, query, payload string) (int, string, []byte) {
 		t.Helper()
@@ -169,6 +211,16 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 	}
 	// REJECT uses no publication precondition and retains prior publication. Raw reason is immutable.
 	second := makeSubmission(appID, "Rejected")
+	queryRequest.ProfileRevisionId = second.ProfileRevision.ProfileRevisionId
+	queryRequest.ProfileReviewId = second.Review.ProfileReviewId
+	detail, err = queryClient.GetApplicationProfileReview(reviewerCtx, queryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.GetCurrentPublishedProfile().GetPublished().GetProfileRevisionId() != approved.ProfileRevision.ProfileRevisionId || detail.GetCurrentPublishedProfile().GetPublished().GetDisplayName() != "Published" {
+		t.Fatal("replacement preview wrong")
+	}
+	checkHTTPDetail(reviewerToken, 200, detail.CurrentPublishedProfile)
 	reason := "Cafe\u0301 policy mismatch"
 	request.ProfileRevisionId = second.ProfileRevision.ProfileRevisionId
 	request.ProfileReviewId = second.Review.ProfileReviewId

@@ -38,30 +38,27 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
-**UC-APP-003 → UC-APP-004 → UC-APP-005 — sequential real Gateway/Auth acceptance.**
-Read each generated brief before its step, plus the engineering baseline and
-implements README from local authoritative docs. User authorized advancing the
-remaining integration work on 2026-10-15. First verify BR-VER-010–017: real USER
-Session, Scope changes, complete replacement, no-op/OCC, dependent OAuth config
-and rollback. Then verify BR-REV-001–009 edited-version submission, immutable
-snapshot and current Scope boundaries. Finally verify accepted UC005 rules with
-real Auth Reviewer grant/revoke/USER issuance and real PENDING decisions.
-Own App integration fixtures, tests, orchestration and implementation records;
-preserve accepted UC/BR semantics. Reuse UC002 real Auth/Mongo/Traefik/Gateway
-inputs and pin/record external commits/images. Final tier: make check-auth-app.
+**UC-APP-005/030 → UC-APP-031 — accepted review completion, then Gateway and Console integration.**
 
-User separately authorized delegating Gateway and Console integration. Gateway
-agent owns that repository and its accepted App API dependency update to
-`a1cf9d8`; Console agent owns its assigned PROPOSED read-management/review UCs,
-registry and implementation navigation. User authorized drafting both groups;
-page implementation waits for design acceptance. Root owns App and App records.
-Do not change Auth code or shared API sources. Preserve the pre-existing App API
-checkout update to a5d504c; do not stage it as this package's gitlink update.
-Any new UC/BR/business changes require a concrete reviewed proposal and pause.
-Client Catalog/Filter evaluation, approval revocation, reliable alert delivery
-and managed icon assets remain deferred. Use Go 1.25.5, local committed docs,
-and this checkout; no push/deployment. Freeze all inputs during final tests;
-stage owned new files before diff checks. Preserve all pre-existing dirty files.
+User accepted both 2026-10-16 review proposals. Read the regenerated briefs and
+implement BR-REV-016/017/034: immutable v3 formal check definitions, atomic policy
+migration, current-policy detail projection and strict failure boundaries. Then
+implement BR-PRF-043/046: same-snapshot current published Profile with explicit
+NONE and approval-fact consistency. Preserve UC016 write CAS semantics.
+
+Root owns App domain/read ports, Mongo migration/repositories, transport and
+acceptance. A delegated API owner owns the two review query Proto definitions
+and generated code in iwut-api-proto; root may consume its committed revision.
+After App/API verification, delegate two exact ADMIN decision surfaces to the
+Gateway owner, then Console decisions to the Console owner. Do not edit Auth
+sources. Preserve pre-existing dirty files and other owners' code. New business
+changes beyond the accepted proposals require review. Client Catalog/Filter,
+approval revocation, alerts and managed icon assets remain deferred.
+
+Use Go 1.25.5 and local committed authoritative docs. Final App acceptance tier:
+make check-full (make check-auth-app if shared Auth/identity behavior changes).
+Freeze source inputs during final verification. Local commits only; no push or
+deployment. Record dependency revisions and report fingerprints.
 
 ## Verification entry points
 

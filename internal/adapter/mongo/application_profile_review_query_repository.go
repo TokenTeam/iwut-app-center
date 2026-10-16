@@ -179,10 +179,14 @@ func (r *ApplicationProfileReviewQueryRepository) Get(ctx context.Context, revie
 		if err != nil {
 			return nil, profileport.ErrProfileReviewQueryStateInconsistent
 		}
+		published, err := r.currentPublishedProfileForReview(tx, applicationID)
+		if err != nil {
+			return nil, err
+		}
 		return &profiledomain.ProfileReviewDetail{
 			Application:     profiledomain.ProfileReviewApplicationContext{ApplicationID: app.ID, Name: app.Name, AdminID: app.AdminID, LifecycleStatus: core.LifecycleStatus, PlatformAvailabilityStatus: core.PlatformAvailabilityStatus},
 			ProfileRevision: profiledomain.ProfileRevisionReviewContext{ProfileRevisionID: revision.ProfileRevisionID, Sequence: revision.Sequence, ReviewStatus: revision.ReviewStatus, Revision: revision.Revision, CreatedBy: revision.CreatedBy},
-			Review:          review, CurrentPolicy: policy,
+			Review:          review, CurrentPolicy: policy, CurrentPublishedProfile: published,
 			DecisionEligibility: profileReviewEligibility(reviewer, app.AdminID, revision.CreatedBy, review.SubmittedBy().String()), AsOf: now,
 		}, nil
 	})
@@ -326,4 +330,53 @@ func decodeProfileReviewQueryCursor(token string, reviewer shared.AuthID, filter
 		return nil, profileport.ErrInvalidProfileReviewPageToken
 	}
 	return &cursor, nil
+}
+
+// All lookups use the caller's read-only snapshot; no admin or catalog gate
+// participates in this Reviewer-specific projection.
+func (r *ApplicationProfileReviewQueryRepository) currentPublishedProfileForReview(ctx context.Context, appID shared.ApplicationID) (*profiledomain.CurrentPublishedProfileForReview, error) {
+	bad := profileport.ErrProfileReviewQueryStateInconsistent
+	raw, err := r.database.Collection(applicationProfilesCollectionName).FindOne(ctx, bson.M{"applicationId": appID.String()}).Raw()
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, bad
+	}
+	if err != nil {
+		return nil, err
+	}
+	profile, err := profileFromRaw(raw)
+	if err != nil || profile.ApplicationID != appID.String() {
+		return nil, bad
+	}
+	if profile.CurrentPublishedProfileRevisionID == nil {
+		return &profiledomain.CurrentPublishedProfileForReview{None: true}, nil
+	}
+	id := *profile.CurrentPublishedProfileRevisionID
+	raw, err = r.database.Collection(applicationProfileRevisionsCollectionName).FindOne(ctx, bson.M{"applicationId": appID.String(), "profileRevisionId": id}).Raw()
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, bad
+	}
+	if err != nil {
+		return nil, err
+	}
+	revision, err := profileRevisionFromRaw(raw)
+	if err != nil || revision.ReviewStatus() != profiledomain.ReviewStatusApproved || revision.ApplicationID() != appID {
+		return nil, bad
+	}
+	cur, err := r.database.Collection(applicationProfileReviewsCollectionName).Find(ctx, bson.M{"applicationId": appID.String(), "profileRevisionId": id, "status": "APPROVED"}, options.Find().SetLimit(2))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var reviews []bson.Raw
+	if err = cur.All(ctx, &reviews); err != nil {
+		return nil, err
+	}
+	if len(reviews) != 1 {
+		return nil, bad
+	}
+	review, err := profileReviewDecisionCandidate(reviews[0])
+	if err != nil || !approvedProfileSnapshotMatches(revision, review) {
+		return nil, bad
+	}
+	return &profiledomain.CurrentPublishedProfileForReview{Published: &profiledomain.PublishedProfileForReview{ProfileRevisionID: id, DisplayName: revision.DisplayName().String(), Description: optionalDescription(revision.Description()), Icon: optionalIcon(revision.Icon())}}, nil
 }

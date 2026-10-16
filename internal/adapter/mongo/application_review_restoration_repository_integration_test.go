@@ -340,7 +340,7 @@ func createRejectedReview(t *testing.T, database *drivermongo.Database, adminID,
 	repository := NewApplicationReviewDecisionRepository(database)
 	candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 	decision := integrationRejectedDecision(
-		t, "review.v1", "review rejected", "auth-reviewer",
+		t, "app-version-review-v3", "review rejected", "auth-reviewer",
 		time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 	)
 	if _, err := repository.Decide(t.Context(), candidate, "auth-reviewer", decision); err != nil {

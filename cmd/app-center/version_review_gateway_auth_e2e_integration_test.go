@@ -412,7 +412,7 @@ func (f *versionReviewGatewayFixture) grant(actor, subject, permission string, a
 	return response.PermissionRevision
 }
 func (f *versionReviewGatewayFixture) decision(review *rv.ApplicationReviewResource, approve bool) *rv.DecideApplicationVersionReviewRequest {
-	command := &rv.DecideApplicationVersionReviewCommand{Outcome: rv.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v2", ConfirmedCheckIds: []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"}}
+	command := &rv.DecideApplicationVersionReviewCommand{Outcome: rv.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v3", ConfirmedCheckIds: []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"}}
 	if !approve {
 		command.Outcome = rv.ReviewDecisionAction_REJECT
 		command.ConfirmedCheckIds = []string{}
@@ -499,7 +499,7 @@ func (f *versionReviewGatewayFixture) verifyReviewDecisions(edited, native, web 
 	slices.Sort(checks)
 	actualChecks := slices.Clone(detail.GetCurrentPolicy().GetRequiredCheckIds())
 	slices.Sort(actualChecks)
-	if err != nil || !detail.GetDecisionEligibility().GetEligible() || detail.GetCurrentPolicy().GetVersion() != "app-version-review-v2" || !reflect.DeepEqual(actualChecks, checks) || !proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot) {
+	if err != nil || !detail.GetDecisionEligibility().GetEligible() || detail.GetCurrentPolicy().GetVersion() != "app-version-review-v3" || !reflect.DeepEqual(actualChecks, checks) || !proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot) {
 		t.Fatalf("real Reviewer detail: status=%s eligible=%t policy=%s checks=%v snapshotEqual=%t", status.Code(err), detail.GetDecisionEligibility().GetEligible(), detail.GetCurrentPolicy().GetVersion(), detail.GetCurrentPolicy().GetRequiredCheckIds(), proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot))
 	}
 	if count, err := f.authDB.Collection("auth_permission_audit_events").CountDocuments(f.ctx, bson.M{"subjectAuthId": reviewer, "actorAuthId": manager, "permission": "app.version.review"}); err != nil || count != 3 {

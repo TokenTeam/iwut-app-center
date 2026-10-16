@@ -33,7 +33,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 9, 30, 0, 123456789, time.UTC)
 		persistedDecidedAt := decidedAt.Truncate(time.Millisecond)
-		decision := integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		result, err := repository.Decide(t.Context(), candidate, "auth-reviewer", decision)
 		if err != nil {
@@ -52,7 +52,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 			t.Fatalf("stored review = %#v", storedReview)
 		}
 		validation := storedReview.Decision.ApprovalValidation
-		if storedReview.Decision.Outcome != "APPROVED" || storedReview.Decision.ReviewPolicyVersion != "review.v1" ||
+		if storedReview.Decision.Outcome != "APPROVED" || storedReview.Decision.ReviewPolicyVersion != "app-version-review-v3" ||
 			storedReview.Decision.DecidedBy != "auth-reviewer" || !storedReview.Decision.DecidedAt.Equal(persistedDecidedAt) ||
 			storedReview.Decision.Reason != nil || validation == nil ||
 			validation.ScopeCatalogRevision != 77 || validation.PreflightPolicyVersion != "public-https.v2" ||
@@ -73,7 +73,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 10, 0, 0, 0, time.UTC)
-		decision := integrationRejectedDecision(t, "review.v1", "用途说明不足。", "auth-reviewer", decidedAt)
+		decision := integrationRejectedDecision(t, "app-version-review-v3", "用途说明不足。", "auth-reviewer", decidedAt)
 
 		result, err := repository.Decide(t.Context(), candidate, "auth-reviewer", decision)
 		if err != nil {
@@ -103,7 +103,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		decidedAt := time.Date(2026, time.September, 21, 10, 30, 0, 0, time.UTC)
 		decision := integrationRejectedDecision(
 			t,
-			"review.v1",
+			"app-version-review-v3",
 			reviewdomain.SystemEligibilityRejectionReason,
 			"auth-system",
 			decidedAt,
@@ -130,11 +130,11 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 11, 0, 0, 0, time.UTC)
-		firstDecision := integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		firstDecision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
 		if _, err := repository.Decide(t.Context(), candidate, "auth-reviewer", firstDecision); err != nil {
 			t.Fatalf("first Decide() error = %v", err)
 		}
-		secondDecision := integrationRejectedDecision(t, "review.v1", "overwrite attempt", "auth-other", decidedAt.Add(time.Hour))
+		secondDecision := integrationRejectedDecision(t, "app-version-review-v3", "overwrite attempt", "auth-other", decidedAt.Add(time.Hour))
 		if _, err := repository.Decide(t.Context(), candidate, "auth-other", secondDecision); !errors.Is(err, reviewport.ErrApplicationReviewAlreadyDecided) {
 			t.Fatalf("second Decide() error = %v, want already decided", err)
 		}
@@ -196,7 +196,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
-		decision := integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		// The version creator becomes the reviewer after the candidate was
 		// loaded. The final transaction must reject the decision.
@@ -219,7 +219,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 12, 30, 0, 0, time.UTC)
-		decision := integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		if _, err := database.Collection(applicationsCollectionName).UpdateOne(
 			t.Context(),
@@ -246,8 +246,8 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 			reviewer  shared.AuthID
 			decision  *reviewdomain.ApplicationReviewDecision
 		}{
-			{firstCandidate, "auth-reviewer-one", integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer-one", decidedAt)},
-			{secondCandidate, "auth-reviewer-two", integrationRejectedDecision(t, "review.v1", "concurrent rejection", "auth-reviewer-two", decidedAt)},
+			{firstCandidate, "auth-reviewer-one", integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer-one", decidedAt)},
+			{secondCandidate, "auth-reviewer-two", integrationRejectedDecision(t, "app-version-review-v3", "concurrent rejection", "auth-reviewer-two", decidedAt)},
 		}
 
 		start := make(chan struct{})
@@ -293,7 +293,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 14, 0, 0, 0, time.UTC)
-		decision := integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		transferSession, err := client.StartSession()
 		if err != nil {
@@ -366,7 +366,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 		{name: "valid approved", mutate: func(document *applicationReviewDocument) {
 			document.Status = "APPROVED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "APPROVED", ReviewPolicyVersion: "review.v1",
+				Outcome: "APPROVED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{"content-reviewed"}, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 				ApprovalValidation: &applicationReviewApprovalValidationDocument{
@@ -378,14 +378,14 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 			reason := "denied"
 			document.Status = "REJECTED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "REJECTED", ReviewPolicyVersion: "review.v1",
+				Outcome: "REJECTED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{}, Reason: &reason, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}
 		}, wantReject: false},
 		{name: "pending with decision", mutate: func(document *applicationReviewDocument) {
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "APPROVED", ReviewPolicyVersion: "review.v1",
+				Outcome: "APPROVED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{"content-reviewed"}, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 				ApprovalValidation: &applicationReviewApprovalValidationDocument{
@@ -396,7 +396,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 		{name: "outcome does not match status", mutate: func(document *applicationReviewDocument) {
 			document.Status = "APPROVED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "REJECTED", ReviewPolicyVersion: "review.v1",
+				Outcome: "REJECTED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{}, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}
@@ -404,7 +404,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 		{name: "approved without approval validation", mutate: func(document *applicationReviewDocument) {
 			document.Status = "APPROVED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "APPROVED", ReviewPolicyVersion: "review.v1",
+				Outcome: "APPROVED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{"content-reviewed"}, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}
@@ -413,7 +413,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 			reason := "denied"
 			document.Status = "REJECTED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "REJECTED", ReviewPolicyVersion: "review.v1",
+				Outcome: "REJECTED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{"content-reviewed"}, Reason: &reason, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}
@@ -421,7 +421,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 		{name: "rejected without reason", mutate: func(document *applicationReviewDocument) {
 			document.Status = "REJECTED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "REJECTED", ReviewPolicyVersion: "review.v1",
+				Outcome: "REJECTED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{}, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}
@@ -430,7 +430,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 			reason := strings.Repeat("测", 2000)
 			document.Status = "REJECTED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "REJECTED", ReviewPolicyVersion: "review.v1",
+				Outcome: "REJECTED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{}, Reason: &reason, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}
@@ -439,7 +439,7 @@ func TestApplicationReviewDecisionValidatorIntegration(t *testing.T) {
 			reason := strings.Repeat("测", 2001)
 			document.Status = "REJECTED"
 			document.Decision = &applicationReviewDecisionDocument{
-				Outcome: "REJECTED", ReviewPolicyVersion: "review.v1",
+				Outcome: "REJECTED", ReviewPolicyVersion: "app-version-review-v3",
 				ConfirmedCheckIDs: []string{}, Reason: &reason, DecidedBy: "auth-reviewer",
 				DecidedAt: time.Date(2026, time.September, 21, 15, 0, 0, 0, time.UTC),
 			}

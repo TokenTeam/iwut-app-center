@@ -1016,6 +1016,9 @@ func validTesterRemovalHTTPInput(r *http.Request) bool {
 func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isReviewQueryHTTPRequest(r) {
+				w.Header().Set("Cache-Control", "private, no-store")
+			}
 			if kind := profileManagementHTTPKind(r); kind != "" {
 				w.Header().Set("Cache-Control", "private, no-store")
 				operation := profilev1.OperationApplicationProfileRevisionListApplicationProfileRevisions
@@ -1280,4 +1283,12 @@ func testerMembershipCredentialFilter(verifier *IdentityVerifier) khttp.FilterFu
 func isClearTestSlotRequest(r *http.Request) bool {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	return r.Method == http.MethodDelete && len(parts) == 6 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "publications" && parts[5] == "test-slot"
+}
+
+func isReviewQueryHTTPRequest(r *http.Request) bool {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if r.Method == http.MethodPost && len(parts) == 3 && parts[0] == "v1" && parts[1] == "reviews" {
+		return parts[2] == "application-versions:search" || parts[2] == "application-profiles:search"
+	}
+	return r.Method == http.MethodGet && len(parts) == 7 && parts[0] == "v1" && parts[1] == "applications" && (parts[3] == "versions" || parts[3] == "profile-revisions") && parts[5] == "reviews"
 }

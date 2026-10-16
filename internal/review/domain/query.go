@@ -34,8 +34,9 @@ type ReviewVersionContext struct {
 	CreatedBy    string
 }
 type ReviewPolicyContext struct {
-	Version          string
-	RequiredCheckIDs []string
+	Version                  string
+	RequiredCheckIDs         []string
+	RequiredCheckDefinitions []ReviewCheckDefinition
 }
 type ReviewDetail struct {
 	Application         ReviewApplicationContext

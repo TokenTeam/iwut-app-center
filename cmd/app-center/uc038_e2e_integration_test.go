@@ -122,7 +122,7 @@ func TestE2E_UCAPP038_BR_CAT_011_017_RealProtocolsGeneratedClientAndNoExternalCa
 	}
 	var review reviewv1.SubmitApplicationVersionReviewResponse
 	_ = protojson.Unmarshal(body, &review)
-	code, body = e2eHTTPDecideReview(t, httpAddress, reviewer, appID, version.VersionId, review.Review.ReviewId, "APPROVE", "app-version-review-v2", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed", "oauth-redirects-reviewed"}, "")
+	code, body = e2eHTTPDecideReview(t, httpAddress, reviewer, appID, version.VersionId, review.Review.ReviewId, "APPROVE", "app-version-review-v3", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed", "oauth-redirects-reviewed"}, "")
 	if code != 200 {
 		t.Fatal("approve", code, string(body))
 	}

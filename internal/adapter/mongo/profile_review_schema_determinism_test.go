@@ -15,7 +15,7 @@ func TestProfileReviewDecisionSchemasHaveDeterministicBSON(t *testing.T) {
 		name  string
 		build func() bson.D
 	}{
-		{"review", profileReviewDecisionValidator}, {"revision", profileRevisionDecisionValidator}, {"policy", profileReviewPolicyValidator},
+		{"review", profileReviewDecisionValidator}, {"revision", profileRevisionDecisionValidator}, {"policy", profileReviewPolicyValidator}, {"version policy definitions", versionReviewDefinitionsValidator},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			schema := tc.build()

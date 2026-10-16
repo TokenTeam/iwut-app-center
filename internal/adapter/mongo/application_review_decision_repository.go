@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	reviewdomain "iwut-app-center/internal/review/domain"
 	reviewport "iwut-app-center/internal/review/port"
@@ -104,6 +105,8 @@ func (repository *ApplicationReviewDecisionRepository) Decide(
 	}, transactionOptions)
 	if err != nil {
 		switch {
+		case errors.Is(err, reviewport.ErrReviewPolicyChanged):
+			return nil, reviewport.ErrReviewPolicyChanged
 		case errors.Is(err, reviewport.ErrApplicationReviewNotFound):
 			return nil, reviewport.ErrApplicationReviewNotFound
 		case errors.Is(err, reviewport.ErrApplicationReviewAlreadyDecided):
@@ -192,6 +195,27 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 		return nil, reviewport.ErrApplicationReviewConflictOfInterest
 	}
 
+	// Serialize policy retirement against the final decision with a genuine
+	// adapter-only write; policy content itself remains immutable.
+	policies := repository.database.Collection(versionReviewPoliciesCollectionName)
+	var policy versionReviewPolicyDocument
+	err = policies.FindOne(ctx, bson.M{"version": decision.ReviewPolicyVersion().String(), "status": "ACTIVE"}).Decode(&policy)
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
+		return nil, reviewport.ErrReviewPolicyChanged
+	}
+	if err != nil {
+		return nil, err
+	}
+	if policy.CoordinationRevision < 1 || policy.CoordinationRevision == math.MaxInt64 {
+		return nil, reviewport.ErrApplicationReviewStateInconsistent
+	}
+	fence, err := policies.UpdateOne(ctx, bson.M{"version": policy.Version, "status": "ACTIVE", "coordinationRevision": policy.CoordinationRevision}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}})
+	if err != nil {
+		return nil, err
+	}
+	if fence.MatchedCount != 1 {
+		return nil, reviewport.ErrReviewPolicyChanged
+	}
 	decisionDocument, err := applicationReviewDecisionToDocument(decision)
 	if err != nil {
 		return nil, fmt.Errorf("decide application review: %w", err)

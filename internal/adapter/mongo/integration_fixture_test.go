@@ -198,7 +198,7 @@ func TestReusableIntegrationDatabaseRestoresIsolation(t *testing.T) {
 		db := reusableIntegrationDatabase(t, client)
 		name = db.Name()
 		var err error
-		originalPolicy, err = db.Collection(versionReviewPoliciesCollectionName).FindOne(t.Context(), bson.M{"version": "app-version-review-v2"}).Raw()
+		originalPolicy, err = db.Collection(versionReviewPoliciesCollectionName).FindOne(t.Context(), bson.M{"version": "app-version-review-v3"}).Raw()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +208,7 @@ func TestReusableIntegrationDatabaseRestoresIsolation(t *testing.T) {
 		if _, err := db.Collection(migrationLedgerCollectionName).DeleteMany(t.Context(), bson.D{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.Collection(versionReviewPoliciesCollectionName).UpdateOne(t.Context(), bson.M{"version": "app-version-review-v2"}, bson.M{"$set": bson.M{"status": "RETIRED"}}); err != nil {
+		if _, err := db.Collection(versionReviewPoliciesCollectionName).UpdateOne(t.Context(), bson.M{"version": "app-version-review-v3"}, bson.M{"$set": bson.M{"status": "RETIRED"}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -218,8 +218,8 @@ func TestReusableIntegrationDatabaseRestoresIsolation(t *testing.T) {
 			t.Fatal("unchanged schema was not reused")
 		}
 		assertCollectionCount(t, db, applicationsCollectionName, 0)
-		assertCollectionCount(t, db, migrationLedgerCollectionName, 32)
-		policy, err := db.Collection(versionReviewPoliciesCollectionName).FindOne(t.Context(), bson.M{"version": "app-version-review-v2"}).Raw()
+		assertCollectionCount(t, db, migrationLedgerCollectionName, 33)
+		policy, err := db.Collection(versionReviewPoliciesCollectionName).FindOne(t.Context(), bson.M{"version": "app-version-review-v3"}).Raw()
 		if err != nil || !reflect.DeepEqual(policy, originalPolicy) {
 			t.Fatal("policy seed or its original identity changed", err)
 		}
@@ -269,7 +269,7 @@ func TestReusableIntegrationDatabaseDiscardsSchemaChanges(t *testing.T) {
 				if db.Name() == name {
 					t.Fatal("changed schema was reused")
 				}
-				assertCollectionCount(t, db, migrationLedgerCollectionName, 32)
+				assertCollectionCount(t, db, migrationLedgerCollectionName, 33)
 				createVersionTestApplication(t, db, "schema-owner", "schema_app")
 			})
 		})

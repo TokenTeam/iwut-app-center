@@ -308,9 +308,9 @@ func decideVersionManagementReviewAs(t *testing.T, database *drivermongo.Databas
 	candidate := loadDecisionCandidate(t, repository, seed, actor)
 	var decision *reviewdomain.ApplicationReviewDecision
 	if approve {
-		decision = integrationApprovedDecision(t, "review.v1", []string{"content-reviewed"}, 41, "public-https.v1", actor, time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC))
+		decision = integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 41, "public-https.v1", actor, time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC))
 	} else {
-		decision = integrationRejectedDecision(t, "review.v1", "management rejection", actor, time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC))
+		decision = integrationRejectedDecision(t, "app-version-review-v3", "management rejection", actor, time.Date(2026, 10, 10, 11, 0, 0, 0, time.UTC))
 	}
 	if _, err := repository.Decide(t.Context(), candidate, shared.AuthID(actor), decision); err != nil {
 		t.Fatalf("decide %s: %v", version.VersionLabel().String(), err)

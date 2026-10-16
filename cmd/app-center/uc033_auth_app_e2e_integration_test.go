@@ -167,7 +167,7 @@ func TestE2E_UCAPP033_RealAuthOAuthArchival(t *testing.T) {
 	versionSubmission := appAPI.call(http.MethodPost, prefix+"/versions/"+versionID+"/reviews", ownerToken, map[string]any{"expectedRevision": "1"})
 	versionReviewID := uc033NestedString(t, versionSubmission, "review", "reviewId")
 	appAPI.call(http.MethodPost, prefix+"/versions/"+versionID+"/reviews/"+versionReviewID+"/decision", reviewerToken, map[string]any{
-		"outcome": "APPROVE", "expectedPolicyVersion": "app-version-review-v2",
+		"outcome": "APPROVE", "expectedPolicyVersion": "app-version-review-v3",
 		"confirmedCheckIds": []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 	})
 

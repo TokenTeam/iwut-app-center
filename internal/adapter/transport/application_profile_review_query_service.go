@@ -4,6 +4,7 @@ import (
 	"context"
 
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review_query"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	profiledomain "iwut-app-center/internal/profile/domain"
@@ -68,12 +69,17 @@ func (s *ApplicationProfileReviewQueryService) GetApplicationProfileReview(ctx c
 	if err != nil {
 		return nil, toTransportError(err)
 	}
+	published, err := publishedProfileForReviewResponse(detail.CurrentPublishedProfile)
+	if err != nil {
+		return nil, toTransportError(err)
+	}
 	return &queryv1.ApplicationProfileReviewDetail{
-		Application:         &queryv1.ProfileReviewApplicationContext{ApplicationId: detail.Application.ApplicationID, Name: detail.Application.Name, AdminId: detail.Application.AdminID, LifecycleStatus: detail.Application.LifecycleStatus, PlatformAvailabilityStatus: detail.Application.PlatformAvailabilityStatus},
-		ProfileRevision:     &queryv1.ProfileRevisionReviewContext{ProfileRevisionId: detail.ProfileRevision.ProfileRevisionID, Sequence: detail.ProfileRevision.Sequence, ReviewStatus: detail.ProfileRevision.ReviewStatus, Revision: detail.ProfileRevision.Revision, CreatedBy: detail.ProfileRevision.CreatedBy},
-		Review:              applicationProfileReviewResponse(detail.Review),
-		CurrentPolicy:       &queryv1.ProfileReviewPolicyContext{Version: detail.CurrentPolicy.Version, RequiredCheckIds: append([]string(nil), detail.CurrentPolicy.RequiredCheckIDs...)},
-		DecisionEligibility: profileEligibilityResponse(detail.DecisionEligibility), AsOf: timestamppb.New(detail.AsOf),
+		Application:             &queryv1.ProfileReviewApplicationContext{ApplicationId: detail.Application.ApplicationID, Name: detail.Application.Name, AdminId: detail.Application.AdminID, LifecycleStatus: detail.Application.LifecycleStatus, PlatformAvailabilityStatus: detail.Application.PlatformAvailabilityStatus},
+		ProfileRevision:         &queryv1.ProfileRevisionReviewContext{ProfileRevisionId: detail.ProfileRevision.ProfileRevisionID, Sequence: detail.ProfileRevision.Sequence, ReviewStatus: detail.ProfileRevision.ReviewStatus, Revision: detail.ProfileRevision.Revision, CreatedBy: detail.ProfileRevision.CreatedBy},
+		Review:                  applicationProfileReviewResponse(detail.Review),
+		CurrentPublishedProfile: published,
+		CurrentPolicy:           &queryv1.ProfileReviewPolicyContext{Version: detail.CurrentPolicy.Version, RequiredCheckIds: append([]string(nil), detail.CurrentPolicy.RequiredCheckIDs...)},
+		DecisionEligibility:     profileEligibilityResponse(detail.DecisionEligibility), AsOf: timestamppb.New(detail.AsOf),
 	}, nil
 }
 
@@ -90,4 +96,18 @@ func profileEligibilityResponse(value profiledomain.ProfileDecisionEligibility) 
 		}
 	}
 	return response
+}
+
+func publishedProfileForReviewResponse(v *profiledomain.CurrentPublishedProfileForReview) (*queryv1.CurrentPublishedProfileForReview, error) {
+	if v == nil || v.None == (v.Published != nil) {
+		return nil, profiledomain.ErrApplicationProfileReviewStateInconsistent
+	}
+	if v.None {
+		return &queryv1.CurrentPublishedProfileForReview{State: &queryv1.CurrentPublishedProfileForReview_None{None: structpb.NullValue_NULL_VALUE}}, nil
+	}
+	p := v.Published
+	if !profiledomain.ApplicationProfileRevisionID(p.ProfileRevisionID).IsValid() || profiledomain.ValidateStoredApplicationProfileContent(p.DisplayName, p.Description, p.Icon) != nil {
+		return nil, profiledomain.ErrApplicationProfileReviewStateInconsistent
+	}
+	return &queryv1.CurrentPublishedProfileForReview{State: &queryv1.CurrentPublishedProfileForReview_Published{Published: &queryv1.PublishedProfileForReview{ProfileRevisionId: p.ProfileRevisionID, DisplayName: p.DisplayName, Description: p.Description, Icon: p.Icon}}}, nil
 }

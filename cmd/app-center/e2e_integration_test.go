@@ -50,11 +50,13 @@ import (
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
+	reviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review_query"
 	applicationversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	applicationclosereauthv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/application_close_reauth"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
 	scopecatalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/scope_catalog"
 	systemprincipalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/system_principal"
+	"google.golang.org/protobuf/proto"
 	authadapter "iwut-app-center/internal/adapter/auth"
 	"iwut-app-center/internal/adapter/generator"
 	mongoadapter "iwut-app-center/internal/adapter/mongo"
@@ -1079,16 +1081,62 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	}
 
 	approvedVersion, approvedReview := createAndSubmit("v5.0.0")
+	queryRequest := &reviewqueryv1.GetApplicationVersionReviewRequest{ApplicationId: application.GetId(), VersionId: approvedVersion.VersionId, ReviewId: approvedReview.Review.ReviewId}
+	detail, err := reviewqueryv1.NewApplicationReviewQueryServiceClient(connection).GetApplicationVersionReview(metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, reviewerToken)), queryRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.CurrentPolicy.Version != "app-version-review-v3" || len(detail.CurrentPolicy.RequiredCheckDefinitions) != 4 {
+		t.Fatal("missing formal definitions")
+	}
+	for i, d := range detail.CurrentPolicy.RequiredCheckDefinitions {
+		if d.Id != detail.CurrentPolicy.RequiredCheckIds[i] || d.Title == "" || d.Description == "" {
+			t.Fatal("incomplete formal definition")
+		}
+	}
+	url := "http://" + httpAddress + "/v1/applications/" + application.GetId() + "/versions/" + approvedVersion.VersionId + "/reviews/" + approvedReview.Review.ReviewId
+	for _, tc := range []struct {
+		token string
+		code  int
+	}{{reviewerToken, 200}, {noPermissionToken, 403}, {"", 401}} {
+		req, e := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if tc.token != "" {
+			req.Header.Set(transport.IdentityHeader, tc.token)
+		}
+		res, e := http.DefaultClient.Do(req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		body, e := io.ReadAll(res.Body)
+		res.Body.Close()
+		if e != nil || res.StatusCode != tc.code || res.Header.Get("Cache-Control") != "private, no-store" {
+			t.Fatalf("review detail HTTP %d %s %v", res.StatusCode, body, e)
+		}
+		if tc.code == 200 {
+			var decoded reviewqueryv1.ApplicationVersionReviewDetail
+			if e = protojson.Unmarshal(body, &decoded); e != nil || !proto.Equal(decoded.CurrentPolicy, detail.CurrentPolicy) {
+				t.Fatal("policy protocol mismatch", e)
+			}
+		}
+	}
+	staleStatus, _ := e2eHTTPDecideReview(t, httpAddress, reviewerToken, application.GetId(), approvedVersion.VersionId, approvedReview.Review.ReviewId, "APPROVE", "app-version-review-v2", detail.CurrentPolicy.RequiredCheckIds, "")
+	if staleStatus != 409 {
+		t.Fatal("retired policy allowed", staleStatus)
+	}
+
 	deniedStatus, deniedBody := e2eHTTPDecideReview(
 		t, httpAddress, noPermissionToken, application.GetId(), approvedVersion.GetVersionId(), approvedReview.GetReview().GetReviewId(),
-		"APPROVE", "app-version-review-v2", []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"}, "",
+		"APPROVE", "app-version-review-v3", []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"}, "",
 	)
 	if deniedStatus != http.StatusForbidden || !bytes.Contains(deniedBody, []byte(transport.ReasonApplicationReviewPermissionRequired)) {
 		t.Fatalf("permission response = status:%d body:%s", deniedStatus, deniedBody)
 	}
 	approveStatus, approveBody := e2eHTTPDecideReview(
 		t, httpAddress, reviewerToken, application.GetId(), approvedVersion.GetVersionId(), approvedReview.GetReview().GetReviewId(),
-		"APPROVE", "app-version-review-v2", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed", "oauth-redirects-reviewed"}, "",
+		"APPROVE", "app-version-review-v3", []string{"requested-access-reviewed", "content-policy-reviewed", "launch-url-content-reviewed", "oauth-redirects-reviewed"}, "",
 	)
 	if approveStatus != http.StatusOK {
 		t.Fatalf("approve response = status:%d body:%s", approveStatus, approveBody)
@@ -1113,7 +1161,7 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 		ReviewId:      suspendedReview.GetReview().GetReviewId(),
 		Command: &applicationreviewv1.DecideApplicationVersionReviewCommand{
 			Outcome:               applicationreviewv1.ReviewDecisionAction_APPROVE,
-			ExpectedPolicyVersion: "app-version-review-v2",
+			ExpectedPolicyVersion: "app-version-review-v3",
 			ConfirmedCheckIds:     []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 		},
 	})
@@ -1295,7 +1343,7 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	result, err := grpcClient.DecideApplicationVersionReview(grpcCtx, &applicationreviewv1.DecideApplicationVersionReviewRequest{
 		ApplicationId: application.GetId(), VersionId: version.GetVersionId(), ReviewId: submitted.GetReview().GetReviewId(),
 		Command: &applicationreviewv1.DecideApplicationVersionReviewCommand{
-			Outcome: applicationreviewv1.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v2",
+			Outcome: applicationreviewv1.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: "app-version-review-v3",
 			ConfirmedCheckIds: []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed"},
 		},
 	})

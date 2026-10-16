@@ -276,6 +276,8 @@ func parseConfirmedCheckIDs(values []string) ([]domain.ReviewCheckID, error) {
 
 func mapDecisionRepositoryError(err error) error {
 	switch {
+	case errors.Is(err, port.ErrReviewPolicyChanged):
+		return domain.ErrApplicationReviewPolicyChanged
 	case errors.Is(err, port.ErrApplicationReviewNotFound):
 		return domain.ErrApplicationReviewNotFound
 	case errors.Is(err, port.ErrApplicationReviewAlreadyDecided):

@@ -37,11 +37,24 @@ type ProfileReviewPolicyContext struct {
 	Version          string
 	RequiredCheckIDs []string
 }
+
+// CurrentPublishedProfileForReview distinguishes an observed NONE from a
+// missing projection. Published must be nil exactly when None is true.
+type CurrentPublishedProfileForReview struct {
+	None      bool
+	Published *PublishedProfileForReview
+}
+type PublishedProfileForReview struct {
+	ProfileRevisionID string
+	DisplayName       string
+	Description, Icon *string
+}
 type ProfileReviewDetail struct {
-	Application         ProfileReviewApplicationContext
-	ProfileRevision     ProfileRevisionReviewContext
-	Review              *ApplicationProfileReview
-	CurrentPolicy       ProfileReviewPolicyContext
-	DecisionEligibility ProfileDecisionEligibility
-	AsOf                time.Time
+	Application             ProfileReviewApplicationContext
+	ProfileRevision         ProfileRevisionReviewContext
+	Review                  *ApplicationProfileReview
+	CurrentPolicy           ProfileReviewPolicyContext
+	DecisionEligibility     ProfileDecisionEligibility
+	AsOf                    time.Time
+	CurrentPublishedProfile *CurrentPublishedProfileForReview
 }
