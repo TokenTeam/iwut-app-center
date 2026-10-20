@@ -22,17 +22,32 @@ import (
 	emailaccountv3 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v3/email_account"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// registerReviewManager uses public Auth protocols. Auth owns all principal,
-// verified email directory, login binding and device Session writes.
+type registeredAuthFixture struct {
+	authID, session, password string
+	deviceKey                 *ecdsa.PrivateKey
+}
+
+// registerReviewManager retains the review fixture's narrow interface.
 func registerReviewManager(t *testing.T, ctx context.Context) (string, string) {
 	t.Helper()
-	email := "uc005-manager-" + uuid.NewString() + "@example.test"
-	mail := captureReviewRegistrationMail(t, email)
+	account := registerAuthFixture(t, ctx)
+	t.Log("UC005 prerequisite passed: formal email registration, device login and verified login directory")
+	return account.authID, account.session
+}
+
+// Auth owns all principal, password, verified email directory, login binding
+// and device Session writes. Registration and completion are not retried.
+func registerAuthFixture(t *testing.T, ctx context.Context) registeredAuthFixture {
+	t.Helper()
+	email := "app-fixture-" + uuid.NewString() + "@example.test"
+	mail, stopMail := captureReviewRegistrationMail(t, email)
+	defer stopMail()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +58,14 @@ func registerReviewManager(t *testing.T, ctx context.Context) (string, string) {
 	}
 	defer conn.Close()
 	accounts := emailaccountv3.NewEmailAccountServiceClient(conn)
+	// An empty request is a nonmutating protocol readiness probe. TCP alone can
+	// be accepted by Docker's proxy before a healthy gRPC service exists.
+	readyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	_, readyErr := accounts.BeginEmailRegistration(readyCtx, &emailaccountv3.BeginEmailRegistrationRequest{}, grpc.WaitForReady(true))
+	cancel()
+	if status.Code(readyErr) != codes.InvalidArgument {
+		t.Fatal("Auth email-account gRPC readiness failed", status.Code(readyErr))
+	}
 	started, err := accounts.BeginEmailRegistration(ctx, &emailaccountv3.BeginEmailRegistrationRequest{
 		RequestId: uuid.NewString(), Email: email,
 		CredentialProposal: &authentication.CredentialRegistrationProposal{
@@ -76,8 +99,9 @@ func registerReviewManager(t *testing.T, ctx context.Context) (string, string) {
 	}
 	// Completion and bootstrap are deliberately single attempts: an unknown
 	// outcome must stop acceptance rather than replay an authority mutation.
+	password := "AppFixture!" + uuid.NewString() + uuid.NewString()
 	completed, err := accounts.CompleteEmailRegistration(ctx, &emailaccountv3.CompleteEmailRegistrationRequest{
-		OperationId: started.OperationId, Code: code, Password: "Uc005!" + uuid.NewString() + uuid.NewString(), Proof: proof(started.SigningPayload),
+		OperationId: started.OperationId, Code: code, Password: password, Proof: proof(started.SigningPayload),
 	})
 	if err != nil {
 		t.Fatal("formal email registration completion failed", status.Code(err))
@@ -115,8 +139,7 @@ func registerReviewManager(t *testing.T, ctx context.Context) (string, string) {
 	if own.DirectoryRevision < 1 || own.LoginRoleRevision < 1 || len(own.Emails) != 1 || own.Emails[0].Email != email || !own.Emails[0].IsLogin || own.Emails[0].BindingId == "" || own.Emails[0].VerifiedAtUnixMs <= 0 {
 		t.Fatal("formal registration did not establish a verified login email")
 	}
-	t.Log("UC005 prerequisite passed: formal email registration, device login and verified login directory")
-	return registered.AuthId, session.SessionToken
+	return registeredAuthFixture{authID: registered.AuthId, session: session.SessionToken, password: password, deviceKey: key}
 }
 
 type reviewRegistrationMail struct {
@@ -125,27 +148,28 @@ type reviewRegistrationMail struct {
 }
 
 // One message, one expected recipient, bounded input and no credential logging.
-// The listener exists only during this test's formal manager registration.
-func captureReviewRegistrationMail(t *testing.T, email string) <-chan reviewRegistrationMail {
+// The listener exists only during one formal account registration.
+func captureReviewRegistrationMail(t *testing.T, email string) (<-chan reviewRegistrationMail, func()) {
 	t.Helper()
-	cert, err := tls.LoadX509KeyPair(os.Getenv("UC002_SMTP_CERT_FILE"), os.Getenv("UC002_SMTP_KEY_FILE"))
+	cert, err := tls.LoadX509KeyPair(os.Getenv("AUTH_FIXTURE_SMTP_CERT_FILE"), os.Getenv("AUTH_FIXTURE_SMTP_KEY_FILE"))
 	if err != nil {
 		t.Fatal("load controlled SMTP TLS material", err)
 	}
-	listener, err := tls.Listen("tcp", os.Getenv("UC002_SMTP_ADDR"), &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
+	listener, err := tls.Listen("tcp", os.Getenv("AUTH_FIXTURE_SMTP_ADDR"), &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
 	if err != nil {
 		t.Fatal("start controlled SMTP listener", err)
 	}
 	result := make(chan reviewRegistrationMail, 1)
 	done := make(chan struct{})
-	t.Cleanup(func() {
+	stop := func() {
 		_ = listener.Close()
 		select {
 		case <-done:
 		case <-time.After(12 * time.Second):
 			t.Error("controlled SMTP shutdown timed out")
 		}
-	})
+	}
+	t.Cleanup(stop)
 	go func() {
 		defer close(done)
 		conn, err := listener.Accept()
@@ -158,7 +182,7 @@ func captureReviewRegistrationMail(t *testing.T, email string) <-chan reviewRegi
 		code, err := receiveReviewRegistrationMail(conn, email)
 		result <- reviewRegistrationMail{code: code, err: err}
 	}()
-	return result
+	return result, stop
 }
 
 func receiveReviewRegistrationMail(conn net.Conn, email string) (string, error) {

@@ -5,9 +5,26 @@ source "$(dirname "${BASH_SOURCE[0]}")/integration-lib.sh"
 integration_init
 auth_image="${AUTH_CENTER_IMAGE:-docker.cnb.cool/tokenteam/iwut-auth-center:latest}"
 [[ -n "${auth_image}" ]] || { echo "AUTH_CENTER_IMAGE must not be empty" >&2; exit 1; }
-command -v openssl >/dev/null || { echo "Missing openssl" >&2; exit 1; }
-auth_port="${AUTH_CENTER_INTEGRATION_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')}"
+for tool in openssl base64 sha256sum; do command -v "${tool}" >/dev/null || { echo "Missing ${tool}" >&2; exit 1; }; done
+# Reserve separate Auth and controlled SMTP listeners as one set.
+mapfile -t fixture_ports < <(python3 - <<'PORTS'
+import socket
+sockets = [socket.socket() for _ in range(2)]
+for s in sockets: s.bind(('127.0.0.1', 0))
+for s in sockets: print(s.getsockname()[1])
+for s in sockets: s.close()
+PORTS
+)
+auth_port="${AUTH_CENTER_INTEGRATION_PORT:-${fixture_ports[0]}}"
 validate_port "${auth_port}"
+[[ "${auth_port}" != "${fixture_ports[1]}" ]] || { echo "Auth and SMTP ports must differ" >&2; exit 1; }
+export AUTH_FIXTURE_SMTP_ADDR="127.0.0.1:${fixture_ports[1]}"
+export AUTH_FIXTURE_SMTP_CERT_FILE="${temporary_dir}/smtp-cert.pem" AUTH_FIXTURE_SMTP_KEY_FILE="${temporary_dir}/smtp-key.pem"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext 'subjectAltName=IP:127.0.0.1' -keyout "${AUTH_FIXTURE_SMTP_KEY_FILE}" \
+  -out "${AUTH_FIXTURE_SMTP_CERT_FILE}" >/dev/null 2>&1
+printf '%s' 'known-compromised-fixture-password' | sha256sum | cut -d ' ' -f 1 >"${temporary_dir}/password-blocklist.txt"
+password_blocklist_sha="$(sha256sum "${temporary_dir}/password-blocklist.txt" | cut -d ' ' -f 1)"
 
 # Always resolve the remote tag at the start of the gate. The immutable image ID
 # is printed into the gate log so a report can identify what "latest" meant.
@@ -39,18 +56,15 @@ export AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH="${temporary_dir}/auth-identity.pub.
 docker exec "${container_name}" mongosh --quiet --port 27017 "${AUTH_CENTER_INTEGRATION_DATABASE}" --eval \
   'db.auth_principals.insertMany([
     {authId:"auth-dual-service-admin",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"SUSPENDED",createdAt:new Date(),updatedAt:new Date()},
-    {authId:"auth-dual-transfer-source",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"APPROVED",createdAt:new Date(),updatedAt:new Date()},
     {authId:"auth-dual-transfer-target",principalType:"USER",accountStatus:"ACTIVE",accountRevision:NumberLong(1),developerRevision:NumberLong(1),permissions:[],permissionRevision:NumberLong(1),developerStatus:"APPROVED",createdAt:new Date(),updatedAt:new Date()}
   ])' >/dev/null
 
 docker run --detach --name "${auth_container_name}" \
-  --network "${network_name}" \
-  --publish "127.0.0.1:${auth_port}:9000" \
-  --mount "type=bind,src=${temporary_dir}/profile-catalog.json,dst=/run/iwut-integration/profile-catalog.json,readonly" \
-  --mount "type=bind,src=${temporary_dir}/auth-identity.pub.pem,dst=/run/iwut-integration/auth-identity.pub.pem,readonly" \
-  --env "AUTH_CENTER_HTTP_ADDR=:0" \
-  --env "AUTH_CENTER_GRPC_ADDR=:9000" \
-  --env "AUTH_CENTER_MONGO_URI=mongodb://mongo:27017/?replicaSet=rs0&directConnection=true" \
+  --network host --user "$(id -u):$(id -g)" \
+  --mount "type=bind,src=${temporary_dir},dst=/run/iwut-integration,readonly" \
+  --env "AUTH_CENTER_HTTP_ADDR=127.0.0.1:0" \
+  --env "AUTH_CENTER_GRPC_ADDR=127.0.0.1:${auth_port}" \
+  --env "AUTH_CENTER_MONGO_URI=${MONGODB_INTEGRATION_URI}" \
   --env "AUTH_CENTER_MONGO_DATABASE=${AUTH_CENTER_INTEGRATION_DATABASE}" \
   --env "AUTH_CENTER_SERVICE_CALLERS_B64=${caller_registry}" \
   --env "AUTH_APPLICATION_CLOSURE_ENABLED=true" \
@@ -62,30 +76,39 @@ docker run --detach --name "${auth_container_name}" \
   --env "AUTH_ASSOC_KEY_VERSION=v1" \
   --env "AUTH_ASSOC_ENCRYPT_KEY=${association_encrypt_key}" \
   --env "AUTH_ASSOC_LOOKUP_KEY=${association_lookup_key}" \
+  --env AUTH_EMAIL_BINDING_ENABLED=true --env "AUTH_EMAIL_BINDING_HMAC_KEY=$(openssl rand 32 | base64 -w0)" \
+  --env "AUTH_SMTP_ADDR=${AUTH_FIXTURE_SMTP_ADDR}" --env AUTH_SMTP_FROM=auth@example.test --env AUTH_SMTP_TLS_MODE=implicit_tls \
+  --env AUTH_SMTP_CA_FILE=/run/iwut-integration/smtp-cert.pem --env AUTH_SMTP_TIMEOUT=10s \
+  --env AUTH_PASSWORD_ENABLED=true --env "AUTH_PASSWORD_OPERATION_HMAC_KEY=$(openssl rand 32 | base64 -w0)" \
+  --env AUTH_PASSWORD_BLOCKLIST_FILE=/run/iwut-integration/password-blocklist.txt \
+  --env AUTH_PASSWORD_BLOCKLIST_VERSION=app-close-e2e-v1 --env AUTH_PASSWORD_BLOCKLIST_SOURCE=app-controlled-e2e \
+  --env "AUTH_PASSWORD_BLOCKLIST_SHA256=${password_blocklist_sha}" --env AUTH_PASSWORD_READINESS_CONFIRMED=true \
   --env "AUTH_PROFILE_CATALOG_FILE=/run/iwut-integration/profile-catalog.json" \
   --env "AUTH_USER_IDENTITY_ISSUER=https://auth.e2e.test" \
   --env 'AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON={"auth-close-e2e":"/run/iwut-integration/auth-identity.pub.pem"}' \
   --env "AUTH_USER_IDENTITY_SIGNING_KID=auth-close-e2e" \
   --env "AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64=${auth_identity_private_key_b64}" \
-  "${auth_image}" >/dev/null
+  "${auth_image_id}" >/dev/null
 
-# Bound startup and distinguish a dead server from a slow connection.
+# TCP is only an initial listener check. The Go fixture then requires an actual
+# nonmutating v3 gRPC validation response before any business test proceeds.
 deadline=$((SECONDS + startup_timeout))
-until python3 - "${auth_port}" <<'READY'
+while true; do
+  running="$(docker inspect --format '{{.State.Running}}' "${auth_container_name}" 2>/dev/null || true)"
+  [[ "${running}" == true ]] || { echo "Auth exited before readiness; see diagnostics" >&2; exit 1; }
+  if python3 - "${auth_port}" <<'READY'
 import socket, sys
 try:
-    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=0.5):
-        pass
-except OSError:
-    sys.exit(1)
+    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=0.5): pass
+except OSError: sys.exit(1)
 READY
-do
-  docker inspect "${auth_container_name}" >/dev/null 2>&1 || { echo "Auth exited before readiness; see diagnostics" >&2; exit 1; }
+  then break; fi
   (( SECONDS < deadline )) || { echo "Auth readiness timed out" >&2; exit 1; }
   sleep 0.2
 done
+[[ "$(docker inspect --format '{{.State.Running}}' "${auth_container_name}")" == true ]] || { echo "Auth exited during readiness" >&2; exit 1; }
 cd "${app_dir}"
-if ! go test -count=1 -race -run '^TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity$' ./cmd/app-center; then
+if ! go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity$' ./cmd/app-center; then
   printf '\nAuth Center output:\n' >&2
   echo "See ${integration_log_dir}/auth-center.log (local diagnostics)" >&2
   exit 1

@@ -38,6 +38,17 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
+**2026-10-20 tooling maintenance — adapt the UC-APP-027 public close-proof fixture.**
+
+User authorized adapting App's legacy Auth/App test preparation to current Auth
+password + same-device signature requirements, then rerunning check-auth-app.
+Scope: scripts/test-auth-app-integration.sh, shared formal registration test
+fixture, UC005/026/027 real-Auth acceptance and its readiness checks. Preserve
+BR-APP-020–028 and the existing closure/outage/transfer assertions. No UC/BR,
+production, API, Auth, Gateway or Console edits. Stop and explain any new blocker.
+Run the focused real-Auth gate first, then freeze inputs and run check-auth-app
+with Go 1.25.5, a fixed published Auth digest and local committed docs.
+
 **UC-APP-005/030 → UC-APP-031 — accepted review completion, then Gateway and Console integration.**
 
 User accepted both 2026-10-16 review proposals. Read the regenerated briefs and

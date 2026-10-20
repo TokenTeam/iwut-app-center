@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -1209,6 +1208,15 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	authProxy := e2eStartToggleTCPProxy(t, authTarget)
 
 	client, database := e2eIsolatedDatabase(t, ctx, true)
+	// Only the source needs a public close proof: register its password/device
+	// through Auth rather than inventing credential or password documents.
+	closeActor := registerAuthFixture(t, ctx)
+	transferSourceID := closeActor.authID
+	const transferTargetID = "auth-dual-transfer-target"
+	if _, err := client.Database(authDatabaseName).Collection("auth_principals").UpdateOne(ctx,
+		bson.M{"authId": transferSourceID}, bson.M{"$set": bson.M{"developerStatus": "APPROVED", "developerRevision": int64(1)}}); err != nil {
+		t.Fatal("prepare existing Developer-status fixture", err)
+	}
 	privateKey, publicKeyPath := e2eIdentity(t)
 	const (
 		adminID    = "auth-dual-service-admin"
@@ -1404,7 +1412,6 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 
 	// UC-APP-026 uses two real ACTIVE+APPROVED Auth principals. Initiation and
 	// acceptance each cross the production service-JWS protected status API.
-	const transferSourceID, transferTargetID = "auth-dual-transfer-source", "auth-dual-transfer-target"
 	transferSourceToken := e2eSignIdentity(t, privateKey, transferSourceID, "APPROVED")
 	transferTargetToken := e2eSignIdentity(t, privateKey, transferTargetID, "APPROVED")
 	createStatus, transferApplicationBody := e2eHTTPCreate(t, httpAddress, transferSourceToken, "Dual_Service_Transfer_App")
@@ -1455,7 +1462,7 @@ func TestE2E_UCAPP005_026_027_RealAuthProcessServiceIdentity(t *testing.T) {
 	if err := protojson.Unmarshal(closeApplicationBody, &closeApplication); err != nil {
 		t.Fatalf("decode close application: %v", err)
 	}
-	proof := e2eIssueApplicationCloseProofFromAuth(t, ctx, client.Database(authDatabaseName), authTarget, transferSourceID, closeApplication.GetId())
+	proof := e2eIssueApplicationCloseProofFromAuth(t, ctx, client.Database(authDatabaseName), authTarget, closeActor, closeApplication.GetId())
 	closeStatus, closeHeaders, closeBody := e2eHTTPApplicationClosure(t, httpAddress, transferSourceToken, proof, http.MethodPost, "/v1/applications/"+closeApplication.GetId()+":close", []byte(`{"expectedOwnershipRevision":"1","expectedLifecycleRevision":"1","confirmation":"CLOSE_APPLICATION"}`))
 	if closeStatus != http.StatusAccepted || closeHeaders.Get("Cache-Control") != "no-store" {
 		t.Fatalf("close status=%d cache=%q body=%s", closeStatus, closeHeaders.Get("Cache-Control"), closeBody)
@@ -1909,40 +1916,15 @@ func e2eSignIdentityClaims(t *testing.T, privateKey *rsa.PrivateKey, claims map[
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature)
 }
 
-func e2eIssueApplicationCloseProofFromAuth(t *testing.T, ctx context.Context, authDatabase *drivermongo.Database, authTarget, subject, applicationID string) string {
+func e2eIssueApplicationCloseProofFromAuth(t *testing.T, ctx context.Context, authDatabase *drivermongo.Database, authTarget string, actor registeredAuthFixture, applicationID string) string {
 	t.Helper()
-	deviceKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	publicKey := elliptic.Marshal(deviceKey.Curve, deviceKey.X, deviceKey.Y)
-	fingerprint := sha256.Sum256(e2eLengthPrefixedFrame([]byte("iwut-device-public-key-v1"), publicKey))
-	rawSession := make([]byte, 32)
-	if _, err = rand.Read(rawSession); err != nil {
-		t.Fatal(err)
-	}
-	sessionToken := base64.RawURLEncoding.EncodeToString(rawSession)
-	sessionDigest := sha256.Sum256(rawSession)
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	credentialID, sessionID := uuid.NewString(), uuid.NewString()
-	if _, err = authDatabase.Collection("auth_credentials").InsertOne(ctx, bson.M{
-		"credentialId": credentialID, "authId": subject, "protocolVersion": "iwut-device-v1", "publicKey": publicKey, "fingerprint": fingerprint[:], "createdAt": now,
-	}); err != nil {
-		t.Fatalf("seed real Auth close credential: %v", err)
-	}
-	if _, err = authDatabase.Collection("auth_sessions").InsertOne(ctx, bson.M{
-		"accountRevision": int64(1), "sessionId": sessionID, "authId": subject, "authenticationMethod": "DEVICE_CREDENTIAL", "credentialId": credentialID,
-		"tokenDigest": sessionDigest[:], "authenticatedAt": now, "createdAt": now, "lastUsedAt": now, "expiresAt": now.Add(time.Hour),
-	}); err != nil {
-		t.Fatalf("seed real Auth close session: %v", err)
-	}
 	connection, err := grpc.NewClient(authTarget, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = connection.Close() }()
 	client := applicationclosereauthv1.NewApplicationCloseReauthServiceClient(connection)
-	callContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", sessionToken))
+	callContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", actor.session))
 	challenge, err := client.BeginApplicationCloseReauth(callContext, &applicationclosereauthv1.BeginApplicationCloseReauthRequest{ApplicationId: applicationID})
 	if err != nil {
 		t.Fatalf("real Auth BeginApplicationCloseReauth: %v", err)
@@ -1957,11 +1939,28 @@ func e2eIssueApplicationCloseProofFromAuth(t *testing.T, ctx context.Context, au
 	}
 	payload := e2eLengthPrefixedFrame([]byte("iwut-application-close-reauth-v1"), []byte("COMPLETE_APPLICATION_CLOSE_REAUTH"), operationID[:], appID[:], challenge.GetChallenge())
 	digest := sha256.Sum256(payload)
-	signature, err := ecdsa.SignASN1(rand.Reader, deviceKey, digest[:])
+	signature, err := ecdsa.SignASN1(rand.Reader, actor.deviceKey, digest[:])
 	if err != nil {
 		t.Fatalf("sign real Auth close challenge: %v", err)
 	}
-	completed, err := client.CompleteApplicationCloseReauth(callContext, &applicationclosereauthv1.CompleteApplicationCloseReauthRequest{OperationId: challenge.GetOperationId(), ApplicationId: applicationID, SignatureDer: signature})
+	request := &applicationclosereauthv1.CompleteApplicationCloseReauthRequest{OperationId: challenge.GetOperationId(), ApplicationId: applicationID, SignatureDer: signature}
+	if _, err := client.CompleteApplicationCloseReauth(callContext, request); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("close proof accepted missing current password", status.Code(err))
+	}
+	request.CurrentPassword = "incorrect-current-password-for-fixture"
+	if _, err := client.CompleteApplicationCloseReauth(callContext, request); status.Code(err) != codes.Unauthenticated {
+		t.Fatal("close proof accepted incorrect current password", status.Code(err))
+	}
+	var pending struct {
+		State            string `bson:"state"`
+		JTI              string `bson:"jti"`
+		PasswordRevision int64  `bson:"passwordrevision"`
+	}
+	if err := authDatabase.Collection("application_close_reauth_operations").FindOne(ctx, bson.M{"operationid": challenge.GetOperationId()}).Decode(&pending); err != nil || pending.State != "PENDING" || pending.JTI != "" || pending.PasswordRevision < 1 {
+		t.Fatal("rejected passwords changed the close-proof state", err)
+	}
+	request.CurrentPassword = actor.password
+	completed, err := client.CompleteApplicationCloseReauth(callContext, request)
 	if err != nil {
 		t.Fatalf("real Auth CompleteApplicationCloseReauth: %v", err)
 	}
@@ -1969,13 +1968,14 @@ func e2eIssueApplicationCloseProofFromAuth(t *testing.T, ctx context.Context, au
 		t.Fatal("real Auth returned an empty application close proof")
 	}
 	var operation struct {
-		ApplicationID   string `bson:"applicationid"`
-		State           string `bson:"state"`
-		JTI             string `bson:"jti"`
-		SignatureDigest []byte `bson:"signaturedigest"`
+		ApplicationID    string `bson:"applicationid"`
+		State            string `bson:"state"`
+		JTI              string `bson:"jti"`
+		SignatureDigest  []byte `bson:"signaturedigest"`
+		PasswordRevision int64  `bson:"passwordrevision"`
 	}
-	if err := authDatabase.Collection("application_close_reauth_operations").FindOne(ctx, bson.M{"operationid": challenge.GetOperationId()}).Decode(&operation); err != nil || operation.ApplicationID != applicationID || operation.State != "COMPLETED" || operation.JTI == "" || len(operation.SignatureDigest) != sha256.Size {
-		t.Fatalf("persisted real Auth close proof operation=%#v err=%v", operation, err)
+	if err := authDatabase.Collection("application_close_reauth_operations").FindOne(ctx, bson.M{"operationid": challenge.GetOperationId()}).Decode(&operation); err != nil || operation.ApplicationID != applicationID || operation.State != "COMPLETED" || operation.JTI == "" || len(operation.SignatureDigest) != sha256.Size || operation.PasswordRevision != pending.PasswordRevision {
+		t.Fatal("real Auth close proof persistence or password revision mismatch", err)
 	}
 	return completed.GetProofJws()
 }

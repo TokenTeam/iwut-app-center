@@ -60,7 +60,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
 # Auth accepts pinned whole-password SHA-256 digests, one per line.
 printf '%s' 'known-compromised-fixture-password' | sha256sum | cut -d ' ' -f 1 >"${temporary_dir}/password-blocklist.txt"
 password_blocklist_sha="$(sha256sum "${temporary_dir}/password-blocklist.txt" | cut -d ' ' -f 1)"
-export UC002_SMTP_ADDR="127.0.0.1:${ports[8]}" UC002_SMTP_CERT_FILE="${temporary_dir}/smtp-cert.pem" UC002_SMTP_KEY_FILE="${temporary_dir}/smtp-key.pem"
+export AUTH_FIXTURE_SMTP_ADDR="127.0.0.1:${ports[8]}" AUTH_FIXTURE_SMTP_CERT_FILE="${temporary_dir}/smtp-cert.pem" AUTH_FIXTURE_SMTP_KEY_FILE="${temporary_dir}/smtp-key.pem"
 export APP_CENTER_SERVICE_IDENTITY_ID=iwut-app-center APP_CENTER_SERVICE_IDENTITY_KID=uc002-app
 export APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64="$(base64 -w0 < "${temporary_dir}/app-service.pem")"
 export AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH="${temporary_dir}/auth-identity.pub.pem"
@@ -96,7 +96,7 @@ docker run --detach --name "${auth_container_name}" --network host --user "$(id 
  --env AUTH_ASSOC_KEY_VERSION=v1 --env "AUTH_ASSOC_ENCRYPT_KEY=$(openssl rand 32 | base64 -w0)" --env "AUTH_ASSOC_LOOKUP_KEY=$(openssl rand 32 | base64 -w0)" \
  --env AUTH_EMAIL_BINDING_ENABLED=true --env "AUTH_EMAIL_BINDING_HMAC_KEY=$(openssl rand 32 | base64 -w0)" \
  --env AUTH_EMAIL_RECOVERY_READY=true --env AUTH_EMAIL_LOGIN_ENABLED=true --env "AUTH_EMAIL_LOGIN_CODE_KEY=$(openssl rand 32 | base64 -w0)" \
- --env "AUTH_SMTP_ADDR=${UC002_SMTP_ADDR}" --env AUTH_SMTP_FROM=auth@example.test --env AUTH_SMTP_TLS_MODE=implicit_tls \
+ --env "AUTH_SMTP_ADDR=${AUTH_FIXTURE_SMTP_ADDR}" --env AUTH_SMTP_FROM=auth@example.test --env AUTH_SMTP_TLS_MODE=implicit_tls \
  --env AUTH_SMTP_CA_FILE=/run/iwut-uc002/smtp-cert.pem --env AUTH_SMTP_TIMEOUT=10s \
  --env AUTH_PASSWORD_ENABLED=true --env "AUTH_PASSWORD_OPERATION_HMAC_KEY=$(openssl rand 32 | base64 -w0)" \
  --env AUTH_PASSWORD_BLOCKLIST_FILE=/run/iwut-uc002/password-blocklist.txt \
