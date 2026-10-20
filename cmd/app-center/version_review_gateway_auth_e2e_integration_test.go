@@ -432,22 +432,19 @@ func (f *versionReviewGatewayFixture) decideHTTP(review *rv.ApplicationReviewRes
 }
 func (f *versionReviewGatewayFixture) verifyReviewDecisions(edited, native, web *rv.ApplicationReviewResource) {
 	t := f.t
-	const manager = "version-review-manager"
-	managerSession := uc002SeedSession(t, f.authDB, manager, "APPROVED")
-	// The pinned published Auth image uses its accepted verified-email binding.
-	if _, err := f.authDB.Collection("auth_email_bindings").InsertOne(f.ctx, bson.M{"authId": manager, "email": "version-review-manager@whut.edu.cn", "revision": int64(1), "verifiedAt": time.Now().UTC().Truncate(time.Millisecond)}); err != nil {
-		t.Fatal(err)
-	}
+	manager, managerSession := registerReviewManager(t, f.ctx)
 	// Provision only fixture authority through Auth's real explicit bootstrap CLI.
 	// Reviewer grants below always use the real authenticated Auth command API.
-	output, err := exec.CommandContext(f.ctx, "docker", "exec", "--env", "AUTH_EMAIL_RECOVERY_READY=true", "--env", "AUTH_EMAIL_LOGIN_ENABLED=true", os.Getenv("UC002_AUTH_CONTAINER_NAME"), "/app/auth-center", "bootstrap-platform-admin", "--auth-id", manager).CombinedOutput()
+	output, err := exec.CommandContext(f.ctx, "docker", "exec", os.Getenv("UC002_AUTH_CONTAINER_NAME"), "/app/auth-center", "bootstrap-platform-admin", "--auth-id", manager).CombinedOutput()
 	if path := os.Getenv("UC002_BOOTSTRAP_LOG"); path != "" {
 		_ = os.WriteFile(path, output, 0600)
 	}
 	var bootstrap struct {
-		Applied bool `json:"applied"`
+		Applied bool   `json:"applied"`
+		AuthID  string `json:"authId"`
+		EventID string `json:"eventId"`
 	}
-	if err != nil || json.Unmarshal(output, &bootstrap) != nil || !bootstrap.Applied {
+	if err != nil || json.Unmarshal(output, &bootstrap) != nil || !bootstrap.Applied || bootstrap.AuthID != manager || uuid.Validate(bootstrap.EventID) != nil {
 		t.Fatal("real Auth administrator bootstrap failed", err)
 	}
 	const reviewer = "version-review-reviewer"

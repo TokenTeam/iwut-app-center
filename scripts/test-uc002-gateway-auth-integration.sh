@@ -2,7 +2,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/integration-lib.sh"
 integration_init
-for tool in openssl base64 tar; do command -v "${tool}" >/dev/null || { echo "Missing ${tool}" >&2; exit 1; }; done
+for tool in openssl base64 tar sha256sum; do command -v "${tool}" >/dev/null || { echo "Missing ${tool}" >&2; exit 1; }; done
 
 gateway_source="${GATEWAY_SOURCE_DIR:-${app_dir}/../iwut-gateway}"
 gateway_source="$(cd "${gateway_source}" && pwd)"
@@ -39,7 +39,7 @@ trap cleanup_uc002 EXIT
 # Allocate the entire fixture's listener set at once, avoiding duplicate ports.
 mapfile -t ports < <(python3 - <<'PY'
 import socket
-sockets=[socket.socket() for _ in range(8)]
+sockets=[socket.socket() for _ in range(9)]
 for s in sockets:s.bind(('127.0.0.1',0))
 for s in sockets:print(s.getsockname()[1])
 for s in sockets:s.close()
@@ -53,6 +53,14 @@ for name in app-service gateway-service auth-identity auth-service oidc delegati
  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${temporary_dir}/${name}.pem" >/dev/null 2>&1
  openssl pkey -in "${temporary_dir}/${name}.pem" -pubout -out "${temporary_dir}/${name}.pub.pem" >/dev/null 2>&1
 done
+# Disposable SMTP trust and password readiness inputs for formal v3 registration.
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+ -addext 'subjectAltName=IP:127.0.0.1' -keyout "${temporary_dir}/smtp-key.pem" \
+ -out "${temporary_dir}/smtp-cert.pem" >/dev/null 2>&1
+# Auth accepts pinned whole-password SHA-256 digests, one per line.
+printf '%s' 'known-compromised-fixture-password' | sha256sum | cut -d ' ' -f 1 >"${temporary_dir}/password-blocklist.txt"
+password_blocklist_sha="$(sha256sum "${temporary_dir}/password-blocklist.txt" | cut -d ' ' -f 1)"
+export UC002_SMTP_ADDR="127.0.0.1:${ports[8]}" UC002_SMTP_CERT_FILE="${temporary_dir}/smtp-cert.pem" UC002_SMTP_KEY_FILE="${temporary_dir}/smtp-key.pem"
 export APP_CENTER_SERVICE_IDENTITY_ID=iwut-app-center APP_CENTER_SERVICE_IDENTITY_KID=uc002-app
 export APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64="$(base64 -w0 < "${temporary_dir}/app-service.pem")"
 export AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH="${temporary_dir}/auth-identity.pub.pem"
@@ -86,6 +94,14 @@ docker run --detach --name "${auth_container_name}" --network host --user "$(id 
  --env "AUTH_CENTER_SERVICE_CALLERS_B64=${callers}" --env AUTH_USER_ENDPOINTS_ENABLED=true --env AUTH_IDENTITY_ISSUANCE_ENABLED=true \
  --env AUTH_AUTHENTICATION_SERVICE_ID=iwut-auth-center:uc002 --env AUTH_SESSION_TTL=24h \
  --env AUTH_ASSOC_KEY_VERSION=v1 --env "AUTH_ASSOC_ENCRYPT_KEY=$(openssl rand 32 | base64 -w0)" --env "AUTH_ASSOC_LOOKUP_KEY=$(openssl rand 32 | base64 -w0)" \
+ --env AUTH_EMAIL_BINDING_ENABLED=true --env "AUTH_EMAIL_BINDING_HMAC_KEY=$(openssl rand 32 | base64 -w0)" \
+ --env AUTH_EMAIL_RECOVERY_READY=true --env AUTH_EMAIL_LOGIN_ENABLED=true --env "AUTH_EMAIL_LOGIN_CODE_KEY=$(openssl rand 32 | base64 -w0)" \
+ --env "AUTH_SMTP_ADDR=${UC002_SMTP_ADDR}" --env AUTH_SMTP_FROM=auth@example.test --env AUTH_SMTP_TLS_MODE=implicit_tls \
+ --env AUTH_SMTP_CA_FILE=/run/iwut-uc002/smtp-cert.pem --env AUTH_SMTP_TIMEOUT=10s \
+ --env AUTH_PASSWORD_ENABLED=true --env "AUTH_PASSWORD_OPERATION_HMAC_KEY=$(openssl rand 32 | base64 -w0)" \
+ --env AUTH_PASSWORD_BLOCKLIST_FILE=/run/iwut-uc002/password-blocklist.txt \
+ --env AUTH_PASSWORD_BLOCKLIST_VERSION=app-uc005-e2e-v1 --env AUTH_PASSWORD_BLOCKLIST_SOURCE=app-controlled-e2e \
+ --env "AUTH_PASSWORD_BLOCKLIST_SHA256=${password_blocklist_sha}" --env AUTH_PASSWORD_READINESS_CONFIRMED=true \
  --env AUTH_PROFILE_CATALOG_FILE=/run/iwut-uc002/profile-catalog.json --env AUTH_USER_IDENTITY_ISSUER=https://auth.e2e.test \
  --env 'AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON={"uc002-auth":"/run/iwut-uc002/auth-identity.pub.pem"}' \
  --env AUTH_USER_IDENTITY_SIGNING_KID=uc002-auth --env "AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64=$(base64 -w0 < "${temporary_dir}/auth-identity.pem")" \
@@ -118,4 +134,4 @@ for port in map(int,sys.argv[1:-1]):
 PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
-go test -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center
+go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center
