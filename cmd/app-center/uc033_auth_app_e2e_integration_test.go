@@ -69,27 +69,11 @@ func TestE2E_UCAPP033_RealAuthOAuthArchival(t *testing.T) {
 	defer cancel()
 	client, database := e2eIsolatedDatabase(t, ctx, true)
 	identityKey, identityPublicKey := e2eIdentity(t)
-	const (
-		ownerID    = "uc033-oauth-owner"
-		reviewerID = "uc033-oauth-reviewer"
-	)
+	authDatabase := client.Database(authDatabaseName)
+	ownerID, sessionToken := uc033RegisterOAuthOwner(t, ctx, authDatabase, "uc033-oauth-owner")
+	const reviewerID = "uc033-oauth-reviewer"
 	ownerToken := e2eSignIdentity(t, identityKey, ownerID, "APPROVED")
 	reviewerToken := e2eSignReviewerIdentity(t, identityKey, reviewerID, "app.profile.review", "app.version.review")
-
-	authDatabase := client.Database(authDatabaseName)
-	if _, err := authDatabase.Collection("auth_principals").InsertOne(ctx, bson.M{
-		"authId": ownerID, "principalType": "USER", "accountStatus": "ACTIVE", "accountRevision": int64(1),
-		"developerRevision": int64(1), "developerStatus": "APPROVED", "permissions": bson.A{},
-		"permissionRevision": int64(1), "createdAt": time.Now().UTC(), "updatedAt": time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("seed Auth principal: %v", err)
-	}
-	if _, err := authDatabase.Collection("auth_developer_handles").InsertOne(ctx, bson.M{
-		"authId": ownerID, "developerHandle": "uc033-oauth-owner",
-	}); err != nil {
-		t.Fatalf("seed Auth developer handle: %v", err)
-	}
-	sessionToken := uc033SeedAuthSession(t, ctx, authDatabase, ownerID)
 
 	resolver := &e2eDNSResolver{addresses: map[string][]netip.Addr{
 		"example.edu": {netip.MustParseAddr("8.8.8.8")},
@@ -481,32 +465,22 @@ func (o *uc033OAuthClient) basicAuth() http.Header {
 	return http.Header{"Authorization": []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(value))}}
 }
 
-func uc033SeedAuthSession(t *testing.T, ctx context.Context, database *drivermongo.Database, ownerID string) string {
+// Auth owns password, email directory, credential and Session creation. Only
+// the pre-existing Developer/handle state remains a controlled test fixture.
+func uc033RegisterOAuthOwner(t *testing.T, ctx context.Context, database *drivermongo.Database, handle string) (string, string) {
 	t.Helper()
-	publicKey, fingerprint := uc033DeviceCredential(t)
-	rawSession := make([]byte, 32)
-	if _, err := rand.Read(rawSession); err != nil {
-		t.Fatal(err)
+	account := registerAuthFixture(t, ctx)
+	updated, err := database.Collection("auth_principals").UpdateOne(ctx, bson.M{"authId": account.authID}, bson.M{"$set": bson.M{
+		"developerRevision": int64(1), "developerStatus": "APPROVED",
+	}})
+	if err != nil || updated.MatchedCount != 1 {
+		t.Fatal("prepare registered OAuth owner Developer fixture", err)
 	}
-	sessionToken := base64.RawURLEncoding.EncodeToString(rawSession)
-	sessionDigest := sha256.Sum256(rawSession)
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	credentialID, sessionID := uuid.NewString(), uuid.NewString()
-	if _, err := database.Collection("auth_credentials").InsertOne(ctx, bson.M{
-		"credentialId": credentialID, "authId": ownerID, "protocolVersion": "iwut-device-v1",
-		"publicKey": publicKey, "fingerprint": fingerprint, "createdAt": now,
-	}); err != nil {
-		t.Fatalf("seed Auth credential: %v", err)
+	if _, err := database.Collection("auth_developer_handles").InsertOne(ctx, bson.M{"authId": account.authID, "developerHandle": handle}); err != nil {
+		t.Fatal("prepare registered OAuth owner handle fixture", err)
 	}
-	if _, err := database.Collection("auth_sessions").InsertOne(ctx, bson.M{
-		"accountRevision": int64(1), "sessionId": sessionID, "authId": ownerID,
-		"authenticationMethod": "DEVICE_CREDENTIAL", "credentialId": credentialID,
-		"tokenDigest": sessionDigest[:], "authenticatedAt": now, "createdAt": now,
-		"lastUsedAt": now, "expiresAt": now.Add(time.Hour),
-	}); err != nil {
-		t.Fatalf("seed Auth session: %v", err)
-	}
-	return sessionToken
+	t.Log("OAuth prerequisite passed: formal email registration, device login and verified login directory")
+	return account.authID, account.session
 }
 
 func uc033Opaque(t *testing.T) string {

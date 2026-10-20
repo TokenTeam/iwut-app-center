@@ -40,27 +40,11 @@ func TestE2E_UCAPP036_RealAuthOAuthTestClear(t *testing.T) {
 	defer cancel()
 	client, database := e2eIsolatedDatabase(t, ctx, true)
 	identityKey, identityPublicKey := e2eIdentity(t)
-	const (
-		ownerID    = "uc036-oauth-owner"
-		reviewerID = "uc036-oauth-reviewer"
-	)
+	authDatabase := client.Database(authDatabaseName)
+	ownerID, sessionToken := uc033RegisterOAuthOwner(t, ctx, authDatabase, "uc036-oauth-owner")
+	const reviewerID = "uc036-oauth-reviewer"
 	ownerToken := e2eSignIdentity(t, identityKey, ownerID, "APPROVED")
 	reviewerToken := e2eSignReviewerIdentity(t, identityKey, reviewerID, "app.profile.review", "app.version.review")
-
-	authDatabase := client.Database(authDatabaseName)
-	if _, err := authDatabase.Collection("auth_principals").InsertOne(ctx, bson.M{
-		"authId": ownerID, "principalType": "USER", "accountStatus": "ACTIVE", "accountRevision": int64(1),
-		"developerRevision": int64(1), "developerStatus": "APPROVED", "permissions": bson.A{},
-		"permissionRevision": int64(1), "createdAt": time.Now().UTC(), "updatedAt": time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("seed Auth principal: %v", err)
-	}
-	if _, err := authDatabase.Collection("auth_developer_handles").InsertOne(ctx, bson.M{
-		"authId": ownerID, "developerHandle": "uc036-oauth-owner",
-	}); err != nil {
-		t.Fatalf("seed Auth developer handle: %v", err)
-	}
-	sessionToken := uc033SeedAuthSession(t, ctx, authDatabase, ownerID)
 
 	resolver := &e2eDNSResolver{addresses: map[string][]netip.Addr{
 		"example.edu": {netip.MustParseAddr("8.8.8.8")},
