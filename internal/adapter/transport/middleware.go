@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	applicationarchivalv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_archival"
+	applicationmanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_management"
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	applicationreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
@@ -59,6 +60,9 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 			operation := ""
 			if transporter, ok := transport.FromServerContext(ctx); ok {
 				operation = transporter.Operation()
+				if operation == applicationmanagementv1.OperationApplicationManagementQueryServiceListMyApplications || operation == applicationmanagementv1.OperationApplicationManagementQueryServiceGetMyApplication {
+					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
+				}
 				if isReviewQueryOperation(operation) || isReviewDecisionOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}

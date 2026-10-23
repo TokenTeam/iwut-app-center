@@ -441,6 +441,13 @@ func TestE2E_UCAPP002GatewayAuthIntegration(t *testing.T) {
 	if _, err := idv.NewUserIdentityServiceClient(anonymous).IssueUserIdentityFromSession(ctx, &idv.IssueUserIdentityFromSessionRequest{Audience: e2eAudience}); status.Code(err) != codes.Unimplemented {
 		t.Fatal("internal identity issuance RPC exposed at edge")
 	}
+	t.Run("UC029_BR_APP_038_040_private_errors_at_source_and_gateway", func(t *testing.T) {
+		otherIssued, err := idv.NewUserIdentityServiceClient(gatewayAuth).IssueUserIdentityFromSession(metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", otherSession)), &idv.IssueUserIdentityFromSessionRequest{Audience: e2eAudience})
+		if err != nil {
+			t.Fatal("independent caller USER issuance failed", status.Code(err))
+		}
+		uc029ManagementCacheIntegration(t, ctx, ownerSession, otherSession, issued.GetIdentityJws(), otherIssued.GetIdentityJws(), appID)
+	})
 	t.Log("BR-VER-001–009/018: HTTP/native gRPC/gRPC-Web, real USER issuance, persistent Catalog, TTL/rollback/outage/recovery and atomic Version/OAuth state passed")
 }
 func uc002AppFacts(t *testing.T, ctx context.Context, db *m.Database, app string) map[string][]bson.M {

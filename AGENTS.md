@@ -38,6 +38,19 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
+**2026-10-23 UC-APP-029 error response cache regression.**
+
+User authorized investigating Console's 25 failing App cache-header assertions
+and fixing confirmed App defects. Read UC029 brief (BR-APP-038/040/042) and
+engineering baseline. Scope: App transport cache policy for ListMyApplications
+and GetMyApplication, generated HTTP/native gRPC regression, and real
+App-versus-Gateway integration evidence. Keep existing status/reason, caller and
+filter cursor binding, management authorization and existence hiding unchanged.
+No UC/BR, API, Auth, Gateway or Console source changes; no global proxy header
+workaround. Run targeted regressions, then frozen check-full and the existing
+Gateway/Auth integration with fixed inputs. Preserve unrelated work; local
+commits only, no push or image deployment under this work package.
+
 **2026-10-20 tooling maintenance — adapt UC-APP-033/036 OAuth owner fixtures.**
 
 User authorized replacing the shared legacy credential/Session seed with formal

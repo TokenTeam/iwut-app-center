@@ -622,7 +622,7 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
-	if isReviewDecisionHTTPRequest(r) {
+	if isReviewDecisionHTTPRequest(r) || isApplicationManagementRequest(r) {
 		w.Header().Set("Cache-Control", "private, no-store")
 	}
 	if isMyTestApplicationRequest(r) {
@@ -771,6 +771,14 @@ func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err erro
 		}
 	}
 	khttp.DefaultErrorEncoder(w, r, err)
+}
+
+func isApplicationManagementRequest(r *http.Request) bool {
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/applications:search" {
+		return true
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	return r.Method == http.MethodGet && len(parts) == 3 && parts[0] == "v1" && parts[1] == "applications" && parts[2] != ""
 }
 
 func isApplicationClosureRequest(r *http.Request) bool {
