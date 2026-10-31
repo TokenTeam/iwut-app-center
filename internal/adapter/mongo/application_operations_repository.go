@@ -128,6 +128,9 @@ func (r *ApplicationOperationsRepository) Set(ctx context.Context, appID shared.
 	if r == nil || r.database == nil {
 		return domain.ApplicationPlatformAvailability{}, domain.ErrApplicationOperationUnavailable
 	}
+	// BSON Date persists milliseconds. Fix the operation time once, including
+	// transaction retries, so state, event, outbox and ACK describe the same instant.
+	now = time.UnixMilli(now.UnixMilli()).UTC()
 	session, err := r.database.Client().StartSession()
 	if err != nil {
 		return domain.ApplicationPlatformAvailability{}, operationPersistenceError(err)

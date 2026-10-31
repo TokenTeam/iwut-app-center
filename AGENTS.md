@@ -38,6 +38,19 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
+**2026-10-30 UC-APP-028 operation timestamp readback regression.**
+
+User authorized unifying Suspend/Restore ACK and persisted readback times after
+Console confirmed a sub-millisecond mismatch. Normalize once at the Mongo write
+boundary; state, immutable event, durable outbox and ACK must share that time,
+including transaction retries. Preserve OCC, atomicity, permissions and unknown
+commit recovery; do not assemble ACK with an unversioned post-commit read.
+Read UC028 brief (BR-APP-036) and engineering baseline. Add a real Mongo
+regression with a sub-millisecond Clock for both commands, exact same-event
+readback and stale-command protection, then run frozen check-full with Go
+1.25.5 and local committed docs. No Auth/Gateway/Console/API source changes.
+Local commits only; report image status without publishing or deploying.
+
 **2026-10-23 UC-APP-029 error response cache regression.**
 
 User authorized investigating Console's 25 failing App cache-header assertions
