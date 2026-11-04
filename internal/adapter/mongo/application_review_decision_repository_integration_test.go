@@ -33,7 +33,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 9, 30, 0, 123456789, time.UTC)
 		persistedDecidedAt := decidedAt.Truncate(time.Millisecond)
-		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		result, err := repository.Decide(t.Context(), candidate, "auth-reviewer", decision)
 		if err != nil {
@@ -56,7 +56,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 			storedReview.Decision.DecidedBy != "auth-reviewer" || !storedReview.Decision.DecidedAt.Equal(persistedDecidedAt) ||
 			storedReview.Decision.Reason != nil || validation == nil ||
 			validation.ScopeCatalogRevision != 77 || validation.PreflightPolicyVersion != "public-https.v2" ||
-			len(storedReview.Decision.ConfirmedCheckIDs) != 1 || storedReview.Decision.ConfirmedCheckIDs[0] != "content-reviewed" {
+			len(storedReview.Decision.ConfirmedCheckIDs) != 4 || storedReview.Decision.ConfirmedCheckIDs[0] != "content-policy-reviewed" {
 			t.Fatalf("stored decision = %#v", storedReview.Decision)
 		}
 		storedVersion := readVersionDocument(t, database, seed.versionID.String())
@@ -130,7 +130,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 11, 0, 0, 0, time.UTC)
-		firstDecision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		firstDecision := integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v2", "auth-reviewer", decidedAt)
 		if _, err := repository.Decide(t.Context(), candidate, "auth-reviewer", firstDecision); err != nil {
 			t.Fatalf("first Decide() error = %v", err)
 		}
@@ -196,7 +196,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
-		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		// The version creator becomes the reviewer after the candidate was
 		// loaded. The final transaction must reject the decision.
@@ -219,7 +219,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 12, 30, 0, 0, time.UTC)
-		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		if _, err := database.Collection(applicationsCollectionName).UpdateOne(
 			t.Context(),
@@ -246,7 +246,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 			reviewer  shared.AuthID
 			decision  *reviewdomain.ApplicationReviewDecision
 		}{
-			{firstCandidate, "auth-reviewer-one", integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer-one", decidedAt)},
+			{firstCandidate, "auth-reviewer-one", integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v2", "auth-reviewer-one", decidedAt)},
 			{secondCandidate, "auth-reviewer-two", integrationRejectedDecision(t, "app-version-review-v3", "concurrent rejection", "auth-reviewer-two", decidedAt)},
 		}
 
@@ -293,7 +293,7 @@ func TestApplicationReviewDecisionRepositoryIntegration(t *testing.T) {
 		repository := NewApplicationReviewDecisionRepository(database)
 		candidate := loadDecisionCandidate(t, repository, seed, "auth-reviewer")
 		decidedAt := time.Date(2026, time.September, 21, 14, 0, 0, 0, time.UTC)
-		decision := integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v2", "auth-reviewer", decidedAt)
+		decision := integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v2", "auth-reviewer", decidedAt)
 
 		transferSession, err := client.StartSession()
 		if err != nil {

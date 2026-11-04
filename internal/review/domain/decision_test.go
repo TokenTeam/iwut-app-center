@@ -125,11 +125,11 @@ func TestVersionReviewPolicy_BR_REV_016_017_ValidateConfirmation(t *testing.T) {
 		})
 	}
 
-	if policy.Usable() != true || policy.Version() != "review.v1" || policy.Status() != ReviewPolicyStatusActive {
+	if policy.Selectable() != true || policy.Version() != "review.v1" || policy.Status() != ReviewPolicyStatusActive {
 		t.Fatal("active policy is not usable")
 	}
 	retired := mustPolicy(t, "review.v0", ReviewPolicyStatusRetired, "content-reviewed")
-	if retired.Usable() {
+	if retired.Selectable() {
 		t.Fatal("retired policy reported usable")
 	}
 }
@@ -269,7 +269,7 @@ func pendingReviewForDecision(t *testing.T) *ApplicationReview {
 	preflightPolicyVersion, _ := NewPreflightPolicyVersion("public-https.v1")
 	review, err := NewPendingApplicationReview(
 		candidate, testReviewID, attempt, catalogRevision, preflightPolicyVersion,
-		"auth-submitter", time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC),
+		"auth-submitter", time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC), ReviewPolicyVersion("review.v1"),
 	)
 	if err != nil {
 		t.Fatalf("create pending review: %v", err)
@@ -311,7 +311,7 @@ func mustPolicy(t *testing.T, version string, status ReviewPolicyStatus, checkID
 		if err != nil {
 			t.Fatalf("create check ID: %v", err)
 		}
-		definition, err := NewReviewCheckDefinition(id)
+		definition, err := NewFormalReviewCheckDefinition(id, "Fixture check", "Explicit test policy definition.")
 		if err != nil {
 			t.Fatalf("create check definition: %v", err)
 		}

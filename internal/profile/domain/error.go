@@ -92,7 +92,7 @@ const (
 	ErrorCodeApplicationProfileReviewStateConflict      ErrorCode = "ApplicationProfileReviewStateConflict"
 	ErrorCodeApplicationProfilePublicationConflict      ErrorCode = "ApplicationProfilePublicationConflict"
 	ErrorCodeApplicationProfileReviewStateInconsistent  ErrorCode = "ApplicationProfileReviewStateInconsistent"
-	ErrorCodeProfileReviewPolicyUnavailable             ErrorCode = "ProfileReviewPolicyUnavailable"
+	ErrorCodeProfileReviewPolicyMismatch                ErrorCode = "ProfileReviewPolicyMismatch"
 	ErrorCodeProfileReviewChecksIncomplete              ErrorCode = "ProfileReviewChecksIncomplete"
 	ErrorCodeInvalidProfileReviewReason                 ErrorCode = "InvalidProfileReviewReason"
 	ErrorCodeInvalidApplicationProfileReviewQuery       ErrorCode = "InvalidApplicationProfileReviewQuery"
@@ -109,7 +109,7 @@ var (
 	ErrApplicationProfileReviewStateConflict      = newError(ErrorCategoryConflict, ErrorCodeApplicationProfileReviewStateConflict, "ApplicationProfileReviewStateConflict", nil)
 	ErrApplicationProfilePublicationConflict      = newError(ErrorCategoryConflict, ErrorCodeApplicationProfilePublicationConflict, "ApplicationProfilePublicationConflict", nil)
 	ErrApplicationProfileReviewStateInconsistent  = newError(ErrorCategoryInternal, ErrorCodeApplicationProfileReviewStateInconsistent, "ApplicationProfileReviewStateInconsistent", nil)
-	ErrProfileReviewPolicyUnavailable             = newError(ErrorCategoryConflict, ErrorCodeProfileReviewPolicyUnavailable, "ProfileReviewPolicyUnavailable", nil)
+	ErrProfileReviewPolicyMismatch                = newError(ErrorCategoryConflict, ErrorCodeProfileReviewPolicyMismatch, "ProfileReviewPolicyMismatch", nil)
 	ErrProfileReviewChecksIncomplete              = newError(ErrorCategoryValidation, ErrorCodeProfileReviewChecksIncomplete, "ProfileReviewChecksIncomplete", nil)
 	ErrInvalidProfileReviewReason                 = newError(ErrorCategoryValidation, ErrorCodeInvalidProfileReviewReason, "InvalidProfileReviewReason", nil)
 	ErrInvalidApplicationProfileReviewQuery       = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationProfileReviewQuery, "invalid application profile review query", nil)

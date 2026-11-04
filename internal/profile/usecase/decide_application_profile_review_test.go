@@ -53,11 +53,11 @@ func profileDecisionFixture(t *testing.T) *domain.ApplicationProfileDecisionResu
 	if err != nil {
 		t.Fatal(err)
 	}
-	submission, err := revision.SubmitDraft(1, domain.ApplicationProfileReviewID(profileDecisionCommand().ProfileReviewID), 1, "submitter", time.Unix(2, 0))
+	submission, err := revision.SubmitDraft(1, domain.ApplicationProfileReviewID(profileDecisionCommand().ProfileReviewID), 1, "submitter", time.Unix(2, 0), "app-profile-review-v1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := submission.ProfileRevision.DecideReview(submission.Review, "reviewer", "admin", []string{domain.ProfileReviewPermission}, 2, "APPROVE", domain.ProfileReviewPolicy{Version: domain.InitialProfileReviewPolicyVersion, RequiredChecks: domain.InitialProfileReviewChecks(), Status: "ACTIVE"}, domain.InitialProfileReviewChecks(), nil, time.Unix(3, 0))
+	result, err := submission.ProfileRevision.DecideReview(submission.Review, "reviewer", "admin", []string{domain.ProfileReviewPermission}, 2, "APPROVE", domain.ProfileReviewPolicy{Version: domain.InitialProfileReviewPolicyVersion, RequiredChecks: domain.InitialProfileReviewChecks(), Status: "ACTIVE", Definitions: []domain.ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit test definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit test definition."}}}, domain.InitialProfileReviewChecks(), nil, time.Unix(3, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestBRPRF024032_DecisionDependencyAndFailureBoundary(t *testing.T) {
 		domain.ErrApplicationProfileReviewConflictOfInterest, domain.ErrApplicationProfileReviewNotFound,
 		domain.ErrApplicationProfileReviewAlreadyDecided, domain.ErrApplicationProfileReviewStateConflict,
 		domain.ErrApplicationProfileRevisionConflict, domain.ErrApplicationProfilePublicationConflict,
-		domain.ErrApplicationProfileReviewStateInconsistent, domain.ErrProfileReviewPolicyUnavailable,
+		domain.ErrApplicationProfileReviewStateInconsistent, domain.ErrProfileReviewPolicyMismatch,
 		domain.ErrProfileReviewChecksIncomplete, domain.ErrInvalidApplicationProfileContent,
 	} {
 		t.Run(cause.Error(), func(t *testing.T) {

@@ -36,8 +36,8 @@ func applicationProfileReviewValidator() bson.D {
 	snapshot := bson.D{{Key: "bsonType", Value: "object"}, {Key: "required", Value: bson.A{"displayName", "description", "icon"}}, {Key: "additionalProperties", Value: false}, {Key: "properties", Value: bson.D{
 		{Key: "displayName", Value: profileTextSchema(80)}, {Key: "description", Value: profileNullableSchema(profileTextSchema(1000))}, {Key: "icon", Value: profileNullableSchema(profileTextSchema(512))},
 	}}}
-	return publicationObjectSchema(bson.A{"profileReviewId", "applicationId", "profileRevisionId", "attempt", "sourceRevision", "status", "snapshot", "submittedBy", "submittedAt", "decision"}, bson.D{
-		{Key: "profileReviewId", Value: uuidV7Schema()}, {Key: "applicationId", Value: uuidV7Schema()}, {Key: "profileRevisionId", Value: uuidV7Schema()},
+	return publicationObjectSchema(bson.A{"profileReviewId", "applicationId", "profileRevisionId", "attempt", "sourceRevision", "status", "snapshot", "submittedBy", "submittedAt", "decision", "policyBinding"}, bson.D{
+		{Key: "profileReviewId", Value: uuidV7Schema()}, {Key: "policyBinding", Value: reviewPolicyBindingSchema()}, {Key: "applicationId", Value: uuidV7Schema()}, {Key: "profileRevisionId", Value: uuidV7Schema()},
 		{Key: "attempt", Value: positiveIntSchema()}, {Key: "sourceRevision", Value: positiveLongSchema()},
 		{Key: "status", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "enum", Value: bson.A{"PENDING"}}}},
 		{Key: "snapshot", Value: snapshot}, {Key: "submittedBy", Value: nonEmptyStringSchema()}, {Key: "submittedAt", Value: bson.D{{Key: "bsonType", Value: "date"}}}, {Key: "decision", Value: bson.D{{Key: "bsonType", Value: "null"}}},

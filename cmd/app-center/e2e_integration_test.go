@@ -1085,11 +1085,11 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.CurrentPolicy.Version != "app-version-review-v3" || len(detail.CurrentPolicy.RequiredCheckDefinitions) != 4 {
+	if detail.ReviewPolicy.Version != "app-version-review-v3" || len(detail.ReviewPolicy.RequiredCheckDefinitions) != 4 {
 		t.Fatal("missing formal definitions")
 	}
-	for i, d := range detail.CurrentPolicy.RequiredCheckDefinitions {
-		if d.Id != detail.CurrentPolicy.RequiredCheckIds[i] || d.Title == "" || d.Description == "" {
+	for i, d := range detail.ReviewPolicy.RequiredCheckDefinitions {
+		if d.Id != detail.ReviewPolicy.RequiredCheckIds[i] || d.Title == "" || d.Description == "" {
 			t.Fatal("incomplete formal definition")
 		}
 	}
@@ -1116,14 +1116,14 @@ func TestE2E_UCAPP005_DecideApplicationVersionReview(t *testing.T) {
 		}
 		if tc.code == 200 {
 			var decoded reviewqueryv1.ApplicationVersionReviewDetail
-			if e = protojson.Unmarshal(body, &decoded); e != nil || !proto.Equal(decoded.CurrentPolicy, detail.CurrentPolicy) {
+			if e = protojson.Unmarshal(body, &decoded); e != nil || !proto.Equal(decoded.ReviewPolicy, detail.ReviewPolicy) {
 				t.Fatal("policy protocol mismatch", e)
 			}
 		}
 	}
-	staleStatus, _ := e2eHTTPDecideReview(t, httpAddress, reviewerToken, application.GetId(), approvedVersion.VersionId, approvedReview.Review.ReviewId, "APPROVE", "app-version-review-v2", detail.CurrentPolicy.RequiredCheckIds, "")
+	staleStatus, _ := e2eHTTPDecideReview(t, httpAddress, reviewerToken, application.GetId(), approvedVersion.VersionId, approvedReview.Review.ReviewId, "APPROVE", "app-version-review-v2", detail.ReviewPolicy.RequiredCheckIds, "")
 	if staleStatus != 409 {
-		t.Fatal("retired policy allowed", staleStatus)
+		t.Fatal("wrong binding allowed", staleStatus)
 	}
 
 	deniedStatus, deniedBody := e2eHTTPDecideReview(
@@ -1723,7 +1723,7 @@ func TestE2E_UCAPP006_RestoreRejectedApplicationVersionToDraft(t *testing.T) {
 			{Key: "status", Value: "REJECTED"},
 			{Key: "decision", Value: bson.D{
 				{Key: "outcome", Value: "REJECTED"},
-				{Key: "reviewPolicyVersion", Value: "review.v1"},
+				{Key: "reviewPolicyVersion", Value: "app-version-review-v3"},
 				{Key: "confirmedCheckIds", Value: bson.A{}},
 				{Key: "reason", Value: reason},
 				{Key: "decidedBy", Value: "auth-e2e-reviewer"},

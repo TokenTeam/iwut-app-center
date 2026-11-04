@@ -136,7 +136,12 @@ type applicationVersionReviewSnapshotDocument struct {
 	OAuthRedirects            oauthRedirectConfigurationDocument `bson:"oauthRedirects"`
 }
 
+type reviewPolicyBindingDocument struct {
+	Version string `bson:"version"`
+}
+
 type applicationReviewDocument struct {
+	PolicyBinding          reviewPolicyBindingDocument                `bson:"policyBinding"`
 	ReviewID               string                                     `bson:"reviewId"`
 	ApplicationID          string                                     `bson:"applicationId"`
 	VersionID              string                                     `bson:"versionId"`
@@ -437,6 +442,7 @@ func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applic
 	snapshot := review.Snapshot()
 	oauthRedirects := snapshot.OAuthRedirects()
 	return applicationReviewDocument{
+		PolicyBinding:         reviewPolicyBindingDocument{Version: review.PolicyVersion().String()},
 		ReviewID:              review.ReviewID().String(),
 		ApplicationID:         review.ApplicationID().String(),
 		VersionID:             review.VersionID().String(),
@@ -534,7 +540,7 @@ func applicationReviewFromDocument(document applicationReviewDocument) (*reviewd
 		document.SubmittedAt,
 		status,
 		decision,
-		restoration,
+		restoration, reviewdomain.ReviewPolicyVersion(document.PolicyBinding.Version),
 	)
 	if err != nil {
 		return nil, corruptApplicationReview("invalid application review")

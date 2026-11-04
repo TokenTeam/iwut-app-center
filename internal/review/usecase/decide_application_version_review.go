@@ -130,16 +130,19 @@ func (handler *DecideApplicationVersionReviewHandler) Handle(
 		return nil, domain.ErrApplicationReviewConflictOfInterest
 	}
 
+	if candidate.Review().PolicyVersion() != policyVersion {
+		return nil, domain.ErrApplicationReviewPolicyMismatch
+	}
 	snapshot := candidate.Review().Snapshot()
-	policy, err := handler.reviewPolicyProvider.RequireUsable(ctx, policyVersion, snapshot)
+	policy, err := handler.reviewPolicyProvider.LoadBoundDefinition(ctx, policyVersion, snapshot)
 	if err != nil {
-		if errors.Is(err, port.ErrReviewPolicyChanged) {
-			return nil, domain.ErrApplicationReviewPolicyChanged
+		if errors.Is(err, port.ErrApplicationReviewDataInconsistent) {
+			return nil, domain.NewApplicationReviewStateInconsistentError(err)
 		}
 		return nil, domain.NewInternalError(err)
 	}
-	if policy == nil || policy.Version() != policyVersion || !policy.Usable() {
-		return nil, domain.ErrApplicationReviewPolicyChanged
+	if policy == nil || policy.Version() != candidate.Review().PolicyVersion() {
+		return nil, domain.NewApplicationReviewStateInconsistentError(nil)
 	}
 
 	if action == domain.ReviewActionReject {
@@ -276,8 +279,10 @@ func parseConfirmedCheckIDs(values []string) ([]domain.ReviewCheckID, error) {
 
 func mapDecisionRepositoryError(err error) error {
 	switch {
-	case errors.Is(err, port.ErrReviewPolicyChanged):
-		return domain.ErrApplicationReviewPolicyChanged
+	case errors.Is(err, port.ErrApplicationReviewDataInconsistent):
+		return domain.NewApplicationReviewStateInconsistentError(err)
+	case errors.Is(err, port.ErrReviewPolicyMismatch):
+		return domain.ErrApplicationReviewPolicyMismatch
 	case errors.Is(err, port.ErrApplicationReviewNotFound):
 		return domain.ErrApplicationReviewNotFound
 	case errors.Is(err, port.ErrApplicationReviewAlreadyDecided):

@@ -49,6 +49,7 @@ type ApplicationProfileReview struct {
 	submittedAt       time.Time
 	status            ProfileReviewStatus
 	decision          *ApplicationProfileReviewDecision
+	policyVersion     string
 }
 
 func (r *ApplicationProfileReview) ProfileReviewID() ApplicationProfileReviewID { return r.id }
@@ -62,6 +63,7 @@ func (r *ApplicationProfileReview) Status() ProfileReviewStatus { return r.statu
 func (r *ApplicationProfileReview) Snapshot() ApplicationProfileReviewSnapshot {
 	return ApplicationProfileReviewSnapshot{r.snapshot.displayName, cloneDescription(r.snapshot.description), cloneIcon(r.snapshot.icon)}
 }
+func (r *ApplicationProfileReview) PolicyVersion() string      { return r.policyVersion }
 func (r *ApplicationProfileReview) SubmittedBy() shared.AuthID { return r.submittedBy }
 func (r *ApplicationProfileReview) SubmittedAt() time.Time     { return r.submittedAt }
 
@@ -77,7 +79,7 @@ func ValidateStoredApplicationProfileContent(name string, description, icon *str
 	}
 	return nil
 }
-func (r *ApplicationProfileRevision) SubmitDraft(expected int64, id ApplicationProfileReviewID, attempt int32, by shared.AuthID, at time.Time) (*ApplicationProfileSubmission, error) {
+func (r *ApplicationProfileRevision) SubmitDraft(expected int64, id ApplicationProfileReviewID, attempt int32, by shared.AuthID, at time.Time, policyVersion string) (*ApplicationProfileSubmission, error) {
 	if r == nil {
 		return nil, ErrApplicationProfileStateInconsistent
 	}
@@ -105,7 +107,7 @@ func (r *ApplicationProfileRevision) SubmitDraft(expected int64, id ApplicationP
 	if r.revision == math.MaxInt64 || attempt < 1 {
 		return nil, ErrApplicationProfileStateInconsistent
 	}
-	if !id.IsValid() || !by.IsValid() || at.IsZero() {
+	if !id.IsValid() || !by.IsValid() || at.IsZero() || !ValidProfileReviewPolicyVersion(policyVersion) {
 		return nil, NewInternalError(nil)
 	}
 	updated := *r
@@ -115,6 +117,6 @@ func (r *ApplicationProfileRevision) SubmitDraft(expected int64, id ApplicationP
 	updated.revision++
 	updated.updatedBy = by
 	updated.updatedAt = at.UTC()
-	review := &ApplicationProfileReview{id, r.ApplicationID(), r.ProfileRevisionID(), attempt, expected, ApplicationProfileReviewSnapshot{r.draft.displayName, cloneDescription(r.draft.description), cloneIcon(r.draft.icon)}, by, at.UTC(), ProfileReviewStatusPending, nil}
+	review := &ApplicationProfileReview{id, r.ApplicationID(), r.ProfileRevisionID(), attempt, expected, ApplicationProfileReviewSnapshot{r.draft.displayName, cloneDescription(r.draft.description), cloneIcon(r.draft.icon)}, by, at.UTC(), ProfileReviewStatusPending, nil, policyVersion}
 	return &ApplicationProfileSubmission{&updated, review}, nil
 }

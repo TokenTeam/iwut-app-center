@@ -171,7 +171,7 @@ func (r *ApplicationProfileReviewQueryRepository) Get(ctx context.Context, revie
 		if review.Status() == profiledomain.ProfileReviewStatusPending && !pendingProfileReviewMatchesRevision(review, revision) {
 			return nil, profileport.ErrProfileReviewQueryStateInconsistent
 		}
-		policy, err := r.loadCurrentProfileReviewPolicy(tx)
+		policy, err := r.loadBoundProfileReviewPolicy(tx, review.PolicyVersion())
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +186,7 @@ func (r *ApplicationProfileReviewQueryRepository) Get(ctx context.Context, revie
 		return &profiledomain.ProfileReviewDetail{
 			Application:     profiledomain.ProfileReviewApplicationContext{ApplicationID: app.ID, Name: app.Name, AdminID: app.AdminID, LifecycleStatus: core.LifecycleStatus, PlatformAvailabilityStatus: core.PlatformAvailabilityStatus},
 			ProfileRevision: profiledomain.ProfileRevisionReviewContext{ProfileRevisionID: revision.ProfileRevisionID, Sequence: revision.Sequence, ReviewStatus: revision.ReviewStatus, Revision: revision.Revision, CreatedBy: revision.CreatedBy},
-			Review:          review, CurrentPolicy: policy, CurrentPublishedProfile: published,
+			Review:          review, ReviewPolicy: policy, CurrentPublishedProfile: published,
 			DecisionEligibility: profileReviewEligibility(reviewer, app.AdminID, revision.CreatedBy, review.SubmittedBy().String()), AsOf: now,
 		}, nil
 	})
@@ -274,16 +274,19 @@ func (r *ApplicationProfileReviewQueryRepository) profileReviewQueryRevisions(ct
 	return out, nil
 }
 
-func (r *ApplicationProfileReviewQueryRepository) loadCurrentProfileReviewPolicy(ctx context.Context) (profiledomain.ProfileReviewPolicyContext, error) {
-	raw, err := r.database.Collection(profileReviewPoliciesCollectionName).FindOne(ctx, bson.M{"status": "ACTIVE"}).Raw()
-	if err != nil {
+func (r *ApplicationProfileReviewQueryRepository) loadBoundProfileReviewPolicy(ctx context.Context, version string) (profiledomain.ProfileReviewPolicyContext, error) {
+	raw, err := r.database.Collection(profileReviewPoliciesCollectionName).FindOne(ctx, bson.M{"version": version}).Raw()
+	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return profiledomain.ProfileReviewPolicyContext{}, profileport.ErrProfileReviewQueryStateInconsistent
+	}
+	if err != nil {
+		return profiledomain.ProfileReviewPolicyContext{}, err
 	}
 	policy, _, err := profilePolicyFromRaw(raw)
 	if err != nil {
 		return profiledomain.ProfileReviewPolicyContext{}, profileport.ErrProfileReviewQueryStateInconsistent
 	}
-	return profiledomain.ProfileReviewPolicyContext{Version: policy.Version, RequiredCheckIDs: append([]string(nil), policy.RequiredChecks...)}, nil
+	return profiledomain.ProfileReviewPolicyContext{Version: policy.Version, RequiredCheckIDs: append([]string(nil), policy.RequiredChecks...), RequiredCheckDefinitions: append([]profiledomain.ProfileReviewCheckDefinition(nil), policy.Definitions...)}, nil
 }
 
 func profileReviewEligibility(reviewer shared.AuthID, admin, creator, submitter string) profiledomain.ProfileDecisionEligibility {

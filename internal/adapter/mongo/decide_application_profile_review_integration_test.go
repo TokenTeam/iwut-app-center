@@ -79,7 +79,7 @@ func TestDecideProfileReviewIntegration(t *testing.T) {
 			}
 		})
 	}
-	for _, mode := range []string{"stale revision", "stale publication", "creator conflict", "submitter conflict", "admin conflict", "wrong permission", "missing policy", "retired policy", "missing checks", "unknown check", "duplicate checks", "snapshot drift", "source drift", "wrong pointer", "missing nullable", "bad decision", "revision overflow", "app fence overflow", "policy fence overflow", "late attempt", "review write failure", "revision write failure", "pointer write failure"} {
+	for _, mode := range []string{"stale revision", "stale publication", "creator conflict", "submitter conflict", "admin conflict", "wrong permission", "missing policy", "policy binding mismatch", "missing checks", "unknown check", "duplicate checks", "snapshot drift", "source drift", "wrong pointer", "missing nullable", "bad decision", "revision overflow", "app fence overflow", "late attempt", "review write failure", "revision write failure", "pointer write failure"} {
 		t.Run("BR-PRF-023032 rollback "+mode, func(t *testing.T) {
 			db := migratedIntegrationDatabase(t, client)
 			repo, in := decideProfileFixture(t, db)
@@ -103,10 +103,10 @@ func TestDecideProfileReviewIntegration(t *testing.T) {
 				want = pd.ErrApplicationProfileReviewPermissionRequired
 			case "missing policy":
 				in.PolicyVersion = "missing"
-				want = pd.ErrProfileReviewPolicyUnavailable
-			case "retired policy":
-				_, e = db.Collection(profileReviewPoliciesCollectionName).UpdateOne(t.Context(), bson.M{"version": in.PolicyVersion}, bson.M{"$set": bson.M{"status": "RETIRED"}})
-				want = pd.ErrProfileReviewPolicyUnavailable
+				want = pd.ErrProfileReviewPolicyMismatch
+			case "policy binding mismatch":
+				in.PolicyVersion = "fixture-other-policy"
+				want = pd.ErrProfileReviewPolicyMismatch
 			case "missing checks":
 				in.ConfirmedCheckIDs = in.ConfirmedCheckIDs[:1]
 				want = pd.ErrProfileReviewChecksIncomplete
@@ -134,8 +134,6 @@ func TestDecideProfileReviewIntegration(t *testing.T) {
 				}
 			case "app fence overflow":
 				_, e = db.Collection(applicationsCollectionName).UpdateOne(t.Context(), bson.M{"id": in.ApplicationID.String()}, bson.M{"$set": bson.M{"coordinationRevision": int64(math.MaxInt64)}})
-			case "policy fence overflow":
-				_, e = db.Collection(profileReviewPoliciesCollectionName).UpdateOne(t.Context(), bson.M{"version": in.PolicyVersion}, bson.M{"$set": bson.M{"coordinationRevision": int64(math.MaxInt64)}})
 			case "late attempt":
 				var d bson.M
 				if e = bson.Unmarshal(readProfileReview(t, db, in.ProfileReviewID), &d); e == nil {
@@ -232,7 +230,7 @@ func TestDecideProfileReviewIntegration(t *testing.T) {
 
 func TestDecideProfileReviewFenceIntegration(t *testing.T) {
 	client := integrationClient(t)
-	for _, kind := range []string{"administrator", "policy"} {
+	for _, kind := range []string{"administrator"} {
 		for _, winner := range []string{"mutation", "decision"} {
 			t.Run("BR-PRF-023028032 "+kind+" "+winner, func(t *testing.T) {
 				db := migratedIntegrationDatabase(t, client)
@@ -267,9 +265,6 @@ func TestDecideProfileReviewFenceIntegration(t *testing.T) {
 						t.Fatal(e)
 					}
 					want := pd.ErrApplicationProfileReviewConflictOfInterest
-					if kind == "policy" {
-						want = pd.ErrProfileReviewPolicyUnavailable
-					}
 					select {
 					case e := <-done:
 						if !errors.Is(e, want) {
@@ -307,7 +302,7 @@ func TestDecideProfileReviewFenceIntegration(t *testing.T) {
 						done <- e
 					}()
 					awaitMongoCommand(t, ctx, reached, "decision holds fences before commit")
-					// An independent real update must wait for the decision's policy/Application write.
+					// An independent real update must wait for the decision's Application write.
 					competitor, started := monitoredMongoClient(t, db.Name(), "update")
 					mutationDone := make(chan error, 1)
 					go func() {

@@ -156,7 +156,7 @@ func (r *ApplicationReviewQueryRepository) Get(ctx context.Context, reviewer sha
 				return nil, reviewport.ErrReviewQueryStateInconsistent
 			}
 		}
-		policy, err := r.loadCurrentReviewPolicy(tx)
+		policy, err := r.loadBoundReviewPolicy(tx, review.PolicyVersion())
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +164,7 @@ func (r *ApplicationReviewQueryRepository) Get(ctx context.Context, reviewer sha
 		if err != nil {
 			return nil, reviewport.ErrReviewQueryStateInconsistent
 		}
-		return &reviewdomain.ReviewDetail{Application: reviewdomain.ReviewApplicationContext{ApplicationID: app.ID, Name: app.Name, AdminID: app.AdminID, LifecycleStatus: core.LifecycleStatus, PlatformAvailabilityStatus: core.PlatformAvailabilityStatus}, Version: reviewdomain.ReviewVersionContext{VersionID: version.VersionID, Sequence: version.Sequence, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy}, Review: review, CurrentPolicy: policy, DecisionEligibility: versionReviewEligibility(reviewer, app.AdminID, version.CreatedBy, d.SubmittedBy), AsOf: now}, nil
+		return &reviewdomain.ReviewDetail{Application: reviewdomain.ReviewApplicationContext{ApplicationID: app.ID, Name: app.Name, AdminID: app.AdminID, LifecycleStatus: core.LifecycleStatus, PlatformAvailabilityStatus: core.PlatformAvailabilityStatus}, Version: reviewdomain.ReviewVersionContext{VersionID: version.VersionID, Sequence: version.Sequence, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy}, Review: review, ReviewPolicy: policy, DecisionEligibility: versionReviewEligibility(reviewer, app.AdminID, version.CreatedBy, d.SubmittedBy), AsOf: now}, nil
 	})
 }
 func withReviewQuerySnapshot[T any](r *ApplicationReviewQueryRepository, ctx context.Context, fn func(context.Context, time.Time) (T, error)) (T, error) {
@@ -247,23 +247,17 @@ func pendingVersionReviewMatchesVersion(review *reviewdomain.ApplicationReview, 
 		slices.Equal(snapshot.RequiredCapabilities, version.RequiredCapabilities) && slices.Equal(snapshot.RequiredScopes, version.RequiredScopes) && slices.Equal(snapshot.OptionalScopes, version.OptionalScopes) &&
 		slices.Equal(snapshot.OAuthRedirects.PKCERedirectURIs, oauth.OAuthRedirects.PKCERedirectURIs) && slices.Equal(snapshot.OAuthRedirects.ConfidentialRedirectURIs, oauth.OAuthRedirects.ConfidentialRedirectURIs)
 }
-func (r *ApplicationReviewQueryRepository) loadCurrentReviewPolicy(ctx context.Context) (reviewdomain.ReviewPolicyContext, error) {
-	coll := r.database.Collection(versionReviewPoliciesCollectionName)
-	cur, err := coll.Find(ctx, bson.M{"status": "ACTIVE"}, options.Find().SetLimit(2))
+func (r *ApplicationReviewQueryRepository) loadBoundReviewPolicy(ctx context.Context, version reviewdomain.ReviewPolicyVersion) (reviewdomain.ReviewPolicyContext, error) {
+	var d versionReviewPolicyDocument
+	err := r.database.Collection(versionReviewPoliciesCollectionName).FindOne(ctx, bson.M{"version": version.String()}).Decode(&d)
+	if errors.Is(err, m.ErrNoDocuments) {
+		return reviewdomain.ReviewPolicyContext{}, reviewport.ErrReviewQueryStateInconsistent
+	}
 	if err != nil {
 		return reviewdomain.ReviewPolicyContext{}, err
 	}
-	defer cur.Close(ctx)
-	var docs []versionReviewPolicyDocument
-	if err = cur.All(ctx, &docs); err != nil {
-		return reviewdomain.ReviewPolicyContext{}, err
-	}
-	if len(docs) != 1 {
-		return reviewdomain.ReviewPolicyContext{}, reviewport.ErrReviewQueryStateInconsistent
-	}
-	d := docs[0]
 	policy, err := versionReviewPolicyFromDocument(d)
-	if err != nil || len(d.Definitions) == 0 || !policy.Usable() {
+	if err != nil {
 		return reviewdomain.ReviewPolicyContext{}, reviewport.ErrReviewQueryStateInconsistent
 	}
 	return reviewdomain.ReviewPolicyContext{Version: d.Version, RequiredCheckIDs: append([]string(nil), d.RequiredChecks...), RequiredCheckDefinitions: policy.RequiredChecks()}, nil

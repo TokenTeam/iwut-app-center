@@ -156,28 +156,19 @@ func (r *ApplicationProfileRevisionRepository) decideProfileReviewTransaction(ct
 	if in.Outcome == "APPROVE" && !equalProfilePublication(projection.CurrentPublishedProfileRevisionID, in.ExpectedPublishedID) {
 		return nil, pd.ErrApplicationProfilePublicationConflict
 	}
-	policies := r.database.Collection(profileReviewPoliciesCollectionName)
-	raw, err = policies.FindOne(ctx, bson.M{"version": in.PolicyVersion}).Raw()
+	if in.PolicyVersion != review.PolicyVersion() {
+		return nil, pd.ErrProfileReviewPolicyMismatch
+	}
+	raw, err = r.database.Collection(profileReviewPoliciesCollectionName).FindOne(ctx, bson.M{"version": review.PolicyVersion()}).Raw()
 	if errors.Is(err, dm.ErrNoDocuments) {
-		return nil, pd.ErrProfileReviewPolicyUnavailable
+		return nil, pd.ErrApplicationProfileReviewStateInconsistent
 	}
 	if err != nil {
 		return nil, err
 	}
-	policy, coord, err := profilePolicyFromRaw(raw)
+	policy, _, err := profilePolicyFromRaw(raw)
 	if err != nil {
 		return nil, err
-	}
-	if policy.Status != "ACTIVE" {
-		return nil, pd.ErrProfileReviewPolicyUnavailable
-	}
-	// A genuine write forces retirement and decisions to serialize on this policy.
-	fence, err = policies.UpdateOne(ctx, bson.M{"version": in.PolicyVersion, "status": "ACTIVE", "coordinationRevision": coord}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}})
-	if err != nil {
-		return nil, err
-	}
-	if fence.MatchedCount != 1 {
-		return nil, pd.ErrProfileReviewPolicyUnavailable
 	}
 	result, err := revision.DecideReview(review, in.ReviewerID, shared.AuthID(admin), in.Permissions, in.ExpectedRevision, in.Outcome, policy, in.ConfirmedCheckIDs, in.Reason, in.DecidedAt)
 	if err != nil {
@@ -302,27 +293,20 @@ func profileReviewDecisionCandidate(raw bson.Raw) (*pd.ApplicationProfileReview,
 		}
 		decision = &pd.ApplicationProfileReviewDecision{Outcome: pd.ProfileReviewStatus(dd.Outcome), PolicyVersion: dd.PolicyVersion, ConfirmedCheckIDs: dd.ConfirmedCheckIDs, Reason: dd.Reason, DecidedBy: shared.AuthID(dd.DecidedBy), DecidedAt: dd.DecidedAt}
 	}
-	return pd.RestoreProfileReviewDecisionCandidate(pd.ApplicationProfileReviewState{ProfileReviewID: pd.ApplicationProfileReviewID(doc.ProfileReviewID), ApplicationID: shared.ApplicationID(doc.ApplicationID), ProfileRevisionID: pd.ApplicationProfileRevisionID(doc.ProfileRevisionID), Attempt: doc.Attempt, SourceRevision: doc.SourceRevision, Status: pd.ProfileReviewStatus(doc.Status), DisplayName: doc.Snapshot.DisplayName, Description: doc.Snapshot.Description, Icon: doc.Snapshot.Icon, SubmittedBy: shared.AuthID(doc.SubmittedBy), SubmittedAt: doc.SubmittedAt, Decision: decision})
+	return pd.RestoreProfileReviewDecisionCandidate(pd.ApplicationProfileReviewState{PolicyVersion: doc.PolicyBinding.Version, ProfileReviewID: pd.ApplicationProfileReviewID(doc.ProfileReviewID), ApplicationID: shared.ApplicationID(doc.ApplicationID), ProfileRevisionID: pd.ApplicationProfileRevisionID(doc.ProfileRevisionID), Attempt: doc.Attempt, SourceRevision: doc.SourceRevision, Status: pd.ProfileReviewStatus(doc.Status), DisplayName: doc.Snapshot.DisplayName, Description: doc.Snapshot.Description, Icon: doc.Snapshot.Icon, SubmittedBy: shared.AuthID(doc.SubmittedBy), SubmittedAt: doc.SubmittedAt, Decision: decision})
 }
 func profilePolicyFromRaw(raw bson.Raw) (pd.ProfileReviewPolicy, int64, error) {
-	var d struct {
-		Version        string   `bson:"version"`
-		RequiredChecks []string `bson:"requiredChecks"`
-		Status         string   `bson:"status"`
-	}
-	coord, ok := raw.Lookup("coordinationRevision").Int64OK()
-	if !ok || coord < 0 || coord == math.MaxInt64 || bson.Unmarshal(raw, &d) != nil || !pd.ValidProfileReviewPolicyVersion(d.Version) || (d.Status != "ACTIVE" && d.Status != "RETIRED") || len(d.RequiredChecks) == 0 {
+	var d versionReviewPolicyDocument
+	if bson.Unmarshal(raw, &d) != nil || d.CoordinationRevision < 1 {
 		return pd.ProfileReviewPolicy{}, 0, pd.ErrApplicationProfileReviewStateInconsistent
 	}
-	checks := slices.Clone(d.RequiredChecks)
-	slices.Sort(checks)
-	if len(slices.Compact(slices.Clone(checks))) != len(checks) {
+	defs := make([]pd.ProfileReviewCheckDefinition, len(d.Definitions))
+	for i, v := range d.Definitions {
+		defs[i] = pd.ProfileReviewCheckDefinition{ID: v.ID, Title: v.Title, Description: v.Description}
+	}
+	p := pd.ProfileReviewPolicy{Version: d.Version, RequiredChecks: append([]string(nil), d.RequiredChecks...), Status: d.Status, Definitions: defs}
+	if !pd.ValidProfileReviewPolicy(p) {
 		return pd.ProfileReviewPolicy{}, 0, pd.ErrApplicationProfileReviewStateInconsistent
 	}
-	for _, id := range checks {
-		if !pd.ValidProfileReviewPolicyVersion(id) {
-			return pd.ProfileReviewPolicy{}, 0, pd.ErrApplicationProfileReviewStateInconsistent
-		}
-	}
-	return pd.ProfileReviewPolicy{Version: d.Version, RequiredChecks: checks, Status: d.Status}, coord, nil
+	return p, d.CoordinationRevision, nil
 }

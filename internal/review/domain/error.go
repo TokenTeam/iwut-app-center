@@ -40,7 +40,7 @@ const (
 	ErrorCodeApplicationReviewConflictOfInterest     ErrorCode = "ApplicationReviewConflictOfInterest"
 	ErrorCodeInvalidApplicationReviewOutcome         ErrorCode = "InvalidApplicationReviewOutcome"
 	ErrorCodeInvalidApplicationReviewPolicyVersion   ErrorCode = "InvalidApplicationReviewPolicyVersion"
-	ErrorCodeApplicationReviewPolicyChanged          ErrorCode = "ApplicationReviewPolicyChanged"
+	ErrorCodeApplicationReviewPolicyMismatch         ErrorCode = "ApplicationReviewPolicyMismatch"
 	ErrorCodeApplicationReviewChecksIncomplete       ErrorCode = "ApplicationReviewChecksIncomplete"
 	ErrorCodeInvalidApplicationReviewChecks          ErrorCode = "InvalidApplicationReviewChecks"
 	ErrorCodeInvalidApplicationReviewReason          ErrorCode = "InvalidApplicationReviewReason"
@@ -61,6 +61,10 @@ type Error struct {
 
 func newError(category ErrorCategory, code ErrorCode, message string, cause error) *Error {
 	return &Error{category: category, code: code, message: message, cause: cause}
+}
+
+func NewApplicationReviewStateInconsistentError(cause error) *Error {
+	return newError(ErrorCategoryInternal, ErrorCodeApplicationReviewStateInconsistent, "application review state is inconsistent", cause)
 }
 
 func NewInternalError(cause error) *Error {
@@ -116,7 +120,7 @@ var (
 	ErrApplicationReviewConflictOfInterest     = newError(ErrorCategoryAuthorization, ErrorCodeApplicationReviewConflictOfInterest, "reviewer has a conflict of interest", nil)
 	ErrInvalidApplicationReviewOutcome         = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewOutcome, "application review outcome is invalid", nil)
 	ErrInvalidApplicationReviewPolicyVersion   = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewPolicyVersion, "application review policy version is invalid", nil)
-	ErrApplicationReviewPolicyChanged          = newError(ErrorCategoryConflict, ErrorCodeApplicationReviewPolicyChanged, "application review policy is no longer usable", nil)
+	ErrApplicationReviewPolicyMismatch         = newError(ErrorCategoryConflict, ErrorCodeApplicationReviewPolicyMismatch, "application review policy does not match attempt binding", nil)
 	ErrApplicationReviewChecksIncomplete       = newError(ErrorCategoryValidation, ErrorCodeApplicationReviewChecksIncomplete, "application review confirmation is incomplete", nil)
 	ErrInvalidApplicationReviewChecks          = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewChecks, "application review confirmation is invalid", nil)
 	ErrInvalidApplicationReviewReason          = newError(ErrorCategoryValidation, ErrorCodeInvalidApplicationReviewReason, "application review reason is invalid", nil)

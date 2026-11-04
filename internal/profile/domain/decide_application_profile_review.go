@@ -48,10 +48,13 @@ type ApplicationProfileDecisionResult struct {
 	Review                            *ApplicationProfileReview
 	CurrentPublishedProfileRevisionID *ApplicationProfileRevisionID
 }
+type ProfileReviewCheckDefinition struct{ ID, Title, Description string }
+
 type ProfileReviewPolicy struct {
 	Version        string
 	RequiredChecks []string
 	Status         string
+	Definitions    []ProfileReviewCheckDefinition
 }
 
 func ValidProfileReviewPolicyVersion(s string) bool {
@@ -100,12 +103,13 @@ type ApplicationProfileReviewState struct {
 	SubmittedBy       shared.AuthID
 	SubmittedAt       time.Time
 	Decision          *ApplicationProfileReviewDecision
+	PolicyVersion     string
 }
 
 // Decision candidates validate metadata without repairing or validating content.
 // The APPROVE transition alone rechecks content; rejected history stays verbatim.
 func RestoreProfileReviewDecisionCandidate(s ApplicationProfileReviewState) (*ApplicationProfileReview, error) {
-	if !s.ProfileReviewID.IsValid() || !s.ApplicationID.IsValid() || !s.ProfileRevisionID.IsValid() || s.Attempt < 1 || s.SourceRevision < 1 || !s.SubmittedBy.IsValid() || s.SubmittedAt.IsZero() {
+	if !s.ProfileReviewID.IsValid() || !s.ApplicationID.IsValid() || !s.ProfileRevisionID.IsValid() || s.Attempt < 1 || s.SourceRevision < 1 || !s.SubmittedBy.IsValid() || s.SubmittedAt.IsZero() || !ValidProfileReviewPolicyVersion(s.PolicyVersion) {
 		return nil, ErrApplicationProfileReviewStateInconsistent
 	}
 	switch s.Status {
@@ -115,7 +119,7 @@ func RestoreProfileReviewDecisionCandidate(s ApplicationProfileReviewState) (*Ap
 		}
 	case ProfileReviewStatusApproved, ProfileReviewStatusRejected:
 		d := s.Decision
-		if d == nil || d.Outcome != s.Status || !ValidProfileReviewPolicyVersion(d.PolicyVersion) || !d.DecidedBy.IsValid() || d.DecidedAt.IsZero() || ValidateProfileReviewReason(d.Reason, s.Status == ProfileReviewStatusRejected) != nil {
+		if d == nil || d.Outcome != s.Status || !ValidProfileReviewPolicyVersion(d.PolicyVersion) || d.PolicyVersion != s.PolicyVersion || !d.DecidedBy.IsValid() || d.DecidedAt.IsZero() || ValidateProfileReviewReason(d.Reason, s.Status == ProfileReviewStatusRejected) != nil {
 			return nil, ErrApplicationProfileReviewStateInconsistent
 		}
 		if s.Status == ProfileReviewStatusApproved {
@@ -145,7 +149,7 @@ func RestoreProfileReviewDecisionCandidate(s ApplicationProfileReviewState) (*Ap
 	if s.Icon != nil {
 		icon = &ApplicationIcon{*s.Icon}
 	}
-	r := &ApplicationProfileReview{s.ProfileReviewID, s.ApplicationID, s.ProfileRevisionID, s.Attempt, s.SourceRevision, ApplicationProfileReviewSnapshot{ApplicationDisplayName{s.DisplayName}, desc, icon}, s.SubmittedBy, s.SubmittedAt.UTC(), s.Status, s.Decision}
+	r := &ApplicationProfileReview{s.ProfileReviewID, s.ApplicationID, s.ProfileRevisionID, s.Attempt, s.SourceRevision, ApplicationProfileReviewSnapshot{ApplicationDisplayName{s.DisplayName}, desc, icon}, s.SubmittedBy, s.SubmittedAt.UTC(), s.Status, s.Decision, s.PolicyVersion}
 	r.decision = r.Decision()
 	return r, nil
 }
@@ -175,8 +179,11 @@ func (r *ApplicationProfileRevision) DecideReview(review *ApplicationProfileRevi
 	if review.applicationID != r.ApplicationID() || review.profileRevisionID != r.ProfileRevisionID() || review.sourceRevision == math.MaxInt64 || r.revision != review.sourceRevision+1 || r.DisplayName() != sn.DisplayName() || !equalDescription(r.Description(), sn.Description()) || !equalIcon(r.Icon(), sn.Icon()) {
 		return nil, ErrApplicationProfileReviewStateInconsistent
 	}
-	if policy.Status != "ACTIVE" || !ValidProfileReviewPolicyVersion(policy.Version) {
-		return nil, ErrProfileReviewPolicyUnavailable
+	if policy.Version != review.PolicyVersion() {
+		return nil, ErrProfileReviewPolicyMismatch
+	}
+	if !ValidProfileReviewPolicy(policy) {
+		return nil, ErrApplicationProfileReviewStateInconsistent
 	}
 	if outcome != "APPROVE" && outcome != "REJECT" {
 		return nil, ErrInvalidApplicationProfileReviewDecision
@@ -223,4 +230,29 @@ func (r *ApplicationProfileRevision) DecideReview(review *ApplicationProfileRevi
 	updated.status = status
 	updated.decision = &ApplicationProfileReviewDecision{status, policy.Version, sorted, cloneString(reason), reviewer, at.UTC()}
 	return &ApplicationProfileDecisionResult{ProfileRevision: &revision, Review: &updated}, nil
+}
+
+func ValidProfileReviewPolicy(p ProfileReviewPolicy) bool {
+	if !ValidProfileReviewPolicyVersion(p.Version) || (p.Status != "ACTIVE" && p.Status != "RETIRED") || len(p.RequiredChecks) == 0 || len(p.RequiredChecks) != len(p.Definitions) {
+		return false
+	}
+	seen := map[string]bool{}
+	for i, id := range p.RequiredChecks {
+		if !ValidProfileReviewPolicyVersion(id) || seen[id] || p.Definitions[i].ID != id || !validProfileDefinitionText(p.Definitions[i].Title, 80) || !validProfileDefinitionText(p.Definitions[i].Description, 2000) {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
+}
+func validProfileDefinitionText(s string, max int) bool {
+	if !utf8.ValidString(s) || strings.TrimSpace(s) != s || utf8.RuneCountInString(s) < 1 || utf8.RuneCountInString(s) > max {
+		return false
+	}
+	for _, c := range s {
+		if unicode.IsControl(c) {
+			return false
+		}
+	}
+	return true
 }

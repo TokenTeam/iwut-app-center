@@ -58,7 +58,7 @@ func TestProfileReview_BR_PRF_015_021_StrictCommandBinding(t *testing.T) {
 	name, _ := profiledomain.NewApplicationDisplayName("name")
 	d, _ := profiledomain.NewDraftApplicationProfileRevision(testProfileRevisionID, testApplicationID, name, nil, nil, "creator", time.Unix(10, 0))
 	v, _ := d.AssignSequence(1)
-	result, _ := v.SubmitDraft(1, profiledomain.ApplicationProfileReviewID(testApplicationReviewID), 1, "auth-123", time.Unix(20, 0))
+	result, _ := v.SubmitDraft(1, profiledomain.ApplicationProfileReviewID(testApplicationReviewID), 1, "auth-123", time.Unix(20, 0), "app-profile-review-v1")
 	h := &fakeSubmitProfileHandler{result: result}
 	w := submitProfileHTTP(submitProfileServers(t, h), token, "", `{"expectedRevision":"1"}`)
 	if w.Code != 201 || w.Header().Get("ETag") != `"2"` || h.calls != 1 || h.command.ApplicationID != testApplicationID || h.command.ProfileRevisionID != testProfileRevisionID || h.command.ExpectedRevision != 1 || h.identity.AuthID != "auth-123" || !strings.Contains(w.Body.String(), `"decision":null`) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 
 	reviewdomain "iwut-app-center/internal/review/domain"
 	reviewport "iwut-app-center/internal/review/port"
@@ -54,7 +53,7 @@ func (repository *ApplicationReviewDecisionRepository) LoadDecisionCandidate(
 	}
 	review, err := applicationReviewFromDocument(reviewDocument)
 	if err != nil {
-		return nil, fmt.Errorf("load application review decision candidate: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	if review.Status() != reviewdomain.ReviewStatusPending || review.HasDecision() {
 		return nil, reviewport.ErrApplicationReviewAlreadyDecided
@@ -105,8 +104,8 @@ func (repository *ApplicationReviewDecisionRepository) Decide(
 	}, transactionOptions)
 	if err != nil {
 		switch {
-		case errors.Is(err, reviewport.ErrReviewPolicyChanged):
-			return nil, reviewport.ErrReviewPolicyChanged
+		case errors.Is(err, reviewport.ErrReviewPolicyMismatch):
+			return nil, reviewport.ErrReviewPolicyMismatch
 		case errors.Is(err, reviewport.ErrApplicationReviewNotFound):
 			return nil, reviewport.ErrApplicationReviewNotFound
 		case errors.Is(err, reviewport.ErrApplicationReviewAlreadyDecided):
@@ -153,7 +152,7 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 	}
 	currentReview, err := applicationReviewFromDocument(reviewDocument)
 	if err != nil {
-		return nil, fmt.Errorf("decide application review: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	if currentReview.Status() != reviewdomain.ReviewStatusPending || currentReview.HasDecision() {
 		return nil, reviewport.ErrApplicationReviewAlreadyDecided
@@ -178,7 +177,7 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 	}
 	currentVersionRevision, versionCreatedBy, currentVersionSnapshot, err := applicationVersionDocumentToDecisionVersion(versionDocument, oauthDocument)
 	if err != nil {
-		return nil, fmt.Errorf("decide application review: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	if !currentVersionSnapshot.Equal(currentReview.Snapshot()) {
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
@@ -195,30 +194,31 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 		return nil, reviewport.ErrApplicationReviewConflictOfInterest
 	}
 
-	// Serialize policy retirement against the final decision with a genuine
-	// adapter-only write; policy content itself remains immutable.
-	policies := repository.database.Collection(versionReviewPoliciesCollectionName)
-	var policy versionReviewPolicyDocument
-	err = policies.FindOne(ctx, bson.M{"version": decision.ReviewPolicyVersion().String(), "status": "ACTIVE"}).Decode(&policy)
-	if errors.Is(err, drivermongo.ErrNoDocuments) {
-		return nil, reviewport.ErrReviewPolicyChanged
+	if currentReview.PolicyVersion() != reviewReference.PolicyVersion() {
+		return nil, reviewport.ErrApplicationReviewDataInconsistent
 	}
-	if err != nil {
+	if decision.ReviewPolicyVersion() != currentReview.PolicyVersion() {
+		return nil, reviewport.ErrReviewPolicyMismatch
+	}
+	var policyDoc versionReviewPolicyDocument
+	if err = repository.database.Collection(versionReviewPoliciesCollectionName).FindOne(ctx, bson.M{"version": currentReview.PolicyVersion().String()}).Decode(&policyDoc); err != nil {
+		if errors.Is(err, drivermongo.ErrNoDocuments) {
+			return nil, reviewport.ErrApplicationReviewDataInconsistent
+		}
 		return nil, err
 	}
-	if policy.CoordinationRevision < 1 || policy.CoordinationRevision == math.MaxInt64 {
-		return nil, reviewport.ErrApplicationReviewStateInconsistent
-	}
-	fence, err := policies.UpdateOne(ctx, bson.M{"version": policy.Version, "status": "ACTIVE", "coordinationRevision": policy.CoordinationRevision}, bson.M{"$inc": bson.M{"coordinationRevision": int64(1)}})
+	policy, err := versionReviewPolicyFromDocument(policyDoc)
 	if err != nil {
-		return nil, err
+		return nil, reviewport.ErrApplicationReviewDataInconsistent
 	}
-	if fence.MatchedCount != 1 {
-		return nil, reviewport.ErrReviewPolicyChanged
+	if decision.Outcome() == reviewdomain.ReviewDecisionApproved {
+		if _, err = policy.ValidateConfirmation(decision.ConfirmedCheckIDs()); err != nil {
+			return nil, err
+		}
 	}
 	decisionDocument, err := applicationReviewDecisionToDocument(decision)
 	if err != nil {
-		return nil, fmt.Errorf("decide application review: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	var updatedReviewDocument applicationReviewDocument
 	err = repository.database.Collection(applicationReviewsCollectionName).FindOneAndUpdate(
@@ -271,7 +271,7 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 
 	decidedReview, err := applicationReviewFromDocument(updatedReviewDocument)
 	if err != nil {
-		return nil, fmt.Errorf("decide application review: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	persistedDecision := decidedReview.Decision()
 	if persistedDecision == nil || updatedVersionDocument.ReviewStatus != persistedDecision.Outcome().String() ||
@@ -286,11 +286,11 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 	// precision.
 	versionResult, err := reviewdomain.NewDecidedApplicationVersion(candidate, persistedDecision)
 	if err != nil {
-		return nil, fmt.Errorf("decide application review: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	result, err := reviewdomain.NewApplicationReviewDecisionResult(decidedReview, versionResult)
 	if err != nil {
-		return nil, fmt.Errorf("decide application review: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	return result, nil
 }
@@ -424,7 +424,7 @@ func decisionCandidateFromDocuments(
 	}
 	revision, createdBy, snapshot, err := applicationVersionDocumentToDecisionVersion(versionDocument, oauthDocument)
 	if err != nil {
-		return nil, fmt.Errorf("load application review decision candidate: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	if revision != review.SourceVersionRevision()+1 || !snapshot.Equal(review.Snapshot()) {
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
@@ -438,7 +438,7 @@ func decisionCandidateFromDocuments(
 		adminID,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("load application review decision candidate: %w", err)
+		return nil, fmt.Errorf("%w: %v", reviewport.ErrApplicationReviewDataInconsistent, err)
 	}
 	return candidate, nil
 }

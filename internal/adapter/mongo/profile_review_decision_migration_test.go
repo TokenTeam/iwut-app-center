@@ -51,7 +51,7 @@ func TestProfileReviewDecisionMigrationIntegration(t *testing.T) {
 	if e = policies.FindOne(t.Context(), bson.M{"version": in.PolicyVersion}).Decode(&policy); e != nil || policy["status"] != "RETIRED" {
 		t.Fatal("retired policy reset", e)
 	}
-	if _, e = policies.UpdateOne(t.Context(), bson.M{"version": in.PolicyVersion}, bson.M{"$set": bson.M{"requiredChecks": []string{"different"}}}); e != nil {
+	if _, e = policies.UpdateOne(t.Context(), bson.M{"version": in.PolicyVersion}, bson.M{"$set": bson.M{"requiredChecks": []string{"different"}, "definitions": []versionReviewCheckDocument{{ID: "different", Title: "Different", Description: "Changed fixture definition."}}}}); e != nil {
 		t.Fatal(e)
 	}
 	if e = NewMigrator(db).applyApplicationProfileReviewDecisionMigration(t.Context()); e == nil {

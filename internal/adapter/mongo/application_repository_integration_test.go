@@ -378,34 +378,14 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 		"_id_", applicationVersionOAuthConfigVersionUniqueIndex,
 	})
 	var policy versionReviewPolicyDocument
-	if err := database.Collection(versionReviewPoliciesCollectionName).FindOne(
-		t.Context(), bson.D{{Key: "version", Value: "app-version-review-v1"}},
-	).Decode(&policy); err != nil {
-		t.Fatalf("read seeded version review policy: %v", err)
+	if err := database.Collection(versionReviewPoliciesCollectionName).FindOne(t.Context(), bson.M{"version": "app-version-review-v3"}).Decode(&policy); err != nil {
+		t.Fatal(err)
 	}
-	if !equalVersionReviewPolicyDocuments(policy, versionReviewPolicyDocument{
-		Version: "app-version-review-v1",
-		RequiredChecks: []string{
-			"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed",
-		},
-		Status: "RETIRED",
-	}) {
-		t.Fatalf("seeded version review policy = %#v", policy)
+	if !equalVersionReviewPolicyDocuments(policy, formalVersionReviewPolicy()) {
+		t.Fatal("fresh complete policy differs")
 	}
-	if err := database.Collection(versionReviewPoliciesCollectionName).FindOne(
-		t.Context(), bson.D{{Key: "version", Value: "app-version-review-v2"}},
-	).Decode(&policy); err != nil {
-		t.Fatalf("read seeded version review policy v2: %v", err)
-	}
-	if !equalVersionReviewPolicyDocuments(policy, versionReviewPolicyDocument{
-		Version: "app-version-review-v2",
-		RequiredChecks: []string{
-			"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed", "oauth-redirects-reviewed",
-		},
-		Status: "RETIRED",
-	}) {
-		t.Fatalf("seeded version review policy v2 = %#v", policy)
-	}
+	assertCollectionCount(t, database, versionReviewPoliciesCollectionName, 1)
+
 }
 
 func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {

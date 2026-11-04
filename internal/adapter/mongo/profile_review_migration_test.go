@@ -15,7 +15,7 @@ func TestProfileReviewMigrationIntegration(t *testing.T) {
 	client := integrationClient(t)
 	db := migratedIntegrationDatabase(t, client)
 	_, draft := submitProfileFixture(t, db)
-	submission, err := draft.SubmitDraft(1, profileReviewID(t), 1, draft.CreatedBy(), time.Now())
+	submission, err := draft.SubmitDraft(1, profileReviewID(t), 1, draft.CreatedBy(), time.Now(), "app-profile-review-v1")
 	if err != nil {
 		t.Fatal(err)
 	}

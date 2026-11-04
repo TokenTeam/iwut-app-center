@@ -34,8 +34,9 @@ type ProfileRevisionReviewContext struct {
 	CreatedBy         string
 }
 type ProfileReviewPolicyContext struct {
-	Version          string
-	RequiredCheckIDs []string
+	Version                  string
+	RequiredCheckIDs         []string
+	RequiredCheckDefinitions []ProfileReviewCheckDefinition
 }
 
 // CurrentPublishedProfileForReview distinguishes an observed NONE from a
@@ -53,7 +54,7 @@ type ProfileReviewDetail struct {
 	Application             ProfileReviewApplicationContext
 	ProfileRevision         ProfileRevisionReviewContext
 	Review                  *ApplicationProfileReview
-	CurrentPolicy           ProfileReviewPolicyContext
+	ReviewPolicy            ProfileReviewPolicyContext
 	DecisionEligibility     ProfileDecisionEligibility
 	AsOf                    time.Time
 	CurrentPublishedProfile *CurrentPublishedProfileForReview

@@ -103,7 +103,11 @@ func (r *ApplicationProfileRevisionRepository) submitProfileDraftTransaction(ctx
 	} else if !errors.Is(err, drivermongo.ErrNoDocuments) {
 		return nil, err
 	}
-	submission, err := current.SubmitDraft(expected, reviewID, attempt, admin, at)
+	policy, err := selectProfileReviewPolicyForSubmission(ctx, r.database)
+	if err != nil {
+		return nil, err
+	}
+	submission, err := current.SubmitDraft(expected, reviewID, attempt, admin, at, policy.Version)
 	if err != nil {
 		if errors.Is(err, pd.ErrInvalidApplicationProfileContent) {
 			return nil, pp.ErrInvalidApplicationProfileContent
@@ -151,6 +155,7 @@ type applicationProfileReviewSnapshotDocument struct {
 	Icon        *string `bson:"icon"`
 }
 type applicationProfileReviewDocument struct {
+	PolicyBinding     reviewPolicyBindingDocument              `bson:"policyBinding"`
 	ProfileReviewID   string                                   `bson:"profileReviewId"`
 	ApplicationID     string                                   `bson:"applicationId"`
 	ProfileRevisionID string                                   `bson:"profileRevisionId"`
@@ -165,7 +170,7 @@ type applicationProfileReviewDocument struct {
 
 func profileReviewToDocument(review *pd.ApplicationProfileReview) applicationProfileReviewDocument {
 	snapshot := review.Snapshot()
-	doc := applicationProfileReviewDocument{ProfileReviewID: review.ProfileReviewID().String(), ApplicationID: review.ApplicationID().String(), ProfileRevisionID: review.ProfileRevisionID().String(), Attempt: review.Attempt(), SourceRevision: review.SourceRevision(), Status: string(review.Status()), SubmittedBy: review.SubmittedBy().String(), SubmittedAt: review.SubmittedAt().UTC().Truncate(time.Millisecond), Snapshot: applicationProfileReviewSnapshotDocument{DisplayName: snapshot.DisplayName().String()}}
+	doc := applicationProfileReviewDocument{PolicyBinding: reviewPolicyBindingDocument{Version: review.PolicyVersion()}, ProfileReviewID: review.ProfileReviewID().String(), ApplicationID: review.ApplicationID().String(), ProfileRevisionID: review.ProfileRevisionID().String(), Attempt: review.Attempt(), SourceRevision: review.SourceRevision(), Status: string(review.Status()), SubmittedBy: review.SubmittedBy().String(), SubmittedAt: review.SubmittedAt().UTC().Truncate(time.Millisecond), Snapshot: applicationProfileReviewSnapshotDocument{DisplayName: snapshot.DisplayName().String()}}
 	if d := snapshot.Description(); d != nil {
 		value := d.String()
 		doc.Snapshot.Description = &value

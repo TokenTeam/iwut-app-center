@@ -55,7 +55,7 @@ func (fake *fakeRepository) Submit(_ context.Context, candidate *domain.Submissi
 		return nil, fake.submitErr
 	}
 	attempt, _ := domain.NewReviewAttempt(1)
-	review, _ := domain.NewPendingApplicationReview(candidate, id, attempt, catalogRevision, policyVersion, adminID, submittedAt)
+	review, _ := domain.NewPendingApplicationReview(candidate, id, attempt, catalogRevision, policyVersion, adminID, submittedAt, domain.ReviewPolicyVersion("review.v1"))
 	version, _ := domain.NewSubmittedApplicationVersion(candidate, adminID, submittedAt)
 	return domain.NewReviewSubmissionResult(review, version)
 }

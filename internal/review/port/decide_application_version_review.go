@@ -9,6 +9,8 @@ import (
 )
 
 var (
+	// ErrApplicationReviewDataInconsistent reports malformed binding, policy or persisted Review data.
+	ErrApplicationReviewDataInconsistent = errors.New("application review data inconsistent")
 	// ErrApplicationReviewNotFound hides a missing Review and every mismatched
 	// path relationship.
 	ErrApplicationReviewNotFound = errors.New("application review not found")
@@ -21,9 +23,9 @@ var (
 	// ErrApplicationReviewConflictOfInterest reports a reviewer that is the
 	// current administrator, the Version creator or the Review submitter.
 	ErrApplicationReviewConflictOfInterest = errors.New("application review conflict of interest")
-	// ErrReviewPolicyChanged reports an unknown, retired or otherwise unusable
-	// ReviewPolicyVersion.
-	ErrReviewPolicyChanged = errors.New("review policy changed")
+	// ErrReviewPolicyMismatch reports a requested version different from the
+	// immutable attempt binding. Retirement never causes this conflict.
+	ErrReviewPolicyMismatch = errors.New("review policy does not match attempt binding")
 	// ErrDeveloperStatusUnavailable reports that suspension facts could not be
 	// read. It never means "not suspended".
 	ErrDeveloperStatusUnavailable = errors.New("developer status unavailable")
@@ -33,7 +35,7 @@ var (
 // ReviewPolicyProvider is owned by the consuming Review capability. App Center
 // implements it with its immutable local policy repository.
 type ReviewPolicyProvider interface {
-	RequireUsable(
+	LoadBoundDefinition(
 		ctx context.Context,
 		expectedVersion domain.ReviewPolicyVersion,
 		snapshot domain.ApplicationVersionReviewSnapshot,

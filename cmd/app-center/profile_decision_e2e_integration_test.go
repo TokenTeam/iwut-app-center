@@ -102,6 +102,14 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if detail.GetReviewPolicy().GetVersion() != "app-profile-review-v1" || len(detail.GetReviewPolicy().GetRequiredCheckDefinitions()) != 2 {
+		t.Fatal("missing bound formal Profile policy")
+	}
+	for i, d := range detail.GetReviewPolicy().GetRequiredCheckDefinitions() {
+		if d.GetId() != detail.GetReviewPolicy().GetRequiredCheckIds()[i] || d.GetTitle() == "" || d.GetDescription() == "" {
+			t.Fatal("incomplete Profile definitions")
+		}
+	}
 	if _, ok := detail.GetCurrentPublishedProfile().GetState().(*queryv1.CurrentPublishedProfileForReview_None); !ok {
 		t.Fatal("first publication missing explicit NONE")
 	}
@@ -128,7 +136,7 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 		}
 		if want == 200 {
 			var decoded queryv1.ApplicationProfileReviewDetail
-			if e = protojson.Unmarshal(body, &decoded); e != nil || !proto.Equal(decoded.CurrentPublishedProfile, expected) {
+			if e = protojson.Unmarshal(body, &decoded); e != nil || !proto.Equal(decoded.CurrentPublishedProfile, expected) || !proto.Equal(decoded.ReviewPolicy, detail.ReviewPolicy) || strings.Contains(string(body), `"currentPolicy"`) || !strings.Contains(string(body), `"reviewPolicy"`) {
 				t.Fatalf("profile projection protocol mismatch %s %v", body, e)
 			}
 		}
@@ -176,7 +184,7 @@ func TestE2E_UCAPP016_BR_PRF_023_032_ProfileDecision(t *testing.T) {
 		{reviewerToken, "", strings.Replace(commandJSON, `"expectedProfileRevisionRevision":"2"`, `"expectedProfileRevisionRevision":"1"`, 1), transport.ReasonApplicationProfileRevisionConflict, 409},
 		{reviewerToken, "", strings.Replace(commandJSON, `"expectedCurrentPublishedProfileRevisionId":null,`, "", 1), transport.ReasonInvalidApplicationProfileReviewDecision, 400},
 		{reviewerToken, "", strings.Replace(commandJSON, `"expectedCurrentPublishedProfileRevisionId":null`, `"expectedCurrentPublishedProfileRevisionId":"01995000-0000-7000-8000-000000000999"`, 1), transport.ReasonApplicationProfilePublicationConflict, 409},
-		{reviewerToken, "", strings.Replace(commandJSON, `"app-profile-review-v1"`, `"unknown"`, 1), transport.ReasonProfileReviewPolicyUnavailable, 409},
+		{reviewerToken, "", strings.Replace(commandJSON, `"app-profile-review-v1"`, `"unknown"`, 1), transport.ReasonProfileReviewPolicyMismatch, 409},
 		{reviewerToken, "", strings.Replace(commandJSON, `["icon-content-reviewed","content-policy-reviewed"]`, `["content-policy-reviewed"]`, 1), transport.ReasonProfileReviewChecksIncomplete, 400},
 	} {
 		code, _, body := decideHTTP(tc.token, tc.query, tc.payload)

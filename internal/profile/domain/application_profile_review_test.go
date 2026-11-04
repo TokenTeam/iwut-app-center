@@ -15,7 +15,7 @@ func TestBRPRF018020SubmissionSnapshotAndAudit(t *testing.T) {
 	r.draft.description = &ApplicationDescription{"description"}
 	r.draft.icon = &ApplicationIcon{"opaque"}
 	at := time.Unix(200, 0).In(time.FixedZone("offset", 3600))
-	got, err := r.SubmitDraft(1, reviewTestID, 1, "new-admin", at)
+	got, err := r.SubmitDraft(1, reviewTestID, 1, "new-admin", at, "app-profile-review-v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestBRPRF018020SubmissionSnapshotAndAudit(t *testing.T) {
 	if review.Snapshot().Description().String() != "description" || review.Snapshot().Icon().String() != "opaque" || v.Description().String() != "description" || v.Icon().String() != "opaque" {
 		t.Fatal("snapshot aliases mutable pointers")
 	}
-	if _, err = v.SubmitDraft(2, reviewTestID, 2, "new-admin", at); !errors.Is(err, ErrApplicationProfileRevisionNotDraft) {
+	if _, err = v.SubmitDraft(2, reviewTestID, 2, "new-admin", at, "app-profile-review-v1"); !errors.Is(err, ErrApplicationProfileRevisionNotDraft) {
 		t.Fatal("duplicate", err)
 	}
 }
@@ -64,7 +64,7 @@ func TestBRPRF016017019021SubmissionGuards(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := replacementFixture(t)
 			tc.mutate(r)
-			_, err := r.SubmitDraft(tc.expected, reviewTestID, tc.attempt, "admin", time.Unix(200, 0))
+			_, err := r.SubmitDraft(tc.expected, reviewTestID, tc.attempt, "admin", time.Unix(200, 0), "app-profile-review-v1")
 			if !errors.Is(err, tc.want) {
 				t.Fatal(err)
 			}
@@ -76,7 +76,7 @@ func TestBRPRF016017019021SubmissionGuards(t *testing.T) {
 		at time.Time
 	}{{"bad", "admin", time.Unix(200, 0)}, {reviewTestID, "", time.Unix(200, 0)}, {reviewTestID, "admin", time.Time{}}} {
 		r := replacementFixture(t)
-		_, err := r.SubmitDraft(1, tc.id, 1, shared.AuthID(tc.by), tc.at)
+		_, err := r.SubmitDraft(1, tc.id, 1, shared.AuthID(tc.by), tc.at, "app-profile-review-v1")
 		if !errors.Is(err, ErrInternal) {
 			t.Fatal(err)
 		}

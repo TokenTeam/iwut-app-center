@@ -141,6 +141,8 @@ func (handler *SubmitApplicationVersionReviewHandler) Handle(
 
 func mapRepositoryError(err error) error {
 	switch {
+	case errors.Is(err, port.ErrApplicationReviewDataInconsistent):
+		return domain.NewApplicationReviewStateInconsistentError(err)
 	case errors.Is(err, port.ErrApplicationVersionNotFound):
 		return domain.ErrApplicationVersionNotFound
 	case errors.Is(err, port.ErrApplicationAdminRequired):

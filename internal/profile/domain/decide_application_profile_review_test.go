@@ -11,7 +11,7 @@ import (
 
 func decisionFixture(t *testing.T) (*ApplicationProfileRevision, *ApplicationProfileReview) {
 	t.Helper()
-	s, e := replacementFixture(t).SubmitDraft(1, reviewTestID, 1, "submitter", time.Unix(200, 0))
+	s, e := replacementFixture(t).SubmitDraft(1, reviewTestID, 1, "submitter", time.Unix(200, 0), "app-profile-review-v1")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -26,7 +26,7 @@ func TestBRPRF023032ProfileReviewDecision(t *testing.T) {
 			if outcome == "REJECT" {
 				checks = nil
 			}
-			got, e := r.DecideReview(v, "reviewer", "admin", []string{ProfileReviewPermission}, 2, outcome, ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE"}, checks, &reason, time.Unix(300, 0))
+			got, e := r.DecideReview(v, "reviewer", "admin", []string{ProfileReviewPermission}, 2, outcome, ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE", []ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit test definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit test definition."}}}, checks, &reason, time.Unix(300, 0))
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -67,9 +67,9 @@ func TestBRPRF023032ProfileReviewDecision(t *testing.T) {
 		{"source", func(_ *ApplicationProfileRevision, v *ApplicationProfileReview, _ *ProfileReviewPolicy, _ *shared.AuthID, _ *[]string, _ *[]string, _ *string) {
 			v.sourceRevision = 2
 		}, ErrApplicationProfileReviewStateInconsistent},
-		{"retired", func(_ *ApplicationProfileRevision, _ *ApplicationProfileReview, p *ProfileReviewPolicy, _ *shared.AuthID, _ *[]string, _ *[]string, _ *string) {
-			p.Status = "RETIRED"
-		}, ErrProfileReviewPolicyUnavailable},
+		{"different bound version", func(_ *ApplicationProfileRevision, _ *ApplicationProfileReview, p *ProfileReviewPolicy, _ *shared.AuthID, _ *[]string, _ *[]string, _ *string) {
+			p.Version = "fixture-other-policy"
+		}, ErrProfileReviewPolicyMismatch},
 		{"missing check", func(_ *ApplicationProfileRevision, _ *ApplicationProfileReview, _ *ProfileReviewPolicy, _ *shared.AuthID, _ *[]string, c *[]string, _ *string) {
 			*c = (*c)[:1]
 		}, ErrProfileReviewChecksIncomplete},
@@ -89,7 +89,7 @@ func TestBRPRF023032ProfileReviewDecision(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, v := decisionFixture(t)
-			p := ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE"}
+			p := ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE", []ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit test definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit test definition."}}}
 			actor := shared.AuthID("reviewer")
 			permissions := []string{ProfileReviewPermission}
 			checks := InitialProfileReviewChecks()
@@ -105,13 +105,13 @@ func TestBRPRF023032ProfileReviewDecision(t *testing.T) {
 	r.draft.displayName.value = " bad \x00"
 	v.snapshot.displayName.value = r.DisplayName().String()
 	reason := "Reject"
-	got, e := r.DecideReview(v, "reviewer", "admin", []string{ProfileReviewPermission}, 2, "REJECT", ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE"}, nil, &reason, time.Now())
+	got, e := r.DecideReview(v, "reviewer", "admin", []string{ProfileReviewPermission}, 2, "REJECT", ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE", []ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit test definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit test definition."}}}, nil, &reason, time.Now())
 	if e != nil || got.ProfileRevision.DisplayName() != r.DisplayName() {
 		t.Fatal("rejection must preserve invalid content", e)
 	}
 	r.revision = math.MaxInt64
 	v.sourceRevision = math.MaxInt64 - 1
-	if _, e = r.DecideReview(v, "reviewer", "admin", []string{ProfileReviewPermission}, math.MaxInt64, "REJECT", ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE"}, nil, &reason, time.Now()); !errors.Is(e, ErrApplicationProfileReviewStateInconsistent) {
+	if _, e = r.DecideReview(v, "reviewer", "admin", []string{ProfileReviewPermission}, math.MaxInt64, "REJECT", ProfileReviewPolicy{InitialProfileReviewPolicyVersion, InitialProfileReviewChecks(), "ACTIVE", []ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit test definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit test definition."}}}, nil, &reason, time.Now()); !errors.Is(e, ErrApplicationProfileReviewStateInconsistent) {
 		t.Fatal("overflow", e)
 	}
 }
@@ -125,5 +125,23 @@ func TestBRPRF027ReasonUnicode(t *testing.T) {
 		if e := ValidateProfileReviewReason(&s, true); e != nil {
 			t.Fatalf("rejected valid reason %v", e)
 		}
+	}
+}
+
+func TestBRPRF028_RetiredBoundPolicyCanBeDecided(t *testing.T) {
+	for _, outcome := range []string{"APPROVE", "REJECT"} {
+		t.Run(outcome, func(t *testing.T) {
+			revision, review := decisionFixture(t)
+			policy := ProfileReviewPolicy{Version: InitialProfileReviewPolicyVersion, RequiredChecks: InitialProfileReviewChecks(), Status: "RETIRED", Definitions: []ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit fixture definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit fixture definition."}}}
+			checks := InitialProfileReviewChecks()
+			if outcome == "REJECT" {
+				checks = nil
+			}
+			reason := "Fixture reason"
+			result, err := revision.DecideReview(review, "reviewer", "admin", []string{ProfileReviewPermission}, 2, outcome, policy, checks, &reason, time.Unix(400, 0))
+			if err != nil || result == nil || result.Review.Decision().PolicyVersion != InitialProfileReviewPolicyVersion {
+				t.Fatalf("retired bound decision: present=%t error=%v", result != nil, err)
+			}
+		})
 	}
 }

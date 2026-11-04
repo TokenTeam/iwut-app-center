@@ -98,7 +98,7 @@ func TestApplicationReviewService_UCAPP005_ErrorMappings(t *testing.T) {
 		{name: "permission", err: reviewdomain.ErrApplicationReviewPermissionRequired, code: codes.PermissionDenied, reason: ReasonApplicationReviewPermissionRequired},
 		{name: "conflict", err: reviewdomain.ErrApplicationReviewConflictOfInterest, code: codes.PermissionDenied, reason: ReasonApplicationReviewConflictOfInterest},
 		{name: "already decided", err: reviewdomain.ErrApplicationReviewAlreadyDecided, code: codes.Aborted, reason: ReasonApplicationReviewAlreadyDecided},
-		{name: "policy changed", err: reviewdomain.ErrApplicationReviewPolicyChanged, code: codes.Aborted, reason: ReasonApplicationReviewPolicyChanged},
+		{name: "policy changed", err: reviewdomain.ErrApplicationReviewPolicyMismatch, code: codes.Aborted, reason: ReasonApplicationReviewPolicyMismatch},
 		{name: "developer status unavailable", err: reviewdomain.ErrDeveloperStatusUnavailable, code: codes.Unavailable, reason: ReasonDeveloperStatusUnavailable},
 		{name: "invalid OAuth redirects", err: reviewdomain.ErrInvalidOAuthRedirectConfiguration, code: codes.InvalidArgument, reason: ReasonInvalidOAuthRedirectConfiguration},
 	}
@@ -168,6 +168,7 @@ func TestApplicationReviewService_UCAPP006_ErrorMappings(t *testing.T) {
 		{name: "already restored", err: reviewdomain.ErrApplicationReviewAlreadyRestored, code: codes.Aborted, reason: ReasonApplicationReviewAlreadyRestored},
 		{name: "not rejected", err: reviewdomain.ErrApplicationVersionNotRejected, code: codes.Aborted, reason: ReasonApplicationVersionNotRejected},
 		{name: "revision conflict", err: reviewdomain.ErrApplicationVersionRevisionConflict, code: codes.Aborted, reason: ReasonApplicationVersionRevisionConflict},
+		{name: "corrupt binding", err: reviewdomain.NewApplicationReviewStateInconsistentError(nil), code: codes.Internal, reason: ReasonApplicationReviewStateInconsistent},
 		{name: "inconsistent", err: reviewdomain.ErrApplicationReviewStateInconsistent, code: codes.Aborted, reason: ReasonApplicationReviewStateInconsistent},
 	}
 	ctx := withDeveloperIdentity(context.Background(), shared.DeveloperIdentity{AuthID: "auth-admin", DeveloperStatus: shared.DeveloperStatusApproved})
@@ -256,7 +257,7 @@ func transportDecisionResult(t *testing.T, decidedAt time.Time) *reviewdomain.Ap
 	if err != nil {
 		t.Fatalf("NewPreflightPolicyVersion() error = %v", err)
 	}
-	review, err := reviewdomain.NewPendingApplicationReview(submission, reviewID, attempt, catalogRevision, preflightPolicy, "auth-submitter", decidedAt.Add(-time.Hour))
+	review, err := reviewdomain.NewPendingApplicationReview(submission, reviewID, attempt, catalogRevision, preflightPolicy, "auth-submitter", decidedAt.Add(-time.Hour), reviewdomain.ReviewPolicyVersion("app-version-review-v1"))
 	if err != nil {
 		t.Fatalf("NewPendingApplicationReview() error = %v", err)
 	}
@@ -291,7 +292,7 @@ func transportRestorationResult(t *testing.T, restoredAt time.Time) *reviewdomai
 	attempt, _ := reviewdomain.NewReviewAttempt(1)
 	catalogRevision, _ := reviewdomain.NewScopeCatalogRevision(1)
 	preflightPolicy, _ := reviewdomain.NewPreflightPolicyVersion("public-https.v1")
-	review, _ := reviewdomain.NewPendingApplicationReview(candidate, reviewID, attempt, catalogRevision, preflightPolicy, "auth-admin", restoredAt.Add(-2*time.Hour))
+	review, _ := reviewdomain.NewPendingApplicationReview(candidate, reviewID, attempt, catalogRevision, preflightPolicy, "auth-admin", restoredAt.Add(-2*time.Hour), reviewdomain.ReviewPolicyVersion("review.v1"))
 	reviewPolicy, _ := reviewdomain.NewReviewPolicyVersion("review.v1")
 	if _, err := review.Reject(reviewPolicy, "reason", "auth-reviewer", restoredAt.Add(-time.Hour)); err != nil {
 		t.Fatalf("Reject() error = %v", err)

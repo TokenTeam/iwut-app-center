@@ -30,22 +30,32 @@ func (m *Migrator) applyApplicationProfileReviewDecisionMigration(ctx context.Co
 	}
 	raw, err := policies.FindOne(ctx, bson.M{"version": pd.InitialProfileReviewPolicyVersion}).Raw()
 	if errors.Is(err, dm.ErrNoDocuments) {
-		_, err = policies.InsertOne(ctx, bson.M{"version": pd.InitialProfileReviewPolicyVersion, "requiredChecks": pd.InitialProfileReviewChecks(), "status": "ACTIVE", "coordinationRevision": int64(0)})
+		_, err = policies.InsertOne(ctx, formalProfileReviewPolicy())
 		return err
 	}
 	if err != nil {
 		return safeProfilePersistenceError(err)
 	}
 	policy, _, err := profilePolicyFromRaw(raw)
-	if err != nil || !slices.Equal(policy.RequiredChecks, pd.InitialProfileReviewChecks()) {
+	if err != nil || !slices.Equal(policy.RequiredChecks, pd.InitialProfileReviewChecks()) || !slices.Equal(policy.Definitions, initialProfileDefinitions()) {
 		return fmt.Errorf("profile review policy definition conflicts with migration")
 	}
 	return nil
 }
-func profileReviewPolicyValidator() bson.D {
-	return publicationObjectSchema(bson.A{"version", "requiredChecks", "status", "coordinationRevision"}, bson.D{
-		{Key: "version", Value: profilePolicyVersionSchema()}, {Key: "requiredChecks", Value: bson.D{{Key: "bsonType", Value: "array"}, {Key: "minItems", Value: 1}, {Key: "uniqueItems", Value: true}, {Key: "items", Value: profilePolicyVersionSchema()}}}, {Key: "status", Value: bson.M{"enum": bson.A{"ACTIVE", "RETIRED"}}}, {Key: "coordinationRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(0)}}},
-	})
+func profileReviewPolicyValidator() bson.D { return versionReviewPolicyValidator() }
+func initialProfileDefinitions() []pd.ProfileReviewCheckDefinition {
+	return []pd.ProfileReviewCheckDefinition{
+		{ID: "content-policy-reviewed", Title: "资料内容规范", Description: "Reviewer 已检查名称、描述符合内容规范。"},
+		{ID: "icon-content-reviewed", Title: "图标内容合规", Description: "Reviewer 已检查图标内容合规；icon 为空时明确确认不适用，仍提交该检查项。"},
+	}
+}
+func formalProfileReviewPolicy() versionReviewPolicyDocument {
+	defs := initialProfileDefinitions()
+	stored := make([]versionReviewCheckDocument, len(defs))
+	for i, v := range defs {
+		stored[i] = versionReviewCheckDocument{ID: v.ID, Title: v.Title, Description: v.Description}
+	}
+	return versionReviewPolicyDocument{Version: pd.InitialProfileReviewPolicyVersion, RequiredChecks: pd.InitialProfileReviewChecks(), Definitions: stored, Status: "ACTIVE", CoordinationRevision: 1}
 }
 func profilePolicyVersionSchema() bson.D {
 	return bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: 50}, {Key: "pattern", Value: `^[A-Za-z0-9._-]+$`}}
@@ -96,7 +106,7 @@ func profileReviewDecisionValidator() bson.D {
 		}
 		decision := bson.D{{Key: "bsonType", Value: "object"}, {Key: "required", Value: bson.A{"outcome", "policyVersion", "confirmedCheckIds", "reason", "decidedBy", "decidedAt"}}, {Key: "additionalProperties", Value: false}, {Key: "properties", Value: bson.D{{Key: "outcome", Value: bson.M{"enum": bson.A{status}}}, {Key: "policyVersion", Value: profilePolicyVersionSchema()}, {Key: "confirmedCheckIds", Value: checks}, {Key: "reason", Value: reason}, {Key: "decidedBy", Value: nonEmptyStringSchema()}, {Key: "decidedAt", Value: bson.M{"bsonType": "date"}}}}}
 		replaceSchemaProperty(obj, "decision", decision)
-		branches = append(branches, bson.M{"$and": bson.A{bson.M{"status": status}, schema}})
+		branches = append(branches, bson.M{"$and": bson.A{bson.M{"status": status}, schema, bson.M{"$expr": bson.M{"$eq": bson.A{"$decision.policyVersion", "$policyBinding.version"}}}}})
 	}
 	return bson.D{{Key: "$or", Value: branches}}
 }

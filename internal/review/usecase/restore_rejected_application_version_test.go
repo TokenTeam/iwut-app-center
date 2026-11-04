@@ -122,7 +122,7 @@ func restorationResult(t *testing.T, restoredAt time.Time) *domain.RestoreReject
 	attempt, _ := domain.NewReviewAttempt(1)
 	catalogRevision, _ := domain.NewScopeCatalogRevision(1)
 	preflightPolicy, _ := domain.NewPreflightPolicyVersion("public-https.v1")
-	review, _ := domain.NewPendingApplicationReview(candidate, reviewID, attempt, catalogRevision, preflightPolicy, "auth-admin", restoredAt.Add(-2*time.Hour))
+	review, _ := domain.NewPendingApplicationReview(candidate, reviewID, attempt, catalogRevision, preflightPolicy, "auth-admin", restoredAt.Add(-2*time.Hour), domain.ReviewPolicyVersion("review.v1"))
 	reviewPolicy, _ := domain.NewReviewPolicyVersion("review.v1")
 	if _, err := review.Reject(reviewPolicy, "reason", "auth-reviewer", restoredAt.Add(-time.Hour)); err != nil {
 		t.Fatalf("Reject() error = %v", err)

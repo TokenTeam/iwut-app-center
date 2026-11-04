@@ -319,7 +319,7 @@ func TestApplicationReviewMigrationIntegration_ValidatorsAndUniqueIndexes(t *tes
 	repository := NewApplicationReviewRepository(database)
 	candidate := loadReviewCandidate(t, repository, application.ID(), version.ID(), "auth-review-schema", 1)
 	attempt, _ := reviewdomain.NewReviewAttempt(1)
-	review, _ := reviewdomain.NewPendingApplicationReview(candidate, nextIntegrationApplicationReviewID(t), attempt, 1, "v1", "auth-review-schema", time.Now().UTC())
+	review, _ := reviewdomain.NewPendingApplicationReview(candidate, nextIntegrationApplicationReviewID(t), attempt, 1, "v1", "auth-review-schema", time.Now().UTC(), reviewdomain.ReviewPolicyVersion("review.v1"))
 	base, err := applicationReviewToDocument(review)
 	if err != nil {
 		t.Fatalf("map review: %v", err)

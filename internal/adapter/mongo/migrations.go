@@ -317,15 +317,7 @@ func (migrator *Migrator) applyVersionReviewPolicyMigration(ctx context.Context)
 		return fmt.Errorf("create version review policy index: %w", err)
 	}
 
-	seed := versionReviewPolicyDocument{
-		Version: "app-version-review-v1",
-		RequiredChecks: []string{
-			"content-policy-reviewed",
-			"launch-url-content-reviewed",
-			"requested-access-reviewed",
-		},
-		Status: "ACTIVE",
-	}
+	seed := formalVersionReviewPolicy()
 	_, err := collection.InsertOne(ctx, seed)
 	if err != nil && !drivermongo.IsDuplicateKeyError(err) {
 		return fmt.Errorf("seed version review policy: %w", err)
@@ -334,7 +326,7 @@ func (migrator *Migrator) applyVersionReviewPolicyMigration(ctx context.Context)
 	if err := collection.FindOne(ctx, bson.D{{Key: "version", Value: seed.Version}}).Decode(&existing); err != nil {
 		return fmt.Errorf("verify version review policy seed: %w", err)
 	}
-	if !equalVersionReviewPolicyDocuments(existing, seed) {
+	if !immutablePolicyEqual(existing, seed) || (existing.Status != "ACTIVE" && existing.Status != "RETIRED") {
 		return fmt.Errorf("verify version review policy seed: version %q has different immutable content", seed.Version)
 	}
 	return nil
@@ -374,27 +366,25 @@ func isNamespaceExists(err error) bool {
 }
 
 func versionReviewPolicyValidator() bson.D {
-	return bson.D{{Key: "$jsonSchema", Value: bson.D{
-		{Key: "bsonType", Value: "object"},
-		{Key: "required", Value: bson.A{"version", "requiredChecks", "status"}},
-		{Key: "additionalProperties", Value: false},
-		{Key: "properties", Value: bson.D{
-			{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
-			{Key: "version", Value: bson.D{
-				{Key: "bsonType", Value: "string"},
-				{Key: "pattern", Value: "^[A-Za-z0-9._-]{1,50}$"},
-			}},
-			{Key: "requiredChecks", Value: bson.D{
-				{Key: "bsonType", Value: "array"},
-				{Key: "uniqueItems", Value: true},
-				{Key: "items", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}}},
-			}},
-			{Key: "status", Value: bson.D{
-				{Key: "bsonType", Value: "string"},
-				{Key: "enum", Value: bson.A{"ACTIVE", "RETIRED"}},
-			}},
-		}},
+	text := func(max int) bson.D {
+		return bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: max}, {Key: "pattern", Value: `^(?![\p{Z}\x{0009}-\x{000D}\x{0085}])(?!.*[\p{Z}\x{0009}-\x{000D}\x{0085}]$)[^\p{Cc}]+$`}}
+	}
+	checkID := bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "pattern", Value: `^(?![\p{Z}\x{0009}-\x{000D}\x{0085}])(?!.*[\p{Z}\x{0009}-\x{000D}\x{0085}]$)[^\p{Cc}]+$`}}
+	item := bson.D{{Key: "bsonType", Value: "object"}, {Key: "required", Value: bson.A{"id", "title", "description"}}, {Key: "additionalProperties", Value: false}, {Key: "properties", Value: bson.D{
+		{Key: "id", Value: checkID}, {Key: "title", Value: text(80)}, {Key: "description", Value: text(2000)},
 	}}}
+	schema := bson.D{{Key: "bsonType", Value: "object"}, {Key: "required", Value: bson.A{"version", "requiredChecks", "definitions", "status", "coordinationRevision"}}, {Key: "additionalProperties", Value: false}, {Key: "properties", Value: bson.D{
+		{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}}, {Key: "version", Value: profilePolicyVersionSchema()},
+		{Key: "requiredChecks", Value: bson.D{{Key: "bsonType", Value: "array"}, {Key: "minItems", Value: 1}, {Key: "uniqueItems", Value: true}, {Key: "items", Value: checkID}}},
+		{Key: "definitions", Value: bson.D{{Key: "bsonType", Value: "array"}, {Key: "minItems", Value: 1}, {Key: "items", Value: item}}},
+		{Key: "status", Value: bson.D{{Key: "enum", Value: bson.A{"ACTIVE", "RETIRED"}}}},
+		{Key: "coordinationRevision", Value: bson.D{{Key: "bsonType", Value: "long"}, {Key: "minimum", Value: int64(1)}}},
+	}}}
+	return bson.D{{Key: "$and", Value: bson.A{bson.D{{Key: "$jsonSchema", Value: schema}}, bson.D{{Key: "$expr", Value: bson.D{{Key: "$eq", Value: bson.A{"$requiredChecks", bson.D{{Key: "$map", Value: bson.D{{Key: "input", Value: "$definitions"}, {Key: "as", Value: "d"}, {Key: "in", Value: "$$d.id"}}}}}}}}}}}}
+}
+
+func reviewPolicyBindingSchema() bson.D {
+	return bson.D{{Key: "bsonType", Value: "object"}, {Key: "required", Value: bson.A{"version"}}, {Key: "additionalProperties", Value: false}, {Key: "properties", Value: bson.D{{Key: "version", Value: profilePolicyVersionSchema()}}}}
 }
 
 // applicationInitialValidator is the 0001 schema. It must stay byte-for-byte
@@ -710,7 +700,7 @@ func applicationReviewValidatorForLifecycle(includeDecision, includeRestoration 
 			bson.D{{Key: "bsonType", Value: "null"}},
 			applicationReviewDecisionSchema(),
 		}}}
-		expressions = append(expressions, applicationReviewDecisionConsistencyExpression())
+		expressions = append(expressions, applicationReviewDecisionConsistencyExpression(), bson.M{"$or": bson.A{bson.M{"$eq": bson.A{"$decision", nil}}, bson.M{"$eq": bson.A{"$decision.reviewPolicyVersion", "$policyBinding.version"}}}})
 	}
 	if includeRestoration {
 		draftRestorationSchema = bson.D{{Key: "oneOf", Value: bson.A{
@@ -726,12 +716,13 @@ func applicationReviewValidatorForLifecycle(includeDecision, includeRestoration 
 			{Key: "required", Value: bson.A{
 				"reviewId", "applicationId", "versionId", "attempt", "sourceVersionRevision",
 				"status", "decision", "draftRestoration", "snapshot", "scopeCatalogRevision",
-				"preflightPolicyVersion", "submittedBy", "submittedAt",
+				"preflightPolicyVersion", "submittedBy", "submittedAt", "policyBinding",
 			}},
 			{Key: "additionalProperties", Value: false},
 			{Key: "properties", Value: bson.D{
 				{Key: "_id", Value: bson.D{{Key: "bsonType", Value: "objectId"}}},
 				{Key: "reviewId", Value: uuidV7Schema()},
+				{Key: "policyBinding", Value: reviewPolicyBindingSchema()},
 				{Key: "applicationId", Value: uuidV7Schema()},
 				{Key: "versionId", Value: uuidV7Schema()},
 				{Key: "attempt", Value: bson.D{{Key: "bsonType", Value: "int"}, {Key: "minimum", Value: int32(1)}}},

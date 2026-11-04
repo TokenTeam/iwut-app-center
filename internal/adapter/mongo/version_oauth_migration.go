@@ -34,9 +34,6 @@ func (migrator *Migrator) applyVersionOAuthRedirectMigration(ctx context.Context
 	if err := migrator.ensureValidatedCollection(ctx, applicationReviewsCollectionName, withPublicationFence(applicationReviewRestorationValidator())); err != nil {
 		return fmt.Errorf("enable OAuth redirect review snapshots: %w", err)
 	}
-	if err := migrator.activateVersionReviewPolicyV2(ctx); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -94,45 +91,6 @@ func (migrator *Migrator) backfillApplicationReviewOAuthSnapshots(ctx context.Co
 	}
 	return nil
 }
-
-func (migrator *Migrator) activateVersionReviewPolicyV2(ctx context.Context) error {
-	collection := migrator.database.Collection(versionReviewPoliciesCollectionName)
-	v1Checks := []string{"content-policy-reviewed", "launch-url-content-reviewed", "requested-access-reviewed"}
-	v1Result, err := collection.UpdateOne(
-		ctx,
-		bson.D{{Key: "version", Value: "app-version-review-v1"}, {Key: "requiredChecks", Value: v1Checks}, {Key: "status", Value: bson.D{{Key: "$in", Value: bson.A{"ACTIVE", "RETIRED"}}}}},
-		bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: "RETIRED"}}}},
-	)
-	if err != nil {
-		return fmt.Errorf("retire version review policy v1: %w", err)
-	}
-	if v1Result.MatchedCount != 1 {
-		return fmt.Errorf("retire version review policy v1: immutable content differs or policy is missing")
-	}
-	v2 := versionReviewPolicyDocument{
-		Version: "app-version-review-v2",
-		RequiredChecks: []string{
-			"content-policy-reviewed",
-			"launch-url-content-reviewed",
-			"requested-access-reviewed",
-			"oauth-redirects-reviewed",
-		},
-		Status: "ACTIVE",
-	}
-	_, err = collection.InsertOne(ctx, v2)
-	if err != nil && !drivermongo.IsDuplicateKeyError(err) {
-		return fmt.Errorf("seed version review policy v2: %w", err)
-	}
-	var existing versionReviewPolicyDocument
-	if err := collection.FindOne(ctx, bson.D{{Key: "version", Value: v2.Version}}).Decode(&existing); err != nil {
-		return fmt.Errorf("verify version review policy v2: %w", err)
-	}
-	if !equalVersionReviewPolicyDocuments(existing, v2) {
-		return fmt.Errorf("verify version review policy v2: immutable content differs")
-	}
-	return nil
-}
-
 func applicationVersionOAuthConfigValidator() bson.D {
 	return bson.D{{Key: "$and", Value: bson.A{
 		bson.D{{Key: "$jsonSchema", Value: bson.D{

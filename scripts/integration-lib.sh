@@ -69,7 +69,7 @@ start_integration_mongo() {
   docker run --detach --rm --name "${container_name}" --ulimit nofile=65536:65536 \
     --network "${network_name}" --network-alias mongo \
     --publish "127.0.0.1:${MONGODB_INTEGRATION_PORT:-}:27017" \
-    mongo:8.2.12 mongod --replSet rs0 --bind_ip_all --port 27017 >/dev/null
+    mongo:8.2.12 mongod --replSet rs0 --bind_ip_all --port 27017 --setParameter enableTestCommands=1 >/dev/null
   local mapping
   mapping="$(docker port "${container_name}" 27017/tcp)"
   mongo_port="${mapping##*:}"

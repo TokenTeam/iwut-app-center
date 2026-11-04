@@ -78,7 +78,7 @@ func (s *ApplicationProfileReviewQueryService) GetApplicationProfileReview(ctx c
 		ProfileRevision:         &queryv1.ProfileRevisionReviewContext{ProfileRevisionId: detail.ProfileRevision.ProfileRevisionID, Sequence: detail.ProfileRevision.Sequence, ReviewStatus: detail.ProfileRevision.ReviewStatus, Revision: detail.ProfileRevision.Revision, CreatedBy: detail.ProfileRevision.CreatedBy},
 		Review:                  applicationProfileReviewResponse(detail.Review),
 		CurrentPublishedProfile: published,
-		CurrentPolicy:           &queryv1.ProfileReviewPolicyContext{Version: detail.CurrentPolicy.Version, RequiredCheckIds: append([]string(nil), detail.CurrentPolicy.RequiredCheckIDs...)},
+		ReviewPolicy:            &queryv1.ProfileReviewPolicyContext{Version: detail.ReviewPolicy.Version, RequiredCheckIds: append([]string(nil), detail.ReviewPolicy.RequiredCheckIDs...), RequiredCheckDefinitions: profileReviewCheckDefinitionsResponse(detail.ReviewPolicy.RequiredCheckDefinitions)},
 		DecisionEligibility:     profileEligibilityResponse(detail.DecisionEligibility), AsOf: timestamppb.New(detail.AsOf),
 	}, nil
 }
@@ -110,4 +110,12 @@ func publishedProfileForReviewResponse(v *profiledomain.CurrentPublishedProfileF
 		return nil, profiledomain.ErrApplicationProfileReviewStateInconsistent
 	}
 	return &queryv1.CurrentPublishedProfileForReview{State: &queryv1.CurrentPublishedProfileForReview_Published{Published: &queryv1.PublishedProfileForReview{ProfileRevisionId: p.ProfileRevisionID, DisplayName: p.DisplayName, Description: p.Description, Icon: p.Icon}}}, nil
+}
+
+func profileReviewCheckDefinitionsResponse(definitions []profiledomain.ProfileReviewCheckDefinition) []*queryv1.ProfileReviewCheckDefinition {
+	result := make([]*queryv1.ProfileReviewCheckDefinition, len(definitions))
+	for i, d := range definitions {
+		result[i] = &queryv1.ProfileReviewCheckDefinition{Id: d.ID, Title: d.Title, Description: d.Description}
+	}
+	return result
 }

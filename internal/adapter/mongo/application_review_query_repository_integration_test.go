@@ -61,7 +61,7 @@ func TestApplicationReviewQueryRepositoryIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if detail.Review.Snapshot().VersionLabel() != "v1" || detail.CurrentPolicy.Version == "" || detail.DecisionEligibility.Eligible || len(detail.DecisionEligibility.Conflicts) != 3 {
+		if detail.Review.Snapshot().VersionLabel() != "v1" || detail.ReviewPolicy.Version == "" || detail.DecisionEligibility.Eligible || len(detail.DecisionEligibility.Conflicts) != 3 {
 			t.Fatalf("detail=%#v", detail)
 		}
 		if _, err = repository.Get(t.Context(), reviewer, secondApplicationID, firstReview.VersionID(), firstReview.ReviewID()); !errors.Is(err, reviewport.ErrReviewQueryNotFound) {

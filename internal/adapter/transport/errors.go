@@ -30,7 +30,7 @@ const (
 	ReasonInvalidApplicationProfileReviewQuery           = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_QUERY"
 	ReasonInvalidApplicationProfileReviewPageToken       = "ERROR_REASON_INVALID_APPLICATION_PROFILE_REVIEW_PAGE_TOKEN"
 	ReasonProfileReviewChecksIncomplete                  = "ERROR_REASON_PROFILE_REVIEW_CHECKS_INCOMPLETE"
-	ReasonProfileReviewPolicyUnavailable                 = "ERROR_REASON_PROFILE_REVIEW_POLICY_UNAVAILABLE"
+	ReasonProfileReviewPolicyMismatch                    = "ERROR_REASON_PROFILE_REVIEW_POLICY_MISMATCH"
 	ReasonApplicationProfileReviewStateInconsistent      = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_STATE_INCONSISTENT"
 	ReasonApplicationProfilePublicationConflict          = "ERROR_REASON_APPLICATION_PROFILE_PUBLICATION_CONFLICT"
 	ReasonApplicationProfileReviewStateConflict          = "ERROR_REASON_APPLICATION_PROFILE_REVIEW_STATE_CONFLICT"
@@ -147,7 +147,7 @@ const (
 	ReasonApplicationReviewConflictOfInterest            = "ERROR_REASON_APPLICATION_REVIEW_CONFLICT_OF_INTEREST"
 	ReasonInvalidApplicationReviewOutcome                = "ERROR_REASON_INVALID_APPLICATION_REVIEW_OUTCOME"
 	ReasonInvalidApplicationReviewPolicyVersion          = "ERROR_REASON_INVALID_APPLICATION_REVIEW_POLICY_VERSION"
-	ReasonApplicationReviewPolicyChanged                 = "ERROR_REASON_APPLICATION_REVIEW_POLICY_CHANGED"
+	ReasonApplicationReviewPolicyMismatch                = "ERROR_REASON_APPLICATION_REVIEW_POLICY_MISMATCH"
 	ReasonApplicationReviewChecksIncomplete              = "ERROR_REASON_APPLICATION_REVIEW_CHECKS_INCOMPLETE"
 	ReasonInvalidApplicationReviewChecks                 = "ERROR_REASON_INVALID_APPLICATION_REVIEW_CHECKS"
 	ReasonInvalidApplicationReviewReason                 = "ERROR_REASON_INVALID_APPLICATION_REVIEW_REASON"
@@ -350,7 +350,7 @@ var reviewDomainErrorSpecs = map[reviewdomain.ErrorCode]errorSpec{
 	reviewdomain.ErrorCodeApplicationReviewConflictOfInterest:     {code: codes.PermissionDenied, reason: ReasonApplicationReviewConflictOfInterest, message: "reviewer has a conflict of interest"},
 	reviewdomain.ErrorCodeInvalidApplicationReviewOutcome:         {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewOutcome, message: "application review outcome is invalid"},
 	reviewdomain.ErrorCodeInvalidApplicationReviewPolicyVersion:   {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewPolicyVersion, message: "application review policy version is invalid"},
-	reviewdomain.ErrorCodeApplicationReviewPolicyChanged:          {code: codes.Aborted, reason: ReasonApplicationReviewPolicyChanged, message: "application review policy is no longer usable"},
+	reviewdomain.ErrorCodeApplicationReviewPolicyMismatch:         {code: codes.Aborted, reason: ReasonApplicationReviewPolicyMismatch, message: "application review policy does not match attempt binding"},
 	reviewdomain.ErrorCodeApplicationReviewChecksIncomplete:       {code: codes.InvalidArgument, reason: ReasonApplicationReviewChecksIncomplete, message: "application review confirmation is incomplete"},
 	reviewdomain.ErrorCodeInvalidApplicationReviewChecks:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewChecks, message: "application review confirmation is invalid"},
 	reviewdomain.ErrorCodeInvalidApplicationReviewReason:          {code: codes.InvalidArgument, reason: ReasonInvalidApplicationReviewReason, message: "application review reason is invalid"},
@@ -455,7 +455,7 @@ var profileDomainErrorSpecs = map[profiledomain.ErrorCode]errorSpec{
 	profiledomain.ErrorCodeApplicationProfileReviewStateConflict:       {code: codes.Aborted, reason: ReasonApplicationProfileReviewStateConflict, message: "profile review state conflicts"},
 	profiledomain.ErrorCodeApplicationProfilePublicationConflict:       {code: codes.Aborted, reason: ReasonApplicationProfilePublicationConflict, message: "profile publication conflicts"},
 	profiledomain.ErrorCodeApplicationProfileReviewStateInconsistent:   {code: codes.Internal, reason: ReasonApplicationProfileReviewStateInconsistent, message: "profile review state is inconsistent"},
-	profiledomain.ErrorCodeProfileReviewPolicyUnavailable:              {code: codes.Aborted, reason: ReasonProfileReviewPolicyUnavailable, message: "profile review policy is unavailable"},
+	profiledomain.ErrorCodeProfileReviewPolicyMismatch:                 {code: codes.Aborted, reason: ReasonProfileReviewPolicyMismatch, message: "profile review policy does not match attempt binding"},
 	profiledomain.ErrorCodeProfileReviewChecksIncomplete:               {code: codes.InvalidArgument, reason: ReasonProfileReviewChecksIncomplete, message: "profile review checks are incomplete"},
 	profiledomain.ErrorCodeInvalidProfileReviewReason:                  {code: codes.InvalidArgument, reason: ReasonInvalidProfileReviewReason, message: "profile review reason is invalid"},
 	profiledomain.ErrorCodeInvalidApplicationProfileReviewQuery:        {code: codes.InvalidArgument, reason: ReasonInvalidApplicationProfileReviewQuery, message: "profile review query is invalid"},
@@ -595,6 +595,9 @@ func toTransportError(err error) error {
 		spec, ok := reviewDomainErrorSpecs[reviewDomainError.Code()]
 		if !ok {
 			spec = internalSpec
+		}
+		if reviewDomainError.Code() == reviewdomain.ErrorCodeApplicationReviewStateInconsistent && reviewDomainError.Category() == reviewdomain.ErrorCategoryInternal {
+			spec.code = codes.Internal
 		}
 		return transportStatus(spec.code, spec.reason, spec.message)
 	}

@@ -332,7 +332,7 @@ func TestSubmitProfileDraftRepositoryIntegration(t *testing.T) {
 			case "wrong pointer":
 				_, err = db.Collection(applicationProfilesCollectionName).UpdateOne(t.Context(), bson.M{"applicationId": draft.ApplicationID().String()}, bson.M{"$set": bson.M{"workingProfileRevisionId": nextIntegrationTesterJoinLinkID(t).String()}})
 			case "pending review", "same source", "attempt overflow":
-				result, e := draft.SubmitDraft(1, id, 1, draft.CreatedBy(), time.Now())
+				result, e := draft.SubmitDraft(1, id, 1, draft.CreatedBy(), time.Now(), "app-profile-review-v1")
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -382,7 +382,7 @@ func TestSubmitProfileDraftRepositoryIntegration(t *testing.T) {
 	t.Run("BR-PRF-019 next attempt allocated from stored maximum", func(t *testing.T) {
 		db := migratedIntegrationDatabase(t, client)
 		repo, draft := submitProfileFixture(t, db)
-		old, err := draft.SubmitDraft(1, profileReviewID(t), 7, draft.CreatedBy(), time.Now())
+		old, err := draft.SubmitDraft(1, profileReviewID(t), 7, draft.CreatedBy(), time.Now(), "app-profile-review-v1")
 		if err != nil {
 			t.Fatal(err)
 		}

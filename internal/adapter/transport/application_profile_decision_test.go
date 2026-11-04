@@ -64,7 +64,7 @@ func profileDecisionFixture(t *testing.T, outcome string) *profiledomain.Applica
 	name, _ := profiledomain.NewApplicationDisplayName("name")
 	draft, _ := profiledomain.NewDraftApplicationProfileRevision(testProfileRevisionID, testApplicationID, name, nil, nil, "creator", time.Unix(10, 0))
 	revision, _ := draft.AssignSequence(1)
-	submission, e := revision.SubmitDraft(1, profiledomain.ApplicationProfileReviewID(testApplicationReviewID), 1, "submitter", time.Unix(20, 0))
+	submission, e := revision.SubmitDraft(1, profiledomain.ApplicationProfileReviewID(testApplicationReviewID), 1, "submitter", time.Unix(20, 0), "app-profile-review-v1")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -75,7 +75,7 @@ func profileDecisionFixture(t *testing.T, outcome string) *profiledomain.Applica
 		v := "Cafe\u0301 rejected"
 		reason = &v
 	}
-	result, e := submission.ProfileRevision.DecideReview(submission.Review, "reviewer", "admin", []string{"app.profile.review"}, 2, outcome, profiledomain.ProfileReviewPolicy{Version: "app-profile-review-v1", RequiredChecks: profiledomain.InitialProfileReviewChecks(), Status: "ACTIVE"}, checks, reason, time.Unix(30, 123000000))
+	result, e := submission.ProfileRevision.DecideReview(submission.Review, "reviewer", "admin", []string{"app.profile.review"}, 2, outcome, profiledomain.ProfileReviewPolicy{Version: "app-profile-review-v1", RequiredChecks: profiledomain.InitialProfileReviewChecks(), Status: "ACTIVE", Definitions: []profiledomain.ProfileReviewCheckDefinition{{ID: "content-policy-reviewed", Title: "Test content", Description: "Explicit test definition."}, {ID: "icon-content-reviewed", Title: "Test icon", Description: "Explicit test definition."}}}, checks, reason, time.Unix(30, 123000000))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -135,7 +135,7 @@ func TestProfileDecision_BR_PRF_023_032_ErrorMapping(t *testing.T) {
 		{profiledomain.ErrApplicationProfileRevisionConflict, 409, codes.Aborted, ReasonApplicationProfileRevisionConflict},
 		{profiledomain.ErrApplicationProfilePublicationConflict, 409, codes.Aborted, ReasonApplicationProfilePublicationConflict},
 		{profiledomain.ErrApplicationProfileReviewStateInconsistent, 500, codes.Internal, ReasonApplicationProfileReviewStateInconsistent},
-		{profiledomain.ErrProfileReviewPolicyUnavailable, 409, codes.Aborted, ReasonProfileReviewPolicyUnavailable},
+		{profiledomain.ErrProfileReviewPolicyMismatch, 409, codes.Aborted, ReasonProfileReviewPolicyMismatch},
 		{profiledomain.ErrProfileReviewChecksIncomplete, 400, codes.InvalidArgument, ReasonProfileReviewChecksIncomplete},
 		{profiledomain.ErrInvalidProfileReviewReason, 400, codes.InvalidArgument, ReasonInvalidProfileReviewReason},
 		{profiledomain.ErrInvalidApplicationProfileContent, 400, codes.InvalidArgument, ReasonInvalidApplicationProfileContent},

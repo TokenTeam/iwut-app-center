@@ -66,7 +66,7 @@ func TestApplicationProfileReviewQueryRepositoryIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if detail.Review.Snapshot().DisplayName() != firstRevision.DisplayName() || detail.CurrentPolicy.Version != profiledomain.InitialProfileReviewPolicyVersion || len(detail.CurrentPolicy.RequiredCheckIDs) != len(profiledomain.InitialProfileReviewChecks()) {
+		if detail.Review.Snapshot().DisplayName() != firstRevision.DisplayName() || detail.ReviewPolicy.Version != profiledomain.InitialProfileReviewPolicyVersion || len(detail.ReviewPolicy.RequiredCheckIDs) != len(profiledomain.InitialProfileReviewChecks()) {
 			t.Fatalf("detail=%#v", detail)
 		}
 		if detail.DecisionEligibility.Eligible || len(detail.DecisionEligibility.Conflicts) != 3 {

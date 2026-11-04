@@ -59,7 +59,7 @@ func TestProfileManagementService_BRPRF047_054_056(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		for _, key := range []string{"updatedBy", "submittedBy", "decidedBy", "snapshot", "confirmedCheckIds", "currentPolicy", "requiredCheckIds"} {
+		for _, key := range []string{"updatedBy", "submittedBy", "decidedBy", "snapshot", "confirmedCheckIds", "reviewPolicy", "requiredCheckDefinitions", "requiredCheckIds"} {
 			if strings.Contains(string(raw), key) {
 				t.Fatal("privacy", key)
 			}

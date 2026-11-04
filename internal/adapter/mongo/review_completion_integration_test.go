@@ -28,19 +28,17 @@ func TestBR_REV_016_034_FormalPolicyMigrationIntegration(t *testing.T) {
 	if !equalVersionReviewPolicyDocuments(got, expected) {
 		t.Fatal("formal policy differs")
 	}
+	count, err := coll.CountDocuments(t.Context(), bson.M{})
+	if err != nil || count != 1 {
+		t.Fatal("initialization must create only complete v3", err)
+	}
 	provider := NewVersionReviewPolicyRepository(db)
-	if _, err := provider.RequireUsable(t.Context(), "app-version-review-v2", rd.ApplicationVersionReviewSnapshot{}); !errors.Is(err, rp.ErrReviewPolicyChanged) {
-		t.Fatal("old policy accepted", err)
+	if _, err := provider.LoadBoundDefinition(t.Context(), "app-version-review-v2", rd.ApplicationVersionReviewSnapshot{}); !errors.Is(err, rp.ErrApplicationReviewDataInconsistent) {
+		t.Fatal("missing bound policy did not fail closed", err)
 	}
-	policy, err := provider.RequireUsable(t.Context(), rd.ReviewPolicyVersion(expected.Version), rd.ApplicationVersionReviewSnapshot{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(policy.RequiredChecks()) != 4 || policy.RequiredChecks()[3].Title() != expected.Definitions[3].Title {
-		t.Fatal("lost definitions")
-	}
-	if _, err = coll.UpdateOne(t.Context(), bson.M{"version": "app-version-review-v2"}, bson.M{"$set": bson.M{"status": "ACTIVE"}}); err != nil {
-		t.Fatal(err)
+	policy, err := provider.LoadBoundDefinition(t.Context(), rd.ReviewPolicyVersion(expected.Version), rd.ApplicationVersionReviewSnapshot{})
+	if err != nil || len(policy.RequiredChecks()) != 4 {
+		t.Fatal("lost complete definitions", err)
 	}
 	if _, err = coll.UpdateOne(t.Context(), bson.M{"version": expected.Version}, bson.M{"$set": bson.M{"definitions.0.title": "different immutable content"}}); err != nil {
 		t.Fatal(err)
@@ -48,12 +46,9 @@ func TestBR_REV_016_034_FormalPolicyMigrationIntegration(t *testing.T) {
 	if err = m.applyVersionReviewDefinitionsMigration(t.Context()); err == nil {
 		t.Fatal("overwrote immutable policy")
 	}
-	if err = coll.FindOne(t.Context(), bson.M{"version": "app-version-review-v2"}).Decode(&got); err != nil || got.Status != "ACTIVE" {
-		t.Fatal("retirement escaped rollback", err)
-	}
 }
 func TestBR_REV_034_InvalidPolicyDefinitionsFailClosedIntegration(t *testing.T) {
-	for _, mode := range []string{"missing", "short", "duplicate", "mismatched", "empty text", "multiple active"} {
+	for _, mode := range []string{"missing", "short", "duplicate", "mismatched", "empty text"} {
 		t.Run(mode, func(t *testing.T) {
 			db := reusableIntegrationDatabase(t, integrationClient(t))
 			coll := db.Collection(versionReviewPoliciesCollectionName)
@@ -72,17 +67,14 @@ func TestBR_REV_034_InvalidPolicyDefinitionsFailClosedIntegration(t *testing.T) 
 				update = bson.M{"$set": bson.M{"definitions": seed.Definitions}}
 			case "empty text":
 				update = bson.M{"$set": bson.M{"definitions.0.description": ""}}
-			case "multiple active":
-				if _, err := coll.UpdateOne(t.Context(), bson.M{"version": "app-version-review-v2"}, bson.M{"$set": bson.M{"status": "ACTIVE"}}); err != nil {
-					t.Fatal(err)
-				}
+
 			}
 			if len(update) > 0 {
 				if _, err := coll.UpdateOne(t.Context(), bson.M{"version": seed.Version}, update, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := NewApplicationReviewQueryRepository(db).loadCurrentReviewPolicy(t.Context()); !errors.Is(err, rp.ErrReviewQueryStateInconsistent) {
+			if _, err := NewApplicationReviewQueryRepository(db).loadBoundReviewPolicy(t.Context(), rd.ReviewPolicyVersion(seed.Version)); !errors.Is(err, rp.ErrReviewQueryStateInconsistent) {
 				t.Fatal("invalid policy exposed", err)
 			}
 		})
@@ -183,7 +175,7 @@ func TestBR_PRF_043_046_PublishedReviewProjectionIntegration(t *testing.T) {
 	}
 }
 
-func TestBR_REV_016_PolicyRetiredAfterPreflightCannotCommitIntegration(t *testing.T) {
+func TestBR_REV_016_BoundPolicyRetiredAfterPreflightCanCommitIntegration(t *testing.T) {
 	db := reusableIntegrationDatabase(t, integrationClient(t))
 	seed := createDecidableReview(t, db, "retirement-owner", "retirement_app", "v1")
 	repo := NewApplicationReviewDecisionRepository(db)
@@ -192,11 +184,11 @@ func TestBR_REV_016_PolicyRetiredAfterPreflightCannotCommitIntegration(t *testin
 	if _, err := db.Collection(versionReviewPoliciesCollectionName).UpdateOne(t.Context(), bson.M{"version": "app-version-review-v3"}, bson.M{"$set": bson.M{"status": "RETIRED"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.Decide(t.Context(), candidate, "independent-reviewer", decision); !errors.Is(err, rp.ErrReviewPolicyChanged) {
-		t.Fatal("stale preflight committed", err)
+	if _, err := repo.Decide(t.Context(), candidate, "independent-reviewer", decision); err != nil {
+		t.Fatal("bound retired policy blocked decision", err)
 	}
 	var saved applicationReviewDocument
-	if err := db.Collection(applicationReviewsCollectionName).FindOne(t.Context(), bson.M{"reviewId": seed.reviewID.String()}).Decode(&saved); err != nil || saved.Status != "PENDING" || saved.Decision != nil {
+	if err := db.Collection(applicationReviewsCollectionName).FindOne(t.Context(), bson.M{"reviewId": seed.reviewID.String()}).Decode(&saved); err != nil || saved.Status != "APPROVED" || saved.Decision == nil {
 		t.Fatal("retired policy changed review", err)
 	}
 }
@@ -226,5 +218,21 @@ func TestBR_PRF_046_PublishedProjectionConcurrentApprovalSnapshotIntegration(t *
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBR_REV_009_034_ActiveSelectionDoesNotControlBoundReadIntegration(t *testing.T) {
+	db := reusableIntegrationDatabase(t, integrationClient(t))
+	coll := db.Collection(versionReviewPoliciesCollectionName)
+	extra := formalVersionReviewPolicy()
+	extra.Version = "fixture-policy-b"
+	if _, err := coll.InsertOne(t.Context(), extra); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := selectVersionReviewPolicyForSubmission(t.Context(), db); !errors.Is(err, rp.ErrApplicationReviewDataInconsistent) {
+		t.Fatal("ambiguous submission selection", err)
+	}
+	if _, err := NewApplicationReviewQueryRepository(db).loadBoundReviewPolicy(t.Context(), "app-version-review-v3"); err != nil {
+		t.Fatal("valid bound read depended on global selection", err)
 	}
 }

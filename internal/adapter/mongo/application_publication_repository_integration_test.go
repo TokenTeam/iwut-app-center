@@ -788,7 +788,7 @@ func approvePublicationVersion(t *testing.T, db *drivermongo.Database, seed deci
 	t.Helper()
 	repo := NewApplicationReviewDecisionRepository(db)
 	candidate := loadDecisionCandidate(t, repo, seed, "auth-reviewer")
-	if _, err := repo.Decide(t.Context(), candidate, "auth-reviewer", integrationApprovedDecision(t, "app-version-review-v3", []string{"content-reviewed"}, 77, "public-https.v1", "auth-reviewer", time.Now())); err != nil {
+	if _, err := repo.Decide(t.Context(), candidate, "auth-reviewer", integrationApprovedDecision(t, "app-version-review-v3", formalVersionReviewPolicy().RequiredChecks, 77, "public-https.v1", "auth-reviewer", time.Now())); err != nil {
 		t.Fatal(err)
 	}
 }

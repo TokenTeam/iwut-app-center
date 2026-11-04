@@ -21,7 +21,7 @@ type fakeReviewPolicyProvider struct {
 	snapshot        domain.ApplicationVersionReviewSnapshot
 }
 
-func (fake *fakeReviewPolicyProvider) RequireUsable(
+func (fake *fakeReviewPolicyProvider) LoadBoundDefinition(
 	_ context.Context,
 	expected domain.ReviewPolicyVersion,
 	snapshot domain.ApplicationVersionReviewSnapshot,
@@ -185,15 +185,15 @@ func TestDecideApplicationVersionReview_BR_REV_011_ConflictOfInterestRejected(t 
 	}
 }
 
-func TestDecideApplicationVersionReview_BR_REV_016_PolicyMustBeUsable(t *testing.T) {
+func TestDecideApplicationVersionReview_BR_REV_016_BoundPolicyMustBeConsistent(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name   string
 		policy *domain.VersionReviewPolicy
 		err    error
 	}{
-		{name: "provider reports changed", policy: nil, err: port.ErrReviewPolicyChanged},
-		{name: "retired policy", policy: reviewPolicyValue(t, "review.v1", domain.ReviewPolicyStatusRetired, "content-reviewed")},
+		{name: "missing bound policy", policy: nil, err: port.ErrApplicationReviewDataInconsistent},
+		{name: "nil policy", policy: nil},
 		{name: "different version", policy: reviewPolicyValue(t, "review.v2", domain.ReviewPolicyStatusActive, "content-reviewed")},
 	}
 	for _, test := range tests {
@@ -203,11 +203,15 @@ func TestDecideApplicationVersionReview_BR_REV_016_PolicyMustBeUsable(t *testing
 			provider := &fakeReviewPolicyProvider{policy: test.policy, err: test.err}
 			handler := newDecisionHandler(repository, provider, &fakeSuspensionChecker{}, &fakeCatalog{revision: 1}, &fakePolicy{version: "public-https.v1"}, &fakeClock{now: time.Now()})
 			result, err := handler.Handle(context.Background(), reviewerIdentity(), applicationID, versionID, reviewID, approveCommand())
-			if result != nil || !errors.Is(err, domain.ErrApplicationReviewPolicyChanged) {
-				t.Fatalf("Handle() = (%v, %v), want policy changed", result, err)
+			if result != nil || !errors.Is(err, domain.ErrApplicationReviewStateInconsistent) {
+				t.Fatalf("Handle() = (%v, %v), want inconsistent binding", result, err)
+			}
+			var de *domain.Error
+			if !errors.As(err, &de) || de.Category() != domain.ErrorCategoryInternal {
+				t.Fatal("corrupt bound policy did not return INTERNAL", err)
 			}
 			if repository.decideCalls != 0 {
-				t.Fatal("unusable policy reached the repository")
+				t.Fatal("inconsistent policy reached the repository")
 			}
 		})
 	}
@@ -291,7 +295,7 @@ func TestDecideApplicationVersionReview_BR_REV_014_018_SuspendedAutoRejectionUse
 	suspension := &fakeSuspensionChecker{events: &events, suspended: true}
 	now := time.Date(2026, time.September, 21, 9, 30, 0, 0, time.UTC)
 	clock := &fakeClock{events: &events, now: now}
-	handler := newDecisionHandlerWithSystemID(repository, reviewPolicyProviderWithEvents(t, &events, "review.v1", domain.ReviewPolicyStatusActive, "content-reviewed"), suspension, catalog, launchPolicy, clock, "auth-system")
+	handler := newDecisionHandlerWithSystemID(repository, reviewPolicyProviderWithEvents(t, &events, "review.v1", domain.ReviewPolicyStatusRetired, "content-reviewed"), suspension, catalog, launchPolicy, clock, "auth-system")
 
 	result, err := handler.Handle(context.Background(), reviewerIdentity(), applicationID, versionID, reviewID, approveCommand())
 	if err != nil {
@@ -412,7 +416,7 @@ func TestDecideApplicationVersionReview_BR_REV_018_ExternalFailuresDoNotDecide(t
 			catalog := &fakeCatalog{revision: 5, err: test.catalogErr}
 			launchPolicy := &fakePolicy{version: "public-https.v1", err: test.policyErr}
 			handler := NewDecideApplicationVersionReviewHandler(
-				reviewPolicy(t, "review.v1", domain.ReviewPolicyStatusActive, "content-reviewed"),
+				reviewPolicy(t, "review.v1", domain.ReviewPolicyStatusRetired, "content-reviewed"),
 				&fakeSuspensionChecker{}, catalog, launchPolicy, &fakeOAuthPolicy{err: test.oauthErr},
 				&fakeClock{now: time.Now()}, repository, &fakeSystemPrincipalResolver{authID: "auth-system"},
 			)
@@ -547,7 +551,7 @@ func decisionCandidateForReviewer(
 	preflightPolicyVersion, _ := domain.NewPreflightPolicyVersion("public-https.v1")
 	review, err := domain.NewPendingApplicationReview(
 		submission, reviewID, attempt, catalogRevision, preflightPolicyVersion, submittedBy,
-		time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC),
+		time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC), domain.ReviewPolicyVersion("review.v1"),
 	)
 	if err != nil {
 		t.Fatalf("create pending review: %v", err)
@@ -580,7 +584,7 @@ func reviewPolicyValue(t *testing.T, version string, status domain.ReviewPolicyS
 		if err != nil {
 			t.Fatalf("create check ID: %v", err)
 		}
-		definition, err := domain.NewReviewCheckDefinition(id)
+		definition, err := domain.NewFormalReviewCheckDefinition(id, "Fixture check", "Explicit test policy definition.")
 		if err != nil {
 			t.Fatalf("create check definition: %v", err)
 		}
@@ -595,4 +599,13 @@ func reviewPolicyValue(t *testing.T, version string, status domain.ReviewPolicyS
 		t.Fatalf("create policy: %v", err)
 	}
 	return policy
+}
+
+func TestDecideApplicationVersionReview_BR_REV_016_RetiredBoundPolicyRemainsDecidable(t *testing.T) {
+	repository := &fakeDecisionRepository{candidate: decisionCandidate(t)}
+	handler := newDecisionHandler(repository, reviewPolicy(t, "review.v1", domain.ReviewPolicyStatusRetired, "content-reviewed"), &fakeSuspensionChecker{}, &fakeCatalog{revision: 1}, &fakePolicy{version: "public-https.v1"}, &fakeClock{now: time.Now()})
+	result, err := handler.Handle(context.Background(), reviewerIdentity(), applicationID, versionID, reviewID, approveCommand())
+	if err != nil || result == nil || result.Review().Decision().ReviewPolicyVersion() != "review.v1" || repository.decideCalls != 1 {
+		t.Fatalf("bound retired policy decision: result present=%t error=%v", result != nil, err)
+	}
 }

@@ -24,7 +24,7 @@ func TestApplicationReview_BR_REV_003_004_005_006_007_ImmutablePendingAttempt(t 
 	submittedAt := time.Date(2026, time.September, 20, 12, 30, 0, 123, time.FixedZone("CST", 8*60*60))
 
 	review, err := NewPendingApplicationReview(
-		candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-2", submittedAt,
+		candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-2", submittedAt, ReviewPolicyVersion("review.v1"),
 	)
 	if err != nil {
 		t.Fatalf("NewPendingApplicationReview() error = %v", err)
@@ -73,7 +73,7 @@ func TestApplicationReview_BR_REV_003_SubmissionResultIncrementsWholeVersionRevi
 	catalogRevision, _ := NewScopeCatalogRevision(21)
 	policyVersion, _ := NewPreflightPolicyVersion("v1")
 	submittedAt := time.Date(2026, time.September, 20, 4, 5, 6, 0, time.UTC)
-	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-1", submittedAt)
+	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-1", submittedAt, ReviewPolicyVersion("review.v1"))
 	version, err := NewSubmittedApplicationVersion(candidate, "auth-1", submittedAt)
 	if err != nil {
 		t.Fatalf("NewSubmittedApplicationVersion() error = %v", err)
@@ -125,7 +125,7 @@ func TestApplicationReview_BR_REV_025_026_RecordDraftRestorationOnceWithoutChang
 	catalogRevision, _ := NewScopeCatalogRevision(17)
 	policyVersion, _ := NewPreflightPolicyVersion("public-https.v1")
 	submittedAt := time.Date(2026, time.September, 20, 12, 30, 0, 0, time.UTC)
-	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-admin", submittedAt)
+	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-admin", submittedAt, ReviewPolicyVersion("review.v1"))
 	reviewPolicy, _ := NewReviewPolicyVersion("review.v1")
 	decidedAt := submittedAt.Add(time.Hour)
 	if _, err := review.Reject(reviewPolicy, "用途说明不足。", "auth-reviewer", decidedAt); err != nil {
@@ -159,7 +159,7 @@ func TestApplicationReview_BR_REV_023_026_RecordDraftRestorationRequiresRejected
 	attempt, _ := NewReviewAttempt(1)
 	catalogRevision, _ := NewScopeCatalogRevision(17)
 	policyVersion, _ := NewPreflightPolicyVersion("public-https.v1")
-	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-admin", time.Now())
+	review, _ := NewPendingApplicationReview(candidate, testReviewID, attempt, catalogRevision, policyVersion, "auth-admin", time.Now(), ReviewPolicyVersion("review.v1"))
 	if restoration, err := review.RecordDraftRestoration("auth-admin", time.Now(), 10); restoration != nil ||
 		!errors.Is(err, ErrApplicationReviewStateInconsistent) {
 		t.Fatalf("pending restoration = (%v, %v)", restoration, err)

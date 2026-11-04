@@ -47,7 +47,7 @@ func (r *submitRepo) SubmitDraft(_ context.Context, app shared.ApplicationID, id
 	name, _ := domain.NewApplicationDisplayName("name")
 	d, _ := domain.NewDraftApplicationProfileRevision(id, app, name, nil, nil, "creator", time.Unix(10, 0))
 	v, _ := d.AssignSequence(1)
-	return v.SubmitDraft(expected, reviewID, 1, actor, at)
+	return v.SubmitDraft(expected, reviewID, 1, actor, at, "app-profile-review-v1")
 }
 func submitCommand() SubmitApplicationProfileRevisionReviewCommand {
 	return SubmitApplicationProfileRevisionReviewCommand{appID, profileID, 1}

@@ -494,10 +494,10 @@ func (f *versionReviewGatewayFixture) verifyReviewDecisions(edited, native, web 
 	detail, err := rq.NewApplicationReviewQueryServiceClient(f.edge).GetApplicationVersionReview(grantedCtx, &rq.GetApplicationVersionReviewRequest{ApplicationId: f.appID, VersionId: edited.VersionId, ReviewId: edited.ReviewId})
 	checks := f.decision(edited, true).Command.ConfirmedCheckIds
 	slices.Sort(checks)
-	actualChecks := slices.Clone(detail.GetCurrentPolicy().GetRequiredCheckIds())
+	actualChecks := slices.Clone(detail.GetReviewPolicy().GetRequiredCheckIds())
 	slices.Sort(actualChecks)
-	if err != nil || !detail.GetDecisionEligibility().GetEligible() || detail.GetCurrentPolicy().GetVersion() != "app-version-review-v3" || !reflect.DeepEqual(actualChecks, checks) || !proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot) {
-		t.Fatalf("real Reviewer detail: status=%s eligible=%t policy=%s checks=%v snapshotEqual=%t", status.Code(err), detail.GetDecisionEligibility().GetEligible(), detail.GetCurrentPolicy().GetVersion(), detail.GetCurrentPolicy().GetRequiredCheckIds(), proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot))
+	if err != nil || !detail.GetDecisionEligibility().GetEligible() || detail.GetReviewPolicy().GetVersion() != "app-version-review-v3" || !reflect.DeepEqual(actualChecks, checks) || !proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot) {
+		t.Fatalf("real Reviewer detail: status=%s eligible=%t policy=%s checks=%v snapshotEqual=%t", status.Code(err), detail.GetDecisionEligibility().GetEligible(), detail.GetReviewPolicy().GetVersion(), detail.GetReviewPolicy().GetRequiredCheckIds(), proto.Equal(detail.GetReview().GetSnapshot(), edited.Snapshot))
 	}
 	if count, err := f.authDB.Collection("auth_permission_audit_events").CountDocuments(f.ctx, bson.M{"subjectAuthId": reviewer, "actorAuthId": manager, "permission": "app.version.review"}); err != nil || count != 3 {
 		t.Fatal("real Auth grants/revoke did not leave immutable audit events")

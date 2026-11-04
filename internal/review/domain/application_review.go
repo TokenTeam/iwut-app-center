@@ -251,6 +251,7 @@ type ApplicationReview struct {
 	snapshot               ApplicationVersionReviewSnapshot
 	scopeCatalogRevision   ScopeCatalogRevision
 	preflightPolicyVersion PreflightPolicyVersion
+	policyVersion          ReviewPolicyVersion
 	submittedBy            shared.AuthID
 	submittedAt            time.Time
 	status                 ReviewStatus
@@ -297,9 +298,10 @@ func NewPendingApplicationReview(
 	preflightPolicyVersion PreflightPolicyVersion,
 	submittedBy shared.AuthID,
 	submittedAt time.Time,
+	policyVersion ReviewPolicyVersion,
 ) (*ApplicationReview, error) {
 	if candidate == nil || !reviewID.IsValid() || attempt < 1 || scopeCatalogRevision < 1 ||
-		!policyVersionPattern.MatchString(preflightPolicyVersion.String()) || !submittedBy.IsValid() || submittedAt.IsZero() {
+		!policyVersionPattern.MatchString(preflightPolicyVersion.String()) || !policyVersionPattern.MatchString(policyVersion.String()) || !submittedBy.IsValid() || submittedAt.IsZero() {
 		return nil, NewInternalError(nil)
 	}
 	return &ApplicationReview{
@@ -311,6 +313,7 @@ func NewPendingApplicationReview(
 		snapshot:               candidate.Snapshot(),
 		scopeCatalogRevision:   scopeCatalogRevision,
 		preflightPolicyVersion: preflightPolicyVersion,
+		policyVersion:          policyVersion,
 		submittedBy:            submittedBy,
 		submittedAt:            submittedAt.UTC(),
 		status:                 ReviewStatusPending,
@@ -333,10 +336,11 @@ func RestoreApplicationReview(
 	status ReviewStatus,
 	decision *ApplicationReviewDecision,
 	draftRestoration *ApplicationReviewDraftRestoration,
+	policyVersion ReviewPolicyVersion,
 ) (*ApplicationReview, error) {
 	if !reviewID.IsValid() || !applicationID.IsValid() || !versionID.IsValid() || attempt < 1 ||
 		sourceVersionRevision < 1 || scopeCatalogRevision < 1 ||
-		!policyVersionPattern.MatchString(preflightPolicyVersion.String()) || !submittedBy.IsValid() ||
+		!policyVersionPattern.MatchString(preflightPolicyVersion.String()) || !policyVersionPattern.MatchString(policyVersion.String()) || !submittedBy.IsValid() ||
 		submittedAt.IsZero() || !status.valid() {
 		return nil, NewInternalError(nil)
 	}
@@ -344,7 +348,7 @@ func RestoreApplicationReview(
 		if decision != nil {
 			return nil, NewInternalError(nil)
 		}
-	} else if decision == nil || decision.Outcome() != ReviewDecision(status) {
+	} else if decision == nil || decision.Outcome() != ReviewDecision(status) || decision.ReviewPolicyVersion() != policyVersion {
 		return nil, NewInternalError(nil)
 	}
 	if draftRestoration != nil && status != ReviewStatusRejected {
@@ -359,6 +363,7 @@ func RestoreApplicationReview(
 		snapshot:               snapshot,
 		scopeCatalogRevision:   scopeCatalogRevision,
 		preflightPolicyVersion: preflightPolicyVersion,
+		policyVersion:          policyVersion,
 		submittedBy:            submittedBy,
 		submittedAt:            submittedAt.UTC(),
 		status:                 status,
@@ -397,8 +402,9 @@ func (review *ApplicationReview) ScopeCatalogRevision() ScopeCatalogRevision {
 func (review *ApplicationReview) PreflightPolicyVersion() PreflightPolicyVersion {
 	return review.preflightPolicyVersion
 }
-func (review *ApplicationReview) SubmittedBy() shared.AuthID { return review.submittedBy }
-func (review *ApplicationReview) SubmittedAt() time.Time     { return review.submittedAt }
+func (review *ApplicationReview) PolicyVersion() ReviewPolicyVersion { return review.policyVersion }
+func (review *ApplicationReview) SubmittedBy() shared.AuthID         { return review.submittedBy }
+func (review *ApplicationReview) SubmittedAt() time.Time             { return review.submittedAt }
 
 // Approve writes the single APPROVED decision for a PENDING attempt. A second
 // call, or a decision stored on the entity, fails without mutating it.
@@ -412,6 +418,9 @@ func (review *ApplicationReview) Approve(
 ) (*ApplicationReviewDecision, error) {
 	if review == nil || review.status != ReviewStatusPending || review.decision != nil {
 		return nil, ErrApplicationReviewAlreadyDecided
+	}
+	if policyVersion != review.policyVersion {
+		return nil, ErrApplicationReviewPolicyMismatch
 	}
 	decision, err := NewApprovedDecision(
 		policyVersion, confirmedCheckIDs, optionalReason, approvalValidation, decidedBy, decidedAt,
@@ -433,6 +442,9 @@ func (review *ApplicationReview) Reject(
 ) (*ApplicationReviewDecision, error) {
 	if review == nil || review.status != ReviewStatusPending || review.decision != nil {
 		return nil, ErrApplicationReviewAlreadyDecided
+	}
+	if policyVersion != review.policyVersion {
+		return nil, ErrApplicationReviewPolicyMismatch
 	}
 	decision, err := NewRejectedDecision(policyVersion, reason, decidedBy, decidedAt)
 	if err != nil {

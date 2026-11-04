@@ -42,7 +42,7 @@ type ReviewDetail struct {
 	Application         ReviewApplicationContext
 	Version             ReviewVersionContext
 	Review              *ApplicationReview
-	CurrentPolicy       ReviewPolicyContext
+	ReviewPolicy        ReviewPolicyContext
 	DecisionEligibility DecisionEligibility
 	AsOf                time.Time
 }

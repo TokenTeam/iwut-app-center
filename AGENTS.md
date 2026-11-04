@@ -38,6 +38,26 @@ to the design task instead of deciding in code.
 
 ## Current work package
 
+**2026-11-04 accepted submission-bound review policies (UC004/005/015/016/030/031).**
+
+User accepted the prelaunch design and requested implementation. Read the six
+accepted briefs and engineering baseline. Bind the active complete policy in
+each successful submission transaction; move the existing policy write fence
+from decisions to submissions. Decisions/detail queries use the immutable
+attempt binding even after retirement. Initialize complete Version v3/Profile
+v1 definitions and require bindings for every Review; rebuild isolated fixtures,
+with no legacy data/client compatibility or writes to existing user databases.
+Preserve permissions, live qualification/Scope/URL gates, Profile working/public
+pointers and one-time decisions. User explicitly assigned App-related Proto and generated code to this work
+package on 2026-11-04. Implement the exact API handoff in
+docs/app-center/implements/2026-11-04-review-policy-api-handoff.md, commit inputs
+and outputs together, then pin that revision in App Center.
+Do not modify Auth/Gateway/Console sources. Run serial targeted real Mongo
+regressions, then frozen check-full with Go 1.25.5 and committed docs (also
+check-auth-app if shared identity/Auth contracts change). Local commits only;
+no push/deployment. Older policy work packages below are historical where this
+accepted design supersedes them.
+
 **2026-10-30 UC-APP-028 operation timestamp readback regression.**
 
 User authorized unifying Suspend/Restore ACK and persisted readback times after

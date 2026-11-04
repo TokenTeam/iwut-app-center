@@ -96,15 +96,7 @@ type ReviewCheckDefinition struct {
 	description string
 }
 
-func NewReviewCheckDefinition(id ReviewCheckID) (ReviewCheckDefinition, error) {
-	if id == "" {
-		return ReviewCheckDefinition{}, NewInternalError(nil)
-	}
-	return ReviewCheckDefinition{id: id}, nil
-}
-
-// NewFormalReviewCheckDefinition validates policy-owned plain text; historical
-// ID-only definitions remain representable without retroactive interpretation.
+// NewFormalReviewCheckDefinition validates complete policy-owned plain text.
 func NewFormalReviewCheckDefinition(id ReviewCheckID, title, description string) (ReviewCheckDefinition, error) {
 	if _, err := NewReviewCheckID(id.String()); err != nil || !validReviewDefinitionText(title, 80) || !validReviewDefinitionText(description, 2000) {
 		return ReviewCheckDefinition{}, NewInternalError(nil)
@@ -159,12 +151,12 @@ func NewVersionReviewPolicy(
 	requiredChecks []ReviewCheckDefinition,
 	status ReviewPolicyStatus,
 ) (*VersionReviewPolicy, error) {
-	if !policyVersionPattern.MatchString(version.String()) || !status.valid() {
+	if !policyVersionPattern.MatchString(version.String()) || !status.valid() || len(requiredChecks) == 0 {
 		return nil, NewInternalError(nil)
 	}
 	seen := make(map[ReviewCheckID]struct{}, len(requiredChecks))
 	for _, check := range requiredChecks {
-		if check.id == "" {
+		if check.id == "" || !validReviewDefinitionText(check.title, 80) || !validReviewDefinitionText(check.description, 2000) {
 			return nil, NewInternalError(nil)
 		}
 		if _, exists := seen[check.id]; exists {
@@ -181,7 +173,7 @@ func NewVersionReviewPolicy(
 
 func (policy *VersionReviewPolicy) Version() ReviewPolicyVersion { return policy.version }
 func (policy *VersionReviewPolicy) Status() ReviewPolicyStatus   { return policy.status }
-func (policy *VersionReviewPolicy) Usable() bool {
+func (policy *VersionReviewPolicy) Selectable() bool {
 	return policy != nil && policy.status == ReviewPolicyStatusActive
 }
 

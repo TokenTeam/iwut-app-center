@@ -159,8 +159,12 @@ func (repository *ApplicationReviewRepository) submitTransaction(
 	if err != nil {
 		return nil, err
 	}
+	policy, err := selectVersionReviewPolicyForSubmission(ctx, repository.database)
+	if err != nil {
+		return nil, err
+	}
 	review, err := reviewdomain.NewPendingApplicationReview(
-		candidate, reviewID, attempt, scopeCatalogRevision, preflightPolicyVersion, expectedAdminID, submittedAt,
+		candidate, reviewID, attempt, scopeCatalogRevision, preflightPolicyVersion, expectedAdminID, submittedAt, policy.Version(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create pending application review: %w", err)
