@@ -302,7 +302,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 		t.Fatalf("second migration: %v", err)
 	}
 
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 36)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, len(expectedIntegrationMigrationIDs()))
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName, applicationManagementIndexName,
 	})
@@ -361,7 +361,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	if err := migrator.Migrate(t.Context()); err != nil {
 		t.Fatalf("upgrade to latest: %v", err)
 	}
-	assertCollectionCount(t, database, migrationLedgerCollectionName, 36)
+	assertCollectionCount(t, database, migrationLedgerCollectionName, len(expectedIntegrationMigrationIDs()))
 	assertIndexNames(t, database.Collection(applicationVersionsCollectionName), []string{
 		"_id_", applicationVersionIDUniqueIndexName, applicationVersionSequenceUniqueIndexName,
 		applicationVersionLabelUniqueIndexName, applicationVersionManagementIndexName,
@@ -406,7 +406,15 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		got = append(got, record.ID)
 	}
 	sort.Strings(got)
-	want := []string{
+	want := expectedIntegrationMigrationIDs()
+	sort.Strings(want)
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("migration ledger IDs = %v, want %v", got, want)
+	}
+}
+
+func expectedIntegrationMigrationIDs() []string {
+	return []string{
 		applicationCreationMigrationID,
 		applicationVersionMigrationID,
 		applicationVersionDraftUpdateMigrationID,
@@ -444,10 +452,6 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		scriptVersionMigrationID,
 		scriptReviewMigrationID,
 		scriptQueryMigrationID,
-	}
-	sort.Strings(want)
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("migration ledger IDs = %v, want %v", got, want)
 	}
 }
 

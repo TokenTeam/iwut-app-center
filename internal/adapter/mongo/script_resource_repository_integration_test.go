@@ -17,7 +17,7 @@ func TestScriptResourceRepositoryIntegration_UCAPP041_BRSCR001003(t *testing.T) 
 	repo := NewScriptResourceRepository(db)
 	resources := db.Collection(scriptResourcesCollectionName)
 	audits := db.Collection(scriptResourceAuditsCollectionName)
-	assertIndexNames(t, resources, []string{"_id_", scriptResourceIDIndexName})
+	assertIndexNames(t, resources, []string{"_id_", scriptResourceIDIndexName, "ix_script_resources_created"})
 	assertIndexNames(t, audits, []string{"_id_", scriptResourceAuditIndexName})
 	if _, err := resources.InsertOne(t.Context(), bson.D{{Key: "name", Value: "missing required fields"}}); err == nil {
 		t.Fatal("incomplete resource passed validator")
