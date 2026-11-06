@@ -201,21 +201,21 @@ func TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages(t *testing.T) {
 	}
 	httpCall(adminHost, http.MethodGet, queuePath, maintainer.session, nil, nil, http.StatusForbidden)
 	httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, nil, http.StatusForbidden)
-	var scriptPermissions permissionsv1.ScriptPermissions
+	scriptPermissions := new(permissionsv1.ScriptPermissions)
 	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:get", manager.session,
-		&permissionsv1.GetScriptPermissionsRequest{SubjectAuthId: maintainer.authID}, &scriptPermissions, http.StatusOK)
+		&permissionsv1.GetScriptPermissionsRequest{SubjectAuthId: maintainer.authID}, scriptPermissions, http.StatusOK)
 	if len(scriptPermissions.GetPermissions()) != 5 || scriptPermissions.GetPermissionRevision() != revoked.GetPermissionRevision() {
 		t.Fatal("Auth did not return current independent permissions")
 	}
 	setPermission := func(permission permissionsv1.ScriptPermission, action permissionsv1.ScriptPermissionAction) {
 		t.Helper()
-		var result permissionsv1.ScriptPermissions
+		result := new(permissionsv1.ScriptPermissions)
 		httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:manage", manager.session,
 			&permissionsv1.ManageScriptPermissionRequest{
 				SubjectAuthId: maintainer.authID, Permission: permission, Action: action,
 				ExpectedPermissionRevision: proto.Int64(scriptPermissions.GetPermissionRevision()),
 				Reason:                     "UC045 role isolation",
-			}, &result, http.StatusOK)
+			}, result, http.StatusOK)
 		if result.GetPermissionRevision() != scriptPermissions.GetPermissionRevision()+1 {
 			t.Fatal("independent grant or revoke did not change revision")
 		}
