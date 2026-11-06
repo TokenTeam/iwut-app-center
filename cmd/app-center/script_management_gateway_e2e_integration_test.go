@@ -26,7 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestE2E_UCAPP041_042_ScriptManagementLocalImages(t *testing.T) {
+func TestE2E_UCAPP041_042_043_ScriptManagementLocalImages(t *testing.T) {
 	forwardAuthAddress := os.Getenv("UC041_ADMIN_FORWARD_AUTH_ADDR")
 	if forwardAuthAddress == "" {
 		t.Skip("run scripts/test-uc002-gateway-auth-integration.sh --script-management")
@@ -163,6 +163,14 @@ func TestE2E_UCAPP041_042_ScriptManagementLocalImages(t *testing.T) {
 	assertScriptDraftBytes(t, &modified, edited, 2)
 	httpCall(adminHost, http.MethodPut, appResources+"/"+resource.GetResourceId()+"/versions/"+draft.GetVersionId()+"/draft",
 		maintainer.session, update.GetCommand(), nil, http.StatusConflict)
+	versionPath := appResources + "/" + resource.GetResourceId() + "/versions/" + draft.GetVersionId()
+	submit := &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 2}
+	var submission versionv1.ScriptVersionReviewSubmission
+	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, &submission, http.StatusOK)
+	assertScriptSubmission(t, &submission, 3)
+	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, nil, http.StatusConflict)
+	update.Command.ExpectedRevision = 3
+	httpCall(adminHost, http.MethodPut, versionPath+"/draft", maintainer.session, update.GetCommand(), nil, http.StatusConflict)
 
 	grant.Action = permissionv1.ScriptMaintainerPermissionAction_SCRIPT_MAINTAINER_PERMISSION_ACTION_REVOKE
 	grant.ExpectedPermissionRevision = proto.Int64(granted.GetPermissionRevision())
@@ -171,11 +179,11 @@ func TestE2E_UCAPP041_042_ScriptManagementLocalImages(t *testing.T) {
 		t.Fatal("real Auth native gRPC revoke failed", status.Code(err))
 	}
 	httpCall(adminHost, http.MethodPost, appResources, maintainer.session, create, nil, http.StatusForbidden)
-	update.Command.ExpectedRevision = 2
 	update.Command.ContentText = "{}"
 	if _, err := versionv1.NewScriptVersionServiceClient(edge).ReplaceScriptVersionDraft(maintainerRPC, update); status.Code(err) != codes.PermissionDenied {
 		t.Fatal("the same Session could write after revoke", status.Code(err))
 	}
+	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, nil, http.StatusForbidden)
 
 	client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv(mongoIntegrationURIEnv)))
 	if err != nil {
@@ -186,5 +194,6 @@ func TestE2E_UCAPP041_042_ScriptManagementLocalImages(t *testing.T) {
 	e2eAssertCollectionCount(t, database, "script_resources", 1)
 	e2eAssertCollectionCount(t, database, "script_resource_audits", 2)
 	e2eAssertCollectionCount(t, database, "script_versions", 1)
-	e2eAssertCollectionCount(t, database, "script_version_audits", 2)
+	e2eAssertCollectionCount(t, database, "script_version_audits", 3)
+	e2eAssertCollectionCount(t, database, "script_reviews", 1)
 }

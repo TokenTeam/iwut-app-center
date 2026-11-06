@@ -26,7 +26,7 @@ import (
 	"iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_ScriptManagementHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP041_042_043_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
@@ -170,10 +170,43 @@ func TestE2E_UCAPP041_042_ScriptManagementHTTPAndGRPC(t *testing.T) {
 		VersionLabel: "boundary", ContentFormat: "json", ContentText: large,
 	}), http.StatusOK, &largeDraft)
 	assertScriptDraftBytes(t, &largeDraft, large, 1)
+
+	submitPath := versionsPath + "/" + draft.GetVersionId() + "/reviews"
+	httpCall(http.MethodPost, submitPath, maintainer, []byte(`{"expectedRevision":"2","policyVersion":"caller-selected"}`), http.StatusBadRequest, nil)
+	var submitted versionv1.ScriptVersionReviewSubmission
+	httpCall(http.MethodPost, submitPath, maintainer, []byte(`{"expectedRevision":"2"}`), http.StatusOK, &submitted)
+	assertScriptSubmission(t, &submitted, 3)
+	httpCall(http.MethodPost, submitPath, maintainer, []byte(`{"expectedRevision":"2"}`), http.StatusConflict, nil)
+	secondSubmission := &versionv1.SubmitScriptVersionReviewRequest{
+		ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(),
+		Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1},
+	}
+	developerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, developer))
+	if _, err := versionClient.SubmitScriptVersionReview(developerContext, secondSubmission); status.Code(err) != codes.PermissionDenied {
+		t.Fatal("developer without script maintain could submit", status.Code(err))
+	}
+	second, err := versionClient.SubmitScriptVersionReview(maintainerContext, secondSubmission)
+	if err != nil {
+		t.Fatal("native script submission:", status.Code(err))
+	}
+	assertScriptSubmission(t, second, 2)
+	replace.Command.ExpectedRevision = 3
+	if _, err := versionClient.ReplaceScriptVersionDraft(maintainerContext, replace); status.Code(err) != codes.Aborted {
+		t.Fatal("submitted script could still be edited", status.Code(err))
+	}
 	e2eAssertCollectionCount(t, database, "script_resources", 1)
 	e2eAssertCollectionCount(t, database, "script_resource_audits", 2)
 	e2eAssertCollectionCount(t, database, "script_versions", 2)
-	e2eAssertCollectionCount(t, database, "script_version_audits", 3)
+	e2eAssertCollectionCount(t, database, "script_version_audits", 5)
+	e2eAssertCollectionCount(t, database, "script_reviews", 2)
+}
+
+func assertScriptSubmission(t *testing.T, result *versionv1.ScriptVersionReviewSubmission, revision int64) {
+	t.Helper()
+	if result.GetReviewId() == "" || result.GetRevision() != revision || result.GetState() != versionv1.ScriptVersionState_SCRIPT_VERSION_STATE_SUBMITTED ||
+		result.GetPolicyVersion() != domain.InitialPolicyVersion || result.GetSubmittedAt() == nil || !result.GetSubmittedAt().IsValid() {
+		t.Fatalf("invalid script submission at revision %d", revision)
+	}
 }
 
 func assertScriptDraftBytes(t *testing.T, draft *versionv1.ScriptVersion, text string, revision int64) {

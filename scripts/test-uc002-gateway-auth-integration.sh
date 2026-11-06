@@ -196,7 +196,7 @@ PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
 if [[ "${script_management}" == true ]]; then
-  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_ScriptManagementLocalImages$' ./cmd/app-center
+  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_043_ScriptManagementLocalImages$' ./cmd/app-center
 else
   go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center
 fi

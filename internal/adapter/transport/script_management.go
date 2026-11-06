@@ -29,6 +29,7 @@ const (
 	replaceScriptResource = resourcev1.OperationScriptResourceServiceReplaceScriptResourceMetadata
 	createScriptDraft     = versionv1.OperationScriptVersionServiceCreateScriptVersionDraft
 	replaceScriptDraft    = versionv1.OperationScriptVersionServiceReplaceScriptVersionDraft
+	submitScriptReview    = versionv1.OperationScriptVersionServiceSubmitScriptVersionReview
 	// Every script byte can expand to a six-byte JSON escape.
 	maxScriptJSONBytes = 6*domain.MaxContentBytes + 4096
 )
@@ -36,12 +37,13 @@ const (
 type ScriptManagementService struct {
 	resourcev1.UnimplementedScriptResourceServiceServer
 	versionv1.UnimplementedScriptVersionServiceServer
-	resources *scriptuc.ResourceHandlers
-	drafts    *scriptuc.DraftHandlers
+	resources   *scriptuc.ResourceHandlers
+	drafts      *scriptuc.DraftHandlers
+	submissions *scriptuc.SubmitDraftHandler
 }
 
-func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers) *ScriptManagementService {
-	return &ScriptManagementService{resources: resources, drafts: drafts}
+func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler) *ScriptManagementService {
+	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions}
 }
 
 func scriptMaintainer(ctx context.Context, operation string) (shared.TrustedIdentity, error) {
@@ -123,6 +125,27 @@ func (s *ScriptManagementService) ReplaceScriptVersionDraft(ctx context.Context,
 	return scriptVersionResponse(version), nil
 }
 
+func (s *ScriptManagementService) SubmitScriptVersionReview(ctx context.Context, req *versionv1.SubmitScriptVersionReviewRequest) (*versionv1.ScriptVersionReviewSubmission, error) {
+	identity, err := scriptMaintainer(ctx, submitScriptReview)
+	if err != nil {
+		return nil, err
+	}
+	command := req.GetCommand()
+	if command == nil || hasUnknownScriptFields(req) || hasUnknownScriptFields(command) {
+		return nil, invalidScriptRequest(submitScriptReview)
+	}
+	result, err := s.submissions.Submit(ctx, identity, scriptuc.SubmitDraftCommand{
+		ResourceID: req.GetResourceId(), VersionID: req.GetVersionId(), ExpectedRevision: command.GetExpectedRevision(),
+	})
+	if err != nil {
+		return nil, scriptManagementError(submitScriptReview, err)
+	}
+	return &versionv1.ScriptVersionReviewSubmission{
+		ReviewId: string(result.ReviewID), State: versionv1.ScriptVersionState_SCRIPT_VERSION_STATE_SUBMITTED,
+		Revision: result.Revision, SubmittedAt: timestamppb.New(result.SubmittedAt), PolicyVersion: result.PolicyVersion,
+	}, nil
+}
+
 func hasUnknownScriptFields(message proto.Message) bool {
 	return len(message.ProtoReflect().GetUnknown()) != 0
 }
@@ -145,15 +168,15 @@ func scriptVersionResponse(version domain.Version) *versionv1.ScriptVersion {
 
 func scriptManagementOperation(operation string) bool {
 	switch operation {
-	case createScriptResource, replaceScriptResource, createScriptDraft, replaceScriptDraft:
+	case createScriptResource, replaceScriptResource, createScriptDraft, replaceScriptDraft, submitScriptReview:
 		return true
 	default:
 		return false
 	}
 }
 
-func draftOperation(operation string) bool {
-	return operation == createScriptDraft || operation == replaceScriptDraft
+func scriptVersionOperation(operation string) bool {
+	return operation == createScriptDraft || operation == replaceScriptDraft || operation == submitScriptReview
 }
 
 func scriptHTTPWriteOperation(r *http.Request) string {
@@ -170,6 +193,8 @@ func scriptHTTPWriteOperation(r *http.Request) string {
 		return createScriptDraft
 	case r.Method == http.MethodPut && len(p) == 7 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "draft":
 		return replaceScriptDraft
+	case r.Method == http.MethodPost && len(p) == 7 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "reviews":
+		return submitScriptReview
 	default:
 		return ""
 	}
@@ -229,7 +254,7 @@ func validScriptHTTPBody(w http.ResponseWriter, r *http.Request, operation strin
 		return false
 	}
 	maxBytes := int64(16 * 1024)
-	if draftOperation(operation) {
+	if operation == createScriptDraft || operation == replaceScriptDraft {
 		maxBytes = maxScriptJSONBytes
 	}
 	body := http.MaxBytesReader(w, r.Body, maxBytes)
@@ -248,6 +273,8 @@ func validScriptHTTPBody(w http.ResponseWriter, r *http.Request, operation strin
 		input = &versionv1.CreateScriptVersionDraftInput{}
 	case replaceScriptDraft:
 		input = &versionv1.ReplaceScriptVersionDraftInput{}
+	case submitScriptReview:
+		input = &versionv1.SubmitScriptVersionReviewInput{}
 	}
 	if err := protojson.Unmarshal(raw, input); err != nil {
 		return false
@@ -260,7 +287,7 @@ func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation
 	w.Header().Set("Cache-Control", "private, no-store")
 	converted := kerrors.FromError(err)
 	reasons := resourcev1.ErrorReason_value
-	if draftOperation(operation) {
+	if scriptVersionOperation(operation) {
 		reasons = versionv1.ErrorReason_value
 	}
 	if _, ok := reasons[converted.Reason]; !ok {
@@ -274,14 +301,14 @@ func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation
 }
 
 func invalidScriptRequest(operation string) error {
-	if draftOperation(operation) {
+	if scriptVersionOperation(operation) {
 		return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_VERSION_REQUEST", "invalid script version request")
 	}
 	return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_RESOURCE_REQUEST", "invalid script resource request")
 }
 
 func scriptManagementError(operation string, err error) error {
-	draft := draftOperation(operation)
+	draft := scriptVersionOperation(operation)
 	switch {
 	case errors.Is(err, domain.ErrIdentityRequired):
 		return transportStatus(codes.Unauthenticated, ReasonUserIdentityRequired, "user identity is required")
@@ -322,6 +349,8 @@ func scriptManagementError(operation string, err error) error {
 		return transportStatus(codes.Aborted, "ERROR_REASON_SCRIPT_VERSION_LABEL_CONFLICT", "script version label already used")
 	case errors.Is(err, domain.ErrVersionNotDraft):
 		return transportStatus(codes.Aborted, "ERROR_REASON_SCRIPT_VERSION_NOT_DRAFT", "script version is not draft")
+	case errors.Is(err, domain.ErrReviewPolicyUnavailable):
+		return transportStatus(codes.Unavailable, "ERROR_REASON_SCRIPT_REVIEW_POLICY_UNAVAILABLE", "script review policy is unavailable")
 	default:
 		return transportStatus(codes.Internal, "ERROR_REASON_INTERNAL", "script management operation failed")
 	}

@@ -264,7 +264,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	scriptVersionUUIDv7Generator := generator.NewScriptVersionUUIDv7Generator()
 	scriptVersionRepository := mongo.NewScriptVersionRepository(database)
 	draftHandlers := usecase11.NewDraftHandlers(scriptVersionUUIDv7Generator, systemClock, scriptVersionRepository)
-	scriptManagementService := transport.NewScriptManagementService(resourceHandlers, draftHandlers)
+	scriptReviewUUIDv7Generator := generator.NewScriptReviewUUIDv7Generator()
+	submitDraftHandler := usecase11.NewSubmitDraftHandler(scriptReviewUUIDv7Generator, systemClock, scriptVersionRepository)
+	scriptManagementService := transport.NewScriptManagementService(resourceHandlers, draftHandlers, submitDraftHandler)
 	serviceIdentityConfig := provideServiceIdentityConfig(configuration)
 	serviceIdentityVerifier, err := provideServiceIdentityVerifier(serviceIdentityConfig, systemClock)
 	if err != nil {
