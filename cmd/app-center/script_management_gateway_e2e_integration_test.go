@@ -12,9 +12,11 @@ import (
 	"testing"
 	"time"
 
+	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
 	permissionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/script_maintainer_permission"
+	permissionsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/script_permission"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"google.golang.org/grpc"
@@ -26,7 +28,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestE2E_UCAPP041_042_043_ScriptManagementLocalImages(t *testing.T) {
+func TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages(t *testing.T) {
 	forwardAuthAddress := os.Getenv("UC041_ADMIN_FORWARD_AUTH_ADDR")
 	if forwardAuthAddress == "" {
 		t.Skip("run scripts/test-uc002-gateway-auth-integration.sh --script-management")
@@ -69,9 +71,13 @@ func TestE2E_UCAPP041_042_043_ScriptManagementLocalImages(t *testing.T) {
 
 	httpCall := func(host, method, path, session string, input, result proto.Message, wantStatus int) http.Header {
 		t.Helper()
-		payload, err := protojson.Marshal(input)
-		if err != nil {
-			t.Fatal(err)
+		var payload []byte
+		if input != nil {
+			var err error
+			payload, err = protojson.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 		req, err := http.NewRequestWithContext(ctx, method, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+path, bytes.NewReader(payload))
 		if err != nil {
@@ -184,6 +190,92 @@ func TestE2E_UCAPP041_042_043_ScriptManagementLocalImages(t *testing.T) {
 		t.Fatal("the same Session could write after revoke", status.Code(err))
 	}
 	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, nil, http.StatusForbidden)
+
+	const queuePath = "/app-center/v1/script-reviews/pending"
+	reviewPath := versionPath + "/reviews/" + submission.GetReviewId()
+	resourcePath := appResources + "/" + resource.GetResourceId()
+	queryClient := queryv1.NewScriptQueryServiceClient(edge)
+	versionQuery := &queryv1.GetScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId()}
+	reviewQuery := &queryv1.GetScriptReviewRequest{
+		ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), ReviewId: submission.GetReviewId(),
+	}
+	httpCall(adminHost, http.MethodGet, queuePath, maintainer.session, nil, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, nil, http.StatusForbidden)
+	var scriptPermissions permissionsv1.ScriptPermissions
+	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:get", manager.session,
+		&permissionsv1.GetScriptPermissionsRequest{SubjectAuthId: maintainer.authID}, &scriptPermissions, http.StatusOK)
+	if len(scriptPermissions.GetPermissions()) != 5 || scriptPermissions.GetPermissionRevision() != revoked.GetPermissionRevision() {
+		t.Fatal("Auth did not return current independent permissions")
+	}
+	setPermission := func(permission permissionsv1.ScriptPermission, action permissionsv1.ScriptPermissionAction) {
+		t.Helper()
+		var result permissionsv1.ScriptPermissions
+		httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:manage", manager.session,
+			&permissionsv1.ManageScriptPermissionRequest{
+				SubjectAuthId: maintainer.authID, Permission: permission, Action: action,
+				ExpectedPermissionRevision: proto.Int64(scriptPermissions.GetPermissionRevision()),
+				Reason:                     "UC045 role isolation",
+			}, &result, http.StatusOK)
+		if result.GetPermissionRevision() != scriptPermissions.GetPermissionRevision()+1 {
+			t.Fatal("independent grant or revoke did not change revision")
+		}
+		scriptPermissions = result
+	}
+
+	const grantPermission = permissionsv1.ScriptPermissionAction_SCRIPT_PERMISSION_ACTION_GRANT
+	const revokePermission = permissionsv1.ScriptPermissionAction_SCRIPT_PERMISSION_ACTION_REVOKE
+	const reviewPermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_REVIEW
+	const publishPermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_PUBLISH
+	setPermission(publishPermission, grantPermission)
+	publisherView, err := queryClient.GetScriptVersion(maintainerRPC, versionQuery)
+	if err != nil || publisherView.ContentText != nil || publisherView.GetVersion().GetDigest() != modified.GetDigest() {
+		t.Fatal("native publisher read exposed content or lost summary", err)
+	}
+	httpCall(adminHost, http.MethodGet, reviewPath, maintainer.session, nil, nil, http.StatusForbidden)
+	setPermission(reviewPermission, grantPermission)
+
+	var resources queryv1.ListScriptResourcesResponse
+	httpCall(adminHost, http.MethodGet, appResources, maintainer.session, nil, &resources, http.StatusOK)
+	if len(resources.GetItems()) != 1 {
+		t.Fatal("resource query failed")
+	}
+	var versions queryv1.ListScriptVersionsResponse
+	httpCall(adminHost, http.MethodGet, resourcePath+"/versions", maintainer.session, nil, &versions, http.StatusOK)
+	if len(versions.GetItems()) != 1 {
+		t.Fatal("version query failed")
+	}
+	var queue queryv1.ListPendingScriptReviewsResponse
+	header = httpCall(adminHost, http.MethodGet, queuePath, maintainer.session, nil, &queue, http.StatusOK)
+	if len(queue.GetItems()) != 1 || header.Get("Cache-Control") != "private, no-store" {
+		t.Fatal("Admin pending queue lost result or cache policy")
+	}
+	httpCall("developer.uc002.test", http.MethodGet, queuePath, maintainer.session, nil, nil, http.StatusNotFound)
+	var detail queryv1.GetScriptReviewResponse
+	if code := gatewayWeb(t, ctx, maintainer.session, queryv1.ScriptQueryService_GetScriptReview_FullMethodName, reviewQuery, &detail); code != int(codes.OK) ||
+		detail.GetContentText() != edited || len(detail.GetChecks()) != 4 || detail.GetCanDecide() || len(detail.GetConflicts()) != 2 {
+		t.Fatal("gRPC-Web reviewer could not retrieve snapshot and conflicts", code)
+	}
+	setPermission(reviewPermission, revokePermission)
+	httpCall(adminHost, http.MethodGet, reviewPath, maintainer.session, nil, nil, http.StatusForbidden)
+	if view, err := queryClient.GetScriptVersion(maintainerRPC, versionQuery); err != nil || view.ContentText != nil {
+		t.Fatal("review revoke changed independent publisher access", err)
+	}
+	setPermission(publishPermission, revokePermission)
+
+	for _, permission := range []permissionsv1.ScriptPermission{
+		permissionsv1.ScriptPermission_SCRIPT_PERMISSION_SUSPEND,
+		permissionsv1.ScriptPermission_SCRIPT_PERMISSION_RESTORE,
+	} {
+		setPermission(permission, grantPermission)
+		var resourceView resourcev1.ScriptResource
+		httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, &resourceView, http.StatusOK)
+		if resourceView.GetResourceId() != resource.GetResourceId() {
+			t.Fatal("operator cannot read resource")
+		}
+		httpCall(adminHost, http.MethodGet, versionPath, maintainer.session, nil, nil, http.StatusForbidden)
+		setPermission(permission, revokePermission)
+	}
+	httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, nil, http.StatusForbidden)
 
 	client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv(mongoIntegrationURIEnv)))
 	if err != nil {

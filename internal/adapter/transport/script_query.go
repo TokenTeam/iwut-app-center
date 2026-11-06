@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
@@ -197,14 +198,14 @@ func scriptQueryHTTPRoute(r *http.Request) (operation string, kind scriptuc.Scri
 		return "", 0, ""
 	}
 	if r.URL.Path == "/v1/script-reviews/pending" {
-		return queryv1.OperationScriptQueryServiceListPendingScriptReviews, scriptuc.ScriptPendingRead, " limit cursor resourceId resource_id "
+		return queryv1.OperationScriptQueryServiceListPendingScriptReviews, scriptuc.ScriptPendingRead, "limit cursor resourceId resource_id"
 	}
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) < 3 || parts[1] != "v1" || parts[2] != "script-resources" {
 		return "", 0, ""
 	}
 	if len(parts) == 3 {
-		return queryv1.OperationScriptQueryServiceListScriptResources, scriptuc.ScriptResourceRead, " limit cursor "
+		return queryv1.OperationScriptQueryServiceListScriptResources, scriptuc.ScriptResourceRead, "limit cursor"
 	}
 	if len(parts) == 4 && parts[3] != "" {
 		return queryv1.OperationScriptQueryServiceGetScriptResource, scriptuc.ScriptResourceRead, ""
@@ -214,7 +215,7 @@ func scriptQueryHTTPRoute(r *http.Request) (operation string, kind scriptuc.Scri
 	}
 	switch {
 	case len(parts) == 5:
-		return queryv1.OperationScriptQueryServiceListScriptVersions, scriptuc.ScriptVersionRead, " limit cursor state "
+		return queryv1.OperationScriptQueryServiceListScriptVersions, scriptuc.ScriptVersionRead, "limit cursor state"
 	case len(parts) == 6 && parts[5] != "":
 		return queryv1.OperationScriptQueryServiceGetScriptVersion, scriptuc.ScriptVersionRead, ""
 	case len(parts) == 8 && parts[5] != "" && parts[6] == "reviews" && parts[7] != "":
@@ -247,8 +248,9 @@ func scriptQueryHTTPFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 				khttp.DefaultErrorEncoder(w, r, scriptQueryError(scriptuc.ErrInvalidScriptQuery))
 				return
 			}
+			fields := strings.Fields(allowed)
 			for field, items := range values {
-				if !strings.Contains(allowed, " "+field+" ") || len(items) != 1 {
+				if !slices.Contains(fields, field) || len(items) != 1 {
 					khttp.DefaultErrorEncoder(w, r, scriptQueryError(scriptuc.ErrInvalidScriptQuery))
 					return
 				}

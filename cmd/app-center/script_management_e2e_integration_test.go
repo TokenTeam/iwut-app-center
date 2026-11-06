@@ -212,6 +212,7 @@ func TestE2E_UCAPP041_042_043_045_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	httpCall(http.MethodGet, versionsPath+"?limit=bad", "", nil, http.StatusUnauthorized, nil)
 	httpCall(http.MethodGet, versionsPath+"?limit=0", maintainer, nil, http.StatusBadRequest, nil)
 	httpCall(http.MethodGet, versionsPath+"?limit=1&limit=2", maintainer, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, versionsPath+"?cursor%20state=x", maintainer, nil, http.StatusBadRequest, nil)
 	httpCall(http.MethodGet, versionsPath+"?resourceId="+resource.GetResourceId(), maintainer, nil, http.StatusBadRequest, nil)
 
 	var resources queryv1.ListScriptResourcesResponse

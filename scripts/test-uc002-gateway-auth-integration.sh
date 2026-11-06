@@ -129,6 +129,7 @@ docker run --detach --name "${auth_container_name}" --network host --user "$(id 
  --env 'AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON={"uc002-auth":"/run/iwut-uc002/auth-identity.pub.pem"}' \
  --env AUTH_USER_IDENTITY_SIGNING_KID=uc002-auth --env "AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64=$(base64 -w0 < "${temporary_dir}/auth-identity.pem")" \
  --env "AUTH_SCRIPT_MAINTAINER_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
+ --env "AUTH_SCRIPT_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
  --env AUTH_CENTER_OAUTH_CONFIG_FILE=/run/iwut-uc002/oauth.json "${auth_image_id}" >/dev/null
 
 export GATEWAY_HTTP_ADDR="127.0.0.1:${gateway_http}" GATEWAY_GRPC_ADDR="127.0.0.1:${gateway_grpc}"
@@ -196,7 +197,7 @@ PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
 if [[ "${script_management}" == true ]]; then
-  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_043_ScriptManagementLocalImages$' ./cmd/app-center
+  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages$' ./cmd/app-center
 else
   go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center
 fi
