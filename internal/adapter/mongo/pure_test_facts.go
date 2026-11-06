@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -56,7 +57,7 @@ func pureTestRawValid(raw bson.Raw) bool {
 }
 func pureTestUUIDField(key string) bool {
 	switch key {
-	case "id", "applicationId", "membershipId", "joinedViaJoinLinkId", "joinLinkId", "replacedByJoinLinkId", "publicationId", "testVersionId", "historyId", "previousVersionId", "newVersionId", "approvedReviewId", "versionId", "applicationVersionId", "reviewId", "profileRevisionId", "profileReviewId", "workingProfileRevisionId", "currentPublishedProfileRevisionId", "eventId", "lastPlatformOperationEventId", "lastArchiveEventId":
+	case "id", "applicationId", "membershipId", "joinedViaJoinLinkId", "joinLinkId", "replacedByJoinLinkId", "publicationId", "testVersionId", "historyId", "previousVersionId", "newVersionId", "approvedReviewId", "versionId", "applicationVersionId", "reviewId", "profileRevisionId", "profileReviewId", "workingProfileRevisionId", "currentPublishedProfileRevisionId", "eventId", "lastPlatformOperationEventId", "lastArchiveEventId", "scriptResourceId", "scriptVersionId", "scriptReviewId", "scriptDecisionId":
 		return true
 	}
 	return false
@@ -67,11 +68,21 @@ var pureTestTimeType = reflect.TypeOf(time.Time{})
 func pureTestShape(raw bson.Raw, typ reflect.Type) bool {
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		key := strings.Split(field.Tag.Get("bson"), ",")[0]
+		tag := strings.Split(field.Tag.Get("bson"), ",")
+		key := tag[0]
+		if slices.Contains(tag[1:], "inline") {
+			if field.Type.Kind() != reflect.Struct || !pureTestShape(raw, field.Type) {
+				return false
+			}
+			continue
+		}
 		if key == "" || key == "-" {
 			continue
 		}
 		v := raw.Lookup(key)
+		if v.Type == 0 && slices.Contains(tag[1:], "omitempty") {
+			continue
+		}
 		if !pureTestValueShape(v, field.Type) {
 			return false
 		}
