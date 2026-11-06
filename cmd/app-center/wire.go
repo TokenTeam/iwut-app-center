@@ -24,6 +24,8 @@ import (
 	profileusecase "iwut-app-center/internal/profile/usecase"
 	publicationusecase "iwut-app-center/internal/publication/usecase"
 	reviewusecase "iwut-app-center/internal/review/usecase"
+	scriptport "iwut-app-center/internal/script/port"
+	scriptusecase "iwut-app-center/internal/script/usecase"
 	testerusecase "iwut-app-center/internal/tester/usecase"
 	versionusecase "iwut-app-center/internal/version/usecase"
 )
@@ -36,6 +38,17 @@ import (
 func wireAppWithResolver(configuration config.Config, resolver preflight.Resolver) (*kratos.App, func(), error) {
 	panic(wire.Build(
 		generator.ProviderSet,
+		generator.NewScriptResourceUUIDv7Generator,
+		generator.NewScriptVersionUUIDv7Generator,
+		wire.Bind(new(scriptport.ResourceIDGenerator), new(*generator.ScriptResourceUUIDv7Generator)),
+		wire.Bind(new(scriptport.VersionIDGenerator), new(*generator.ScriptVersionUUIDv7Generator)),
+		wire.Bind(new(scriptport.Clock), new(*generator.SystemClock)),
+		mongo.NewScriptResourceRepository,
+		mongo.NewScriptVersionRepository,
+		wire.Bind(new(scriptport.ResourceRepository), new(*mongo.ScriptResourceRepository)),
+		wire.Bind(new(scriptport.DraftRepository), new(*mongo.ScriptVersionRepository)),
+		scriptusecase.NewResourceHandlers,
+		scriptusecase.NewDraftHandlers,
 		provideApplicationVersionManagementCursorKey,
 		provideTesterManagementCursorKey,
 		provideMyTestApplicationCursorKey,

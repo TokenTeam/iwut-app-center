@@ -36,7 +36,7 @@ func NewDraftHandlers(ids port.VersionIDGenerator, clock port.Clock, repo port.D
 }
 
 func (h *DraftHandlers) Create(ctx context.Context, identity shared.TrustedIdentity, cmd CreateDraftCommand) (domain.Version, error) {
-	if err := requireMaintainer(identity); err != nil {
+	if err := RequireMaintainer(identity); err != nil {
 		return domain.Version{}, err
 	}
 	resourceID, err := domain.ParseResourceID(cmd.ResourceID)
@@ -66,7 +66,7 @@ func (h *DraftHandlers) Create(ctx context.Context, identity shared.TrustedIdent
 }
 
 func (h *DraftHandlers) Replace(ctx context.Context, identity shared.TrustedIdentity, cmd ReplaceDraftCommand) (domain.Version, error) {
-	if err := requireMaintainer(identity); err != nil {
+	if err := RequireMaintainer(identity); err != nil {
 		return domain.Version{}, err
 	}
 	resourceID, err := domain.ParseResourceID(cmd.ResourceID)

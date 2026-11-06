@@ -2,6 +2,17 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/integration-lib.sh"
 integration_init
+script_management=false
+case "${1:-}" in
+  "") ;;
+  --script-management) script_management=true ;;
+  *) echo "Unknown integration mode" >&2; exit 2 ;;
+esac
+if [[ "${script_management}" == true ]]; then
+  : "${AUTH_CENTER_IMAGE:?set the locally built Auth image}"
+  : "${GATEWAY_LOCAL_IMAGE:?set the locally built Gateway image}"
+  : "${APP_CENTER_LOCAL_IMAGE:?set the locally built App image}"
+fi
 for tool in openssl base64 tar sha256sum; do command -v "${tool}" >/dev/null || { echo "Missing ${tool}" >&2; exit 1; }; done
 
 gateway_source="${GATEWAY_SOURCE_DIR:-${app_dir}/../iwut-gateway}"
@@ -12,12 +23,14 @@ gateway_api_head="$(git -C "${gateway_source}" rev-parse "${gateway_head}:api")"
 mkdir -p "${temporary_dir}/gateway-source/api"
 git -C "${gateway_source}" archive "${gateway_head}" | tar -x -C "${temporary_dir}/gateway-source"
 git -C "${gateway_source}/api" archive "${gateway_api_head}" | tar -x -C "${temporary_dir}/gateway-source/api"
-(cd "${temporary_dir}/gateway-source" && go build -o "${temporary_dir}/gateway" ./cmd/gateway && go build -o "${temporary_dir}/gateway-config" ./cmd/gateway-config)
+if [[ "${script_management}" == false ]]; then
+  (cd "${temporary_dir}/gateway-source" && go build -o "${temporary_dir}/gateway" ./cmd/gateway && go build -o "${temporary_dir}/gateway-config" ./cmd/gateway-config)
+fi
 echo "Gateway source: ${gateway_head}; API: ${gateway_api_head}"
 printf '%s\n' "${gateway_head}" "${gateway_api_head}" >"${integration_log_dir}/gateway-inputs.txt"
 
 auth_image="${AUTH_CENTER_IMAGE:-docker.cnb.cool/tokenteam/iwut-auth-center:latest}"
-timeout 300s docker pull "${auth_image}"
+if [[ "${script_management}" == false ]]; then timeout 300s docker pull "${auth_image}"; fi
 auth_image_id="$(docker image inspect --format '{{.Id}}' "${auth_image}")"
 echo "Auth Center image: ${auth_image} (${auth_image_id})"
 traefik_image="$(sed -n 's/^image=//p' "${temporary_dir}/gateway-source/deploy/traefik/image.lock")"
@@ -25,10 +38,17 @@ traefik_image="$(sed -n 's/^image=//p' "${temporary_dir}/gateway-source/deploy/t
 timeout 300s docker pull "${traefik_image}"
 traefik_container_name="${container_name}-traefik"
 gateway_pid=""
+gateway_container_name="${container_name}-gateway"
+app_container_name="${container_name}-app"
 cleanup_uc002() {
   local code=$?
   set +e
   if [[ -n "${gateway_pid}" ]]; then kill "${gateway_pid}" 2>/dev/null; wait "${gateway_pid}" 2>/dev/null; fi
+  if [[ "${script_management}" == true ]]; then
+    timeout 10s docker logs "${app_container_name}" >"${integration_log_dir}/app.log" 2>&1
+    timeout 10s docker logs "${gateway_container_name}" >"${integration_log_dir}/gateway.log" 2>&1
+    timeout 15s docker rm -f "${app_container_name}" "${gateway_container_name}" >/dev/null 2>&1
+  fi
   timeout 10s docker logs "${traefik_container_name}" >"${integration_log_dir}/traefik.log" 2>&1
   timeout 15s docker rm -f "${traefik_container_name}" >/dev/null 2>&1
   (exit "${code}")
@@ -39,7 +59,7 @@ trap cleanup_uc002 EXIT
 # Allocate the entire fixture's listener set at once, avoiding duplicate ports.
 mapfile -t ports < <(python3 - <<'PY'
 import socket
-sockets=[socket.socket() for _ in range(9)]
+sockets=[socket.socket() for _ in range(10)]
 for s in sockets:s.bind(('127.0.0.1',0))
 for s in sockets:print(s.getsockname()[1])
 for s in sockets:s.close()
@@ -49,6 +69,9 @@ auth_http="${ports[0]}"; auth_grpc="${ports[1]}"
 export UC002_APP_HTTP_ADDR="127.0.0.1:${ports[2]}" UC002_APP_GRPC_ADDR="127.0.0.1:${ports[3]}"
 gateway_http="${ports[4]}"; gateway_grpc="${ports[5]}"
 export UC002_EDGE_HTTP_ADDR="127.0.0.1:${ports[6]}" UC002_EDGE_GRPC_ADDR="127.0.0.1:${ports[7]}"
+if [[ "${script_management}" == true ]]; then
+  export UC041_ADMIN_FORWARD_AUTH_ADDR="127.0.0.1:${ports[9]}"
+fi
 for name in app-service gateway-service auth-identity auth-service oidc delegation; do
  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${temporary_dir}/${name}.pem" >/dev/null 2>&1
  openssl pkey -in "${temporary_dir}/${name}.pem" -pubout -out "${temporary_dir}/${name}.pub.pem" >/dev/null 2>&1
@@ -105,6 +128,7 @@ docker run --detach --name "${auth_container_name}" --network host --user "$(id 
  --env AUTH_PROFILE_CATALOG_FILE=/run/iwut-uc002/profile-catalog.json --env AUTH_USER_IDENTITY_ISSUER=https://auth.e2e.test \
  --env 'AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON={"uc002-auth":"/run/iwut-uc002/auth-identity.pub.pem"}' \
  --env AUTH_USER_IDENTITY_SIGNING_KID=uc002-auth --env "AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64=$(base64 -w0 < "${temporary_dir}/auth-identity.pem")" \
+ --env "AUTH_SCRIPT_MAINTAINER_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
  --env AUTH_CENTER_OAUTH_CONFIG_FILE=/run/iwut-uc002/oauth.json "${auth_image_id}" >/dev/null
 
 export GATEWAY_HTTP_ADDR="127.0.0.1:${gateway_http}" GATEWAY_GRPC_ADDR="127.0.0.1:${gateway_grpc}"
@@ -116,12 +140,49 @@ export GATEWAY_APP_CENTER_HTTP_URL="http://${UC002_APP_HTTP_ADDR}" GATEWAY_APP_C
 export GATEWAY_INTERNAL_HTTP_URL="http://${GATEWAY_HTTP_ADDR}" GATEWAY_INTERNAL_GRPC_URL="h2c://${GATEWAY_GRPC_ADDR}"
 export GATEWAY_PUBLIC_API_HOST=api.uc002.test GATEWAY_DEVELOPER_CONSOLE_HOST=developer.uc002.test GATEWAY_ADMIN_CONSOLE_HOST=admin.uc002.test
 export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth
-"${temporary_dir}/gateway-config" --render --routes "${GATEWAY_ROUTES_FILE}" --traefik "${temporary_dir}/dynamic.yaml"
-"${temporary_dir}/gateway" >"${integration_log_dir}/gateway.log" 2>&1 &
-gateway_pid=$!
+if [[ "${script_management}" == true ]]; then
+  export GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL="http://${UC041_ADMIN_FORWARD_AUTH_ADDR}/internal/forward-auth"
+  gateway_image_id="$(docker image inspect --format '{{.Id}}' "${GATEWAY_LOCAL_IMAGE}")"
+  app_image_id="$(docker image inspect --format '{{.Id}}' "${APP_CENTER_LOCAL_IMAGE}")"
+  printf 'App %s\nGateway %s\nAuth %s\n' "${app_image_id}" "${gateway_image_id}" "${auth_image_id}" \
+    >"${integration_log_dir}/script-management-image-ids.txt"
+  gateway_env=(
+    --env GATEWAY_HTTP_ADDR --env GATEWAY_GRPC_ADDR
+    --env GATEWAY_SERVICE_IDENTITY_ID --env GATEWAY_SERVICE_IDENTITY_KID --env GATEWAY_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64
+    --env GATEWAY_AUTH_CENTER_HTTP_URL --env GATEWAY_AUTH_CENTER_GRPC_TARGET
+    --env GATEWAY_APP_CENTER_HTTP_URL --env GATEWAY_APP_CENTER_GRPC_TARGET
+    --env GATEWAY_INTERNAL_HTTP_URL --env GATEWAY_INTERNAL_GRPC_URL
+    --env GATEWAY_PUBLIC_API_HOST --env GATEWAY_DEVELOPER_CONSOLE_HOST --env GATEWAY_ADMIN_CONSOLE_HOST
+    --env GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL --env GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL
+  )
+  docker run --rm --user "$(id -u):$(id -g)" --entrypoint /gateway-config \
+    --mount "type=bind,src=${temporary_dir},dst=/run/iwut-uc002" "${gateway_env[@]}" "${gateway_image_id}" \
+    --render --routes /config/routes.v3.yaml --traefik /run/iwut-uc002/dynamic.yaml
+  docker run --detach --name "${gateway_container_name}" --network host "${gateway_env[@]}" "${gateway_image_id}" >/dev/null
+
+  export UC041_APP_DATABASE=iwut_app_uc041
+  auth_public="$(base64 -w0 < "${temporary_dir}/auth-service.pub.pem")"
+  app_callers="$(printf '{"iwut-auth-center":{"status":"ACTIVE","keys":{"uc002-auth-service":{"publicKeyPemB64":"%s"}},"permissions":["app.oauth.client.read"]}}' "${auth_public}" | base64 -w0)"
+  app_mongo=(--env "APP_CENTER_MONGO_URI=${MONGODB_INTEGRATION_URI}" --env "APP_CENTER_MONGO_DATABASE=${UC041_APP_DATABASE}")
+  docker run --rm --network host "${app_mongo[@]}" "${app_image_id}" migrate >"${integration_log_dir}/app-migrate.log" 2>&1
+  docker run --detach --name "${app_container_name}" --network host --user "$(id -u):$(id -g)" \
+    --mount "type=bind,src=${AUTH_CENTER_IDENTITY_PUBLIC_KEY_PATH},dst=/run/auth-identity.pem,readonly" "${app_mongo[@]}" \
+    --env "APP_CENTER_HTTP_ADDR=${UC002_APP_HTTP_ADDR}" --env "APP_CENTER_GRPC_ADDR=${UC002_APP_GRPC_ADDR}" \
+    --env APP_CENTER_IDENTITY_ISSUER=https://auth.e2e.test --env APP_CENTER_IDENTITY_AUDIENCE=iwut-app-center \
+    --env APP_CENTER_IDENTITY_PUBLIC_KEYS=uc002-auth=/run/auth-identity.pem \
+    --env "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET=${AUTH_CENTER_INTEGRATION_TARGET}" \
+    --env APP_CENTER_SERVICE_IDENTITY_ID --env APP_CENTER_SERVICE_IDENTITY_KID --env APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64 \
+    --env "APP_CENTER_SERVICE_CALLERS_B64=${app_callers}" "${app_image_id}" >/dev/null
+else
+  "${temporary_dir}/gateway-config" --render --routes "${GATEWAY_ROUTES_FILE}" --traefik "${temporary_dir}/dynamic.yaml"
+  "${temporary_dir}/gateway" >"${integration_log_dir}/gateway.log" 2>&1 &
+  gateway_pid=$!
+fi
 docker run --detach --name "${traefik_container_name}" --network host --user "$(id -u):$(id -g)" \
  --mount "type=bind,src=${temporary_dir},dst=/run/iwut-uc002,readonly" "${traefik_image}" --configFile=/run/iwut-uc002/traefik.yaml >/dev/null
-python3 - "${auth_grpc}" "${gateway_http}" "${ports[6]}" "${startup_timeout}" <<'PY'
+listener_ports=("${auth_grpc}" "${gateway_http}" "${ports[6]}")
+if [[ "${script_management}" == true ]]; then listener_ports+=("${ports[2]}" "${ports[3]}" "${ports[7]}"); fi
+python3 - "${listener_ports[@]}" "${startup_timeout}" <<'PY'
 import socket,sys,time
 end=time.monotonic()+int(sys.argv[-1])
 for port in map(int,sys.argv[1:-1]):
@@ -134,4 +195,8 @@ for port in map(int,sys.argv[1:-1]):
 PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
-go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center
+if [[ "${script_management}" == true ]]; then
+  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_ScriptManagementLocalImages$' ./cmd/app-center
+else
+  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center
+fi

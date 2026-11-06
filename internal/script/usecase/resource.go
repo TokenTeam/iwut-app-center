@@ -33,7 +33,7 @@ func NewResourceHandlers(ids port.ResourceIDGenerator, clock port.Clock, repo po
 	return &ResourceHandlers{ids: ids, clock: clock, repo: repo}
 }
 
-func requireMaintainer(identity shared.TrustedIdentity) error {
+func RequireMaintainer(identity shared.TrustedIdentity) error {
 	if !identity.AuthID.IsValid() {
 		return domain.ErrIdentityRequired
 	}
@@ -44,7 +44,7 @@ func requireMaintainer(identity shared.TrustedIdentity) error {
 }
 
 func (h *ResourceHandlers) Create(ctx context.Context, identity shared.TrustedIdentity, cmd CreateResourceCommand) (domain.Resource, error) {
-	if err := requireMaintainer(identity); err != nil {
+	if err := RequireMaintainer(identity); err != nil {
 		return domain.Resource{}, err
 	}
 	metadata, err := domain.NewMetadata(cmd.Name, cmd.Purpose)
@@ -67,7 +67,7 @@ func (h *ResourceHandlers) Create(ctx context.Context, identity shared.TrustedId
 }
 
 func (h *ResourceHandlers) ReplaceMetadata(ctx context.Context, identity shared.TrustedIdentity, cmd ReplaceResourceMetadataCommand) (domain.Resource, error) {
-	if err := requireMaintainer(identity); err != nil {
+	if err := RequireMaintainer(identity); err != nil {
 		return domain.Resource{}, err
 	}
 	id, err := domain.ParseResourceID(cmd.ResourceID)
