@@ -218,7 +218,7 @@ func TestReusableIntegrationDatabaseRestoresIsolation(t *testing.T) {
 			t.Fatal("unchanged schema was not reused")
 		}
 		assertCollectionCount(t, db, applicationsCollectionName, 0)
-		assertCollectionCount(t, db, migrationLedgerCollectionName, 33)
+		assertCollectionCount(t, db, migrationLedgerCollectionName, 35)
 		policy, err := db.Collection(versionReviewPoliciesCollectionName).FindOne(t.Context(), bson.M{"version": "app-version-review-v3"}).Raw()
 		if err != nil || !reflect.DeepEqual(policy, originalPolicy) {
 			t.Fatal("policy seed or its original identity changed", err)
@@ -269,7 +269,7 @@ func TestReusableIntegrationDatabaseDiscardsSchemaChanges(t *testing.T) {
 				if db.Name() == name {
 					t.Fatal("changed schema was reused")
 				}
-				assertCollectionCount(t, db, migrationLedgerCollectionName, 33)
+				assertCollectionCount(t, db, migrationLedgerCollectionName, 35)
 				createVersionTestApplication(t, db, "schema-owner", "schema_app")
 			})
 		})

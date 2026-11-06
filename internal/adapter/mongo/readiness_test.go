@@ -32,13 +32,13 @@ func TestSupportsTransactions(t *testing.T) {
 func TestRequiredMigrationRecorded(t *testing.T) {
 	t.Parallel()
 
-	if RequiredMigrationID != "0033_version_review_check_definitions" {
-		t.Fatalf("RequiredMigrationID = %q, want 0033_version_review_check_definitions", RequiredMigrationID)
+	if RequiredMigrationID != "0035_script_version_drafts" {
+		t.Fatalf("RequiredMigrationID = %q, want 0035_script_version_drafts", RequiredMigrationID)
 	}
 	if requiredMigrationRecorded(nil) {
 		t.Fatal("empty ledger must not satisfy the required migration")
 	}
-	if requiredMigrationRecorded([]string{"0001_application_creation", "0003_application_version_draft_update"}) {
+	if requiredMigrationRecorded([]string{"0001_application_creation", scriptResourceMigrationID}) {
 		t.Fatal("older ledger must not satisfy the required migration")
 	}
 	if !requiredMigrationRecorded([]string{"0001_application_creation", RequiredMigrationID}) {
