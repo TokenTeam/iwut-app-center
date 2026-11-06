@@ -133,7 +133,7 @@ func (v Version) Validate() error {
 	return nil
 }
 
-func (v Version) checkDraftRevision(expected int64) error {
+func (v Version) CheckDraftRevision(expected int64) error {
 	if err := v.Validate(); err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (v Version) checkDraftRevision(expected int64) error {
 }
 
 func (v Version) ReplaceDraft(expected int64, content Content, actor shared.AuthID, at time.Time) (Version, bool, error) {
-	if err := v.checkDraftRevision(expected); err != nil {
+	if err := v.CheckDraftRevision(expected); err != nil {
 		return Version{}, false, err
 	}
 	if content == v.Content {
