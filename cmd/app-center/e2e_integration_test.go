@@ -736,6 +736,7 @@ func TestE2E_UCAPP003_UpdateDraftApplicationVersionOverRealHTTP(t *testing.T) {
 		VersionId:        created.GetVersionId(),
 		ExpectedRevision: 2,
 		Replacement: &applicationversionv1.DraftApplicationVersionReplacement{
+			ScriptReferences:          &applicationversionv1.ScriptReferences{},
 			VersionLabel:              "v1.1.1",
 			LaunchUrl:                 "https://example.edu/apps/course-table/v1.1.1/",
 			RpcApiMinVersion:          3,
@@ -2205,6 +2206,7 @@ func e2eHTTPCreateVersion(
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{
 		"versionLabel":              versionLabel,
+		"scriptReferences":          map[string]any{"items": []any{}},
 		"launchUrl":                 "https://example.edu/apps/course-table/v1/",
 		"rpcApiMinVersion":          3,
 		"rpcApiMaxVersionExclusive": 5,
@@ -2243,6 +2245,7 @@ func e2eHTTPUpdateVersion(
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{
 		"versionLabel":              versionLabel,
+		"scriptReferences":          map[string]any{"items": []any{}},
 		"launchUrl":                 launchURL,
 		"rpcApiMinVersion":          minVersion,
 		"rpcApiMaxVersionExclusive": maxVersion,

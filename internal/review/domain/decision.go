@@ -220,6 +220,7 @@ func (policy *VersionReviewPolicy) ValidateConfirmation(confirmed []ReviewCheckI
 // ApprovalValidation records the external facts re-confirmed for an APPROVED
 // decision.
 type ApprovalValidation struct {
+	scriptApprovals        []shared.ScriptApprovalFact
 	scopeCatalogRevision   ScopeCatalogRevision
 	preflightPolicyVersion PreflightPolicyVersion
 }
@@ -235,6 +236,15 @@ func NewApprovalValidation(
 		scopeCatalogRevision:   scopeCatalogRevision,
 		preflightPolicyVersion: preflightPolicyVersion,
 	}, nil
+}
+
+func (validation ApprovalValidation) WithScriptApprovals(approvals []shared.ScriptApprovalFact) *ApprovalValidation {
+	validation.scriptApprovals = slices.Clone(approvals)
+	return &validation
+}
+
+func (validation *ApprovalValidation) ScriptApprovals() []shared.ScriptApprovalFact {
+	return slices.Clone(validation.scriptApprovals)
 }
 
 func (validation *ApprovalValidation) ScopeCatalogRevision() ScopeCatalogRevision {

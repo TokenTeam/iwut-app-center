@@ -36,6 +36,7 @@ type UpdateDraftApplicationVersionHandler interface {
 }
 
 type ApplicationVersionManagementQueryHandler interface {
+	ListScriptCandidates(context.Context, shared.DeveloperIdentity, string, *int32, string) (*versiondomain.ApplicationScriptCandidatePage, error)
 	List(context.Context, shared.AuthenticatedUserIdentity, versionusecase.ListApplicationVersionsQuery) (*versiondomain.OwnedVersionPage, error)
 	Get(context.Context, shared.AuthenticatedUserIdentity, string, string) (*versiondomain.OwnedVersionDetail, error)
 }
@@ -86,6 +87,14 @@ func (service *ApplicationVersionService) CreateApplicationVersion(
 	if !ok {
 		return nil, toTransportError(versiondomain.ErrDeveloperIdentityRequired)
 	}
+	if identity.DeveloperStatus != shared.DeveloperStatusApproved {
+		return nil, toTransportError(versiondomain.ErrDeveloperApprovalRequired)
+	}
+
+	references, err := scriptReferencesFromRequest(request.GetScriptReferences())
+	if err != nil {
+		return nil, toTransportError(err)
+	}
 
 	version, err := service.createHandler.Handle(
 		ctx,
@@ -102,6 +111,7 @@ func (service *ApplicationVersionService) CreateApplicationVersion(
 			RequiredCapabilities:      request.GetRequiredCapabilities(),
 			RequiredScopes:            request.GetRequiredScopes(),
 			OptionalScopes:            request.GetOptionalScopes(),
+			ScriptReferences:          references,
 			PKCERedirectURIs:          request.GetOauthRedirects().GetPkceRedirectUris(),
 			ConfidentialRedirectURIs:  request.GetOauthRedirects().GetConfidentialRedirectUris(),
 		},
@@ -127,6 +137,9 @@ func (service *ApplicationVersionService) UpdateApplicationVersion(
 	if !ok {
 		return nil, toTransportError(versiondomain.ErrDeveloperIdentityRequired)
 	}
+	if identity.DeveloperStatus != shared.DeveloperStatusApproved {
+		return nil, toTransportError(versiondomain.ErrDeveloperApprovalRequired)
+	}
 
 	expectedRevision, err := expectedRevision(ctx, request.GetExpectedRevision())
 	if err != nil {
@@ -145,6 +158,11 @@ func (service *ApplicationVersionService) UpdateApplicationVersion(
 		return nil, toTransportError(versiondomain.ErrApplicationVersionNotFound)
 	}
 
+	references, err := scriptReferencesFromRequest(replacement.GetScriptReferences())
+	if err != nil {
+		return nil, toTransportError(err)
+	}
+
 	version, err := service.updateHandler.Handle(
 		ctx,
 		shared.DeveloperIdentity{AuthID: identity.AuthID, DeveloperStatus: identity.DeveloperStatus},
@@ -159,6 +177,7 @@ func (service *ApplicationVersionService) UpdateApplicationVersion(
 			RequiredCapabilities:      replacement.GetRequiredCapabilities(),
 			RequiredScopes:            replacement.GetRequiredScopes(),
 			OptionalScopes:            replacement.GetOptionalScopes(),
+			ScriptReferences:          references,
 			PKCERedirectURIs:          replacement.GetOauthRedirects().GetPkceRedirectUris(),
 			ConfidentialRedirectURIs:  replacement.GetOauthRedirects().GetConfidentialRedirectUris(),
 		},
@@ -286,14 +305,14 @@ func ownedApplicationVersionReviewSummaryResponse(review *versiondomain.OwnedLat
 }
 
 func ownedApplicationVersionResourceResponse(version versiondomain.OwnedVersion) *applicationversionv1.OwnedApplicationVersionResource {
-	return &applicationversionv1.OwnedApplicationVersionResource{VersionId: version.VersionID, ApplicationId: version.ApplicationID, Sequence: version.Sequence, VersionLabel: version.VersionLabel, LaunchUrl: version.LaunchURL, RpcApiMinVersion: version.RPCApiMinVersion, RpcApiMaxVersionExclusive: version.RPCApiMaxVersionExclusive, RequiredCapabilities: append([]string(nil), version.RequiredCapabilities...), RequiredScopes: append([]string(nil), version.RequiredScopes...), OptionalScopes: append([]string(nil), version.OptionalScopes...), OauthRedirects: &applicationversionv1.OAuthRedirectConfiguration{PkceRedirectUris: append([]string(nil), version.PKCERedirectURIs...), ConfidentialRedirectUris: append([]string(nil), version.ConfidentialRedirectURIs...)}, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy, CreatedAt: timestamppb.New(version.CreatedAt), UpdatedAt: timestamppb.New(version.UpdatedAt)}
+	return &applicationversionv1.OwnedApplicationVersionResource{ScriptReferences: scriptDependencyResponses(version.ScriptReferences), VersionId: version.VersionID, ApplicationId: version.ApplicationID, Sequence: version.Sequence, VersionLabel: version.VersionLabel, LaunchUrl: version.LaunchURL, RpcApiMinVersion: version.RPCApiMinVersion, RpcApiMaxVersionExclusive: version.RPCApiMaxVersionExclusive, RequiredCapabilities: append([]string(nil), version.RequiredCapabilities...), RequiredScopes: append([]string(nil), version.RequiredScopes...), OptionalScopes: append([]string(nil), version.OptionalScopes...), OauthRedirects: &applicationversionv1.OAuthRedirectConfiguration{PkceRedirectUris: append([]string(nil), version.PKCERedirectURIs...), ConfidentialRedirectUris: append([]string(nil), version.ConfidentialRedirectURIs...)}, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy, CreatedAt: timestamppb.New(version.CreatedAt), UpdatedAt: timestamppb.New(version.UpdatedAt)}
 }
 
 func ownedApplicationVersionLatestReviewResponse(review *versiondomain.OwnedLatestReview) *applicationversionv1.OwnedApplicationVersionLatestReview {
 	if review == nil {
 		return nil
 	}
-	response := &applicationversionv1.OwnedApplicationVersionLatestReview{ReviewId: review.ReviewID, Attempt: review.Attempt, Status: review.Status, SubmittedBy: review.SubmittedBy, SubmittedAt: timestamppb.New(review.SubmittedAt)}
+	response := &applicationversionv1.OwnedApplicationVersionLatestReview{ScriptDependencies: scriptDependencyResponses(review.ScriptDependencies), ReviewId: review.ReviewID, Attempt: review.Attempt, Status: review.Status, SubmittedBy: review.SubmittedBy, SubmittedAt: timestamppb.New(review.SubmittedAt)}
 	if review.Decision != nil {
 		response.Decision = &applicationversionv1.OwnedApplicationVersionReviewDecision{Outcome: review.Decision.Outcome, Reason: review.Decision.Reason, DecidedAt: timestamppb.New(review.Decision.DecidedAt)}
 	}
@@ -378,6 +397,7 @@ func applicationVersionResponse(version *versiondomain.ApplicationVersion) *appl
 	redirects := version.OAuthRedirects()
 
 	return &applicationversionv1.CreateApplicationVersionResponse{
+		ScriptReferences:          scriptReferencesResponse(version.ScriptReferences()),
 		VersionId:                 version.ID().String(),
 		ApplicationId:             version.ApplicationID().String(),
 		Sequence:                  version.Sequence().Int32(),
@@ -404,6 +424,7 @@ func applicationVersionResponse(version *versiondomain.ApplicationVersion) *appl
 func updateApplicationVersionResponse(version *versiondomain.ApplicationVersion) *applicationversionv1.UpdateApplicationVersionResponse {
 	created := applicationVersionResponse(version)
 	return &applicationversionv1.UpdateApplicationVersionResponse{
+		ScriptReferences:          created.GetScriptReferences(),
 		VersionId:                 created.GetVersionId(),
 		ApplicationId:             created.GetApplicationId(),
 		Sequence:                  created.GetSequence(),

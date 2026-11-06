@@ -279,6 +279,8 @@ func parseConfirmedCheckIDs(values []string) ([]domain.ReviewCheckID, error) {
 
 func mapDecisionRepositoryError(err error) error {
 	switch {
+	case errors.Is(err, shared.ErrScriptDependencyPending), errors.Is(err, shared.ErrScriptDependencyRejected):
+		return err
 	case errors.Is(err, port.ErrApplicationReviewDataInconsistent):
 		return domain.NewApplicationReviewStateInconsistentError(err)
 	case errors.Is(err, port.ErrReviewPolicyMismatch):

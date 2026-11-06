@@ -224,6 +224,9 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 		return nil, versionport.ErrApplicationVersionRevisionConflict
 	}
 
+	if err := verifyDraftScriptReferences(ctx, repository.database, replacement.ScriptReferences()); err != nil {
+		return nil, err
+	}
 	updated, err := current.ReplaceDraft(expectedRevision, replacement, expectedAdminID, updatedAt)
 	if err != nil {
 		switch {
@@ -261,6 +264,7 @@ func (repository *ApplicationVersionRepository) replaceDraftTransaction(
 				{Key: "requiredCapabilities", Value: capabilityNamesToStrings(updated.RequiredCapabilities())},
 				{Key: "requiredScopes", Value: scopeNamesToStrings(updated.RequiredScopes())},
 				{Key: "optionalScopes", Value: scopeNamesToStrings(updated.OptionalScopes())},
+				{Key: "scriptReferences", Value: scriptReferencesToDocuments(updated.ScriptReferences())},
 				{Key: "updatedBy", Value: updated.UpdatedBy().String()},
 				{Key: "updatedAt", Value: updated.UpdatedAt()},
 			}},
@@ -343,6 +347,9 @@ func (repository *ApplicationVersionRepository) createDraftTransaction(
 	sequence, err := versiondomain.NewVersionSequence(allocation.NextVersionSequence)
 	if err != nil {
 		return nil, fmt.Errorf("allocate application version sequence: %w", errCorruptApplicationDocument)
+	}
+	if err := verifyDraftScriptReferences(ctx, repository.database, draft.ScriptReferences()); err != nil {
+		return nil, err
 	}
 	document, err := applicationVersionToDocument(draft, sequence)
 	if err != nil {

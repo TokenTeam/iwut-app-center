@@ -7,6 +7,7 @@ import (
 	reviewport "iwut-app-center/internal/review/port"
 	"iwut-app-center/internal/shared"
 	"slices"
+	"strings"
 )
 
 const ReviewQueryDefaultPageSize int32 = 20
@@ -101,4 +102,23 @@ func mapReviewQueryError(err error) error {
 	default:
 		return reviewdomain.NewInternalError(err)
 	}
+}
+
+func (q *ReviewQuery) GetScript(ctx context.Context, identity shared.TrustedIdentity, applicationID, versionID, reviewID, scriptVersionID string) (*reviewdomain.ApplicationReviewScriptDetail, error) {
+	if err := q.authorize(identity); err != nil {
+		return nil, err
+	}
+	app, ok := shared.ParseApplicationID(applicationID)
+	version, review := reviewdomain.ApplicationVersionID(versionID), reviewdomain.ApplicationReviewID(reviewID)
+	if !ok || !version.IsValid() || !review.IsValid() || !shared.IsUUIDv7(scriptVersionID) {
+		return nil, reviewdomain.ErrApplicationReviewNotFound
+	}
+	detail, err := q.repository.GetScript(ctx, identity.AuthID, app, version, review, strings.ToLower(scriptVersionID))
+	if err != nil {
+		return nil, mapReviewQueryError(err)
+	}
+	if detail == nil {
+		return nil, reviewdomain.ErrApplicationReviewQueryStateInconsistent
+	}
+	return detail, nil
 }

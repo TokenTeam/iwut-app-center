@@ -170,6 +170,29 @@ func (r *ApplicationVersionManagementRepository) Get(ctx context.Context, adminI
 		if err != nil {
 			return nil, versionport.ErrManagementStateInconsistent
 		}
+		refs, err := scriptReferencesFromDocuments(document.ScriptReferences)
+		if err != nil {
+			return nil, versionport.ErrManagementStateInconsistent
+		}
+		for _, ref := range refs {
+			dependency, err := loadScriptDependency(tx, r.database, ref)
+			if err != nil || dependency.version.State == "DRAFT" {
+				return nil, versionport.ErrManagementStateInconsistent
+			}
+			version.ScriptReferences = append(version.ScriptReferences, dependency.summary(ref))
+		}
+		if version.LatestReview != nil {
+			history := facts.reviews[document.VersionID]
+			_, frozen, err := frozenScriptReferencesFromDocuments(history.Snapshot.ScriptDependencies)
+			if err != nil {
+				return nil, versionport.ErrManagementStateInconsistent
+			}
+			version.LatestReview.ScriptDependencies, err = scriptDependencySummaries(tx, r.database, history.ReviewID, history.ApplicationID, history.VersionID, frozen)
+			if err != nil {
+				return nil, versionport.ErrManagementStateInconsistent
+			}
+		}
+
 		return &versiondomain.OwnedVersionDetail{Version: version, AsOf: asOf}, nil
 	})
 }

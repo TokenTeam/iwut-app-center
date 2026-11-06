@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -142,7 +143,7 @@ func (repository *ApplicationReviewRestorationRepository) restoreDraftTransactio
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
 	}
 	version, err := applicationVersionFromDocument(versionDocument)
-	if err != nil {
+	if err != nil || !slices.Equal(version.ScriptReferences(), review.Snapshot().ScriptReferences()) {
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
 	}
 	restoredVersion, err := version.RestoreDraft(expectedVersionRevision, expectedAdminID, restoredAt)

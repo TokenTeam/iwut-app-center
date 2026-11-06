@@ -12,6 +12,7 @@ import (
 )
 
 type ApplicationReviewQueryHandler interface {
+	GetScript(context.Context, shared.TrustedIdentity, string, string, string, string) (*reviewdomain.ApplicationReviewScriptDetail, error)
 	List(context.Context, shared.TrustedIdentity, reviewusecase.ListPendingReviewsQuery) (*reviewdomain.PendingReviewPage, error)
 	Get(context.Context, shared.TrustedIdentity, string, string, string) (*reviewdomain.ReviewDetail, error)
 }
@@ -61,7 +62,9 @@ func (s *ApplicationReviewQueryService) GetApplicationVersionReview(ctx context.
 	if err != nil {
 		return nil, toTransportError(err)
 	}
-	return &queryv1.ApplicationVersionReviewDetail{Application: &queryv1.ReviewApplicationContext{ApplicationId: d.Application.ApplicationID, Name: d.Application.Name, AdminId: d.Application.AdminID, LifecycleStatus: d.Application.LifecycleStatus, PlatformAvailabilityStatus: d.Application.PlatformAvailabilityStatus}, Version: &queryv1.ReviewVersionContext{VersionId: d.Version.VersionID, Sequence: d.Version.Sequence, ReviewStatus: d.Version.ReviewStatus, Revision: d.Version.Revision, CreatedBy: d.Version.CreatedBy}, Review: applicationReviewResource(d.Review), ReviewPolicy: &queryv1.ReviewPolicyContext{Version: d.ReviewPolicy.Version, RequiredCheckIds: append([]string(nil), d.ReviewPolicy.RequiredCheckIDs...), RequiredCheckDefinitions: reviewCheckDefinitionsResponse(d.ReviewPolicy.RequiredCheckDefinitions)}, DecisionEligibility: versionEligibilityResponse(d.DecisionEligibility), AsOf: timestamppb.New(d.AsOf)}, nil
+	review := applicationReviewResource(d.Review)
+	review.Snapshot.ScriptDependencies = scriptDependencyResponses(d.ScriptDependencies)
+	return &queryv1.ApplicationVersionReviewDetail{Application: &queryv1.ReviewApplicationContext{ApplicationId: d.Application.ApplicationID, Name: d.Application.Name, AdminId: d.Application.AdminID, LifecycleStatus: d.Application.LifecycleStatus, PlatformAvailabilityStatus: d.Application.PlatformAvailabilityStatus}, Version: &queryv1.ReviewVersionContext{VersionId: d.Version.VersionID, Sequence: d.Version.Sequence, ReviewStatus: d.Version.ReviewStatus, Revision: d.Version.Revision, CreatedBy: d.Version.CreatedBy}, Review: review, ReviewPolicy: &queryv1.ReviewPolicyContext{Version: d.ReviewPolicy.Version, RequiredCheckIds: append([]string(nil), d.ReviewPolicy.RequiredCheckIDs...), RequiredCheckDefinitions: reviewCheckDefinitionsResponse(d.ReviewPolicy.RequiredCheckDefinitions)}, DecisionEligibility: versionEligibilityResponse(d.DecisionEligibility), AsOf: timestamppb.New(d.AsOf)}, nil
 }
 func versionEligibilityResponse(v reviewdomain.DecisionEligibility) *queryv1.ReviewDecisionEligibility {
 	out := &queryv1.ReviewDecisionEligibility{Eligible: v.Eligible}

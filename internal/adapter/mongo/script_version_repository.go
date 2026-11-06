@@ -33,19 +33,20 @@ func NewScriptVersionRepository(database *drivermongo.Database) *ScriptVersionRe
 }
 
 type scriptVersionDocument struct {
-	ResourceID   domain.ResourceID   `bson:"resourceId"`
-	VersionID    domain.VersionID    `bson:"versionId"`
-	VersionLabel string              `bson:"versionLabel"`
-	Format       string              `bson:"contentFormat"`
-	Text         string              `bson:"contentText"`
-	Digest       string              `bson:"digest"`
-	State        domain.VersionState `bson:"state"`
-	Revision     int64               `bson:"revision"`
-	Contributors []shared.AuthID     `bson:"contributors"`
-	CreatedBy    shared.AuthID       `bson:"createdBy"`
-	CreatedAt    time.Time           `bson:"createdAt"`
-	UpdatedBy    shared.AuthID       `bson:"updatedBy"`
-	UpdatedAt    time.Time           `bson:"updatedAt"`
+	DependencyFence *int64              `bson:"dependencyFence,omitempty"`
+	ResourceID      domain.ResourceID   `bson:"resourceId"`
+	VersionID       domain.VersionID    `bson:"versionId"`
+	VersionLabel    string              `bson:"versionLabel"`
+	Format          string              `bson:"contentFormat"`
+	Text            string              `bson:"contentText"`
+	Digest          string              `bson:"digest"`
+	State           domain.VersionState `bson:"state"`
+	Revision        int64               `bson:"revision"`
+	Contributors    []shared.AuthID     `bson:"contributors"`
+	CreatedBy       shared.AuthID       `bson:"createdBy"`
+	CreatedAt       time.Time           `bson:"createdAt"`
+	UpdatedBy       shared.AuthID       `bson:"updatedBy"`
+	UpdatedAt       time.Time           `bson:"updatedAt"`
 }
 
 func toScriptVersionDocument(v domain.Version) scriptVersionDocument {

@@ -839,7 +839,8 @@ func isApplicationVersionManagementRequest(r *http.Request) bool {
 	if r.Method == http.MethodPost && len(parts) == 4 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "versions:search" {
 		return true
 	}
-	return r.Method == http.MethodGet && len(parts) == 5 && parts[0] == "v1" && parts[1] == "applications" && parts[3] == "versions"
+	return r.Method == http.MethodGet && parts[0] == "v1" && len(parts) >= 4 && parts[1] == "applications" &&
+		((len(parts) == 5 && parts[3] == "versions") || (len(parts) == 4 && parts[3] == "script-candidates"))
 }
 
 func isApplicationVersionAbandonmentRequest(r *http.Request) bool {
@@ -862,6 +863,9 @@ func validApplicationVersionAbandonmentHTTPInput(r *http.Request) bool {
 func applicationVersionManagementOperation(r *http.Request) string {
 	if r.Method == http.MethodPost {
 		return applicationversionv1.OperationApplicationVersionListApplicationVersions
+	}
+	if strings.HasSuffix(r.URL.Path, "/script-candidates") {
+		return applicationversionv1.OperationApplicationVersionListApplicationScriptCandidates
 	}
 	return applicationversionv1.OperationApplicationVersionGetApplicationVersion
 }
@@ -1345,7 +1349,11 @@ func isReviewQueryHTTPRequest(r *http.Request) bool {
 	if r.Method == http.MethodPost && len(parts) == 3 && parts[0] == "v1" && parts[1] == "reviews" {
 		return parts[2] == "application-versions:search" || parts[2] == "application-profiles:search"
 	}
-	return r.Method == http.MethodGet && len(parts) == 7 && parts[0] == "v1" && parts[1] == "applications" && (parts[3] == "versions" || parts[3] == "profile-revisions") && parts[5] == "reviews"
+	if r.Method != http.MethodGet || len(parts) < 7 || parts[0] != "v1" || parts[1] != "applications" || parts[5] != "reviews" {
+		return false
+	}
+	return (len(parts) == 7 && (parts[3] == "versions" || parts[3] == "profile-revisions")) ||
+		(len(parts) == 9 && parts[3] == "versions" && parts[7] == "scripts")
 }
 
 func isReviewDecisionHTTPRequest(r *http.Request) bool {

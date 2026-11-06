@@ -112,7 +112,7 @@ func (f *versionReviewGatewayFixture) create(label string) *vv.CreateApplication
 	return r
 }
 func (f *versionReviewGatewayFixture) replacement(label string) *vv.DraftApplicationVersionReplacement {
-	return &vv.DraftApplicationVersionReplacement{VersionLabel: label, LaunchUrl: "https://apps.whut.edu.cn/edited", RpcApiMinVersion: 1, RpcApiMaxVersionExclusive: 3, RequiredCapabilities: []string{"camera.read.v1"}, RequiredScopes: []string{"items.write"}, OptionalScopes: []string{"items.read"}, OauthRedirects: &vv.OAuthRedirectConfiguration{PkceRedirectUris: []string{"https://apps.whut.edu.cn/oauth/b", "https://apps.whut.edu.cn/oauth/a"}, ConfidentialRedirectUris: []string{"https://apps.whut.edu.cn/confidential"}}}
+	return &vv.DraftApplicationVersionReplacement{ScriptReferences: &vv.ScriptReferences{}, VersionLabel: label, LaunchUrl: "https://apps.whut.edu.cn/edited", RpcApiMinVersion: 1, RpcApiMaxVersionExclusive: 3, RequiredCapabilities: []string{"camera.read.v1"}, RequiredScopes: []string{"items.write"}, OptionalScopes: []string{"items.read"}, OauthRedirects: &vv.OAuthRedirectConfiguration{PkceRedirectUris: []string{"https://apps.whut.edu.cn/oauth/b", "https://apps.whut.edu.cn/oauth/a"}, ConfidentialRedirectUris: []string{"https://apps.whut.edu.cn/confidential"}}}
 }
 func (f *versionReviewGatewayFixture) updateHTTP(id string, revision int64, replacement *vv.DraftApplicationVersionReplacement, session string) (int, http.Header, []byte) {
 	f.t.Helper()

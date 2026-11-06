@@ -81,6 +81,7 @@ type scriptReviewSnapshotDocument struct {
 }
 
 type scriptReviewDocument struct {
+	Decision      *scriptReviewDecisionDocument     `bson:"decision,omitempty"`
 	ReviewID      domain.ReviewID                   `bson:"reviewId"`
 	Status        string                            `bson:"status"`
 	Snapshot      scriptReviewSnapshotDocument      `bson:"snapshot"`

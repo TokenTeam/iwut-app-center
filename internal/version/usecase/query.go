@@ -107,3 +107,34 @@ func mapManagementQueryError(err error) error {
 		return domain.NewInternalError(err)
 	}
 }
+
+func (q *ManagementQuery) ListScriptCandidates(ctx context.Context, identity shared.DeveloperIdentity, applicationIDValue string, limit *int32, cursor string) (*domain.ApplicationScriptCandidatePage, error) {
+	if !identity.AuthID.IsValid() {
+		return nil, domain.ErrDeveloperIdentityRequired
+	}
+	if identity.DeveloperStatus != shared.DeveloperStatusApproved {
+		return nil, domain.ErrDeveloperApprovalRequired
+	}
+	appID, ok := shared.ParseApplicationID(applicationIDValue)
+	if !ok {
+		return nil, domain.ErrInvalidApplicationVersionQuery
+	}
+	size := ManagementQueryDefaultPageSize
+	if limit != nil {
+		size = *limit
+	}
+	if size < 1 || size > ManagementQueryMaxPageSize {
+		return nil, domain.ErrInvalidApplicationVersionQuery
+	}
+	if len(cursor) > 1024 {
+		return nil, domain.ErrInvalidApplicationVersionPageToken
+	}
+	result, err := q.repository.ListScriptCandidates(ctx, identity.AuthID, appID, size, cursor)
+	if err != nil {
+		return nil, mapManagementQueryError(err)
+	}
+	if result == nil {
+		return nil, domain.ErrApplicationVersionManagementStateInconsistent
+	}
+	return result, nil
+}

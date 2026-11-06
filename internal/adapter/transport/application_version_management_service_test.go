@@ -133,3 +133,7 @@ func TestApplicationVersionManagement_BRVER019_BRVER024_BRVER025GRPCHeadersAndEr
 	}
 	assertPrivateNoStoreMetadata(t, headers)
 }
+
+func (f *fakeApplicationVersionManagementQuery) ListScriptCandidates(context.Context, shared.DeveloperIdentity, string, *int32, string) (*versiondomain.ApplicationScriptCandidatePage, error) {
+	return nil, nil
+}

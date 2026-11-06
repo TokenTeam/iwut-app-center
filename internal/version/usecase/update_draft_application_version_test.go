@@ -245,7 +245,7 @@ func TestUpdateDraftApplicationVersion_BR_VER_011_CommandContainsOnlyCompleteEdi
 	wantFields := []string{
 		"ExpectedRevision", "VersionLabel", "LaunchURL", "RPCApiMinVersion", "RPCApiMaxVersionExclusive",
 		"RequiredCapabilities", "RequiredScopes", "OptionalScopes",
-		"PKCERedirectURIs", "ConfidentialRedirectURIs",
+		"PKCERedirectURIs", "ConfidentialRedirectURIs", "ScriptReferences",
 	}
 	if commandType.NumField() != len(wantFields) {
 		t.Fatalf("command has %d fields, want %d", commandType.NumField(), len(wantFields))

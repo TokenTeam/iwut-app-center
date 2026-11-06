@@ -30,6 +30,7 @@ type CreateApplicationVersionCommand struct {
 	OptionalScopes            []string
 	PKCERedirectURIs          []string
 	ConfidentialRedirectURIs  []string
+	ScriptReferences          []shared.ScriptReference
 }
 
 type CreateApplicationVersionHandler struct {
@@ -92,6 +93,10 @@ func (handler *CreateApplicationVersionHandler) Handle(
 	if err != nil {
 		return nil, err
 	}
+	refs, err := shared.NormalizeScriptReferences(command.ScriptReferences)
+	if err != nil {
+		return nil, err
+	}
 	oauthRedirects, err := domain.NewOAuthRedirectConfiguration(
 		append([]string{}, command.PKCERedirectURIs...),
 		append([]string{}, command.ConfidentialRedirectURIs...),
@@ -146,9 +151,11 @@ func (handler *CreateApplicationVersionHandler) Handle(
 		return nil, domain.NewInternalError(err)
 	}
 
-	version, err := handler.repository.CreateDraft(ctx, identity.AuthID, draft)
+	version, err := handler.repository.CreateDraft(ctx, identity.AuthID, draft.WithScriptReferences(refs))
 	if err != nil {
 		switch {
+		case errors.Is(err, shared.ErrInvalidScriptReferences):
+			return nil, err
 		case errors.Is(err, port.ErrApplicationNotFound):
 			return nil, domain.ErrApplicationNotFound
 		case errors.Is(err, port.ErrApplicationAdminRequired):

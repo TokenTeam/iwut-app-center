@@ -144,6 +144,7 @@ func updatedApplicationVersion(t *testing.T, adminID string, createdAt time.Time
 
 func versionRequest() *applicationversionv1.CreateApplicationVersionRequest {
 	return &applicationversionv1.CreateApplicationVersionRequest{
+		ScriptReferences:          &applicationversionv1.ScriptReferences{},
 		ApplicationId:             testApplicationID,
 		VersionLabel:              "v1.0.0",
 		LaunchUrl:                 "https://example.edu/app",
@@ -230,6 +231,7 @@ func updateVersionRequest() *applicationversionv1.UpdateApplicationVersionReques
 		VersionId:        testApplicationVersionID,
 		ExpectedRevision: 1,
 		Replacement: &applicationversionv1.DraftApplicationVersionReplacement{
+			ScriptReferences:          &applicationversionv1.ScriptReferences{},
 			VersionLabel:              "v1.1.0",
 			LaunchUrl:                 "http://192.168.1.20:8081/",
 			RpcApiMinVersion:          3,

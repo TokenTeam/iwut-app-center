@@ -50,22 +50,23 @@ type applicationCreationQuotaDocument struct {
 }
 
 type applicationVersionDocument struct {
-	VersionID                 string    `bson:"versionId"`
-	ApplicationID             string    `bson:"applicationId"`
-	Sequence                  int32     `bson:"sequence"`
-	VersionLabel              string    `bson:"versionLabel"`
-	LaunchURL                 string    `bson:"launchUrl"`
-	RPCApiMinVersion          int32     `bson:"rpcApiMinVersion"`
-	RPCApiMaxVersionExclusive int32     `bson:"rpcApiMaxVersionExclusive"`
-	RequiredCapabilities      []string  `bson:"requiredCapabilities"`
-	RequiredScopes            []string  `bson:"requiredScopes"`
-	OptionalScopes            []string  `bson:"optionalScopes"`
-	ReviewStatus              string    `bson:"reviewStatus"`
-	CreatedBy                 string    `bson:"createdBy"`
-	CreatedAt                 time.Time `bson:"createdAt"`
-	Revision                  int64     `bson:"revision"`
-	UpdatedBy                 string    `bson:"updatedBy"`
-	UpdatedAt                 time.Time `bson:"updatedAt"`
+	ScriptReferences          []scriptReferenceDocument `bson:"scriptReferences,omitempty"`
+	VersionID                 string                    `bson:"versionId"`
+	ApplicationID             string                    `bson:"applicationId"`
+	Sequence                  int32                     `bson:"sequence"`
+	VersionLabel              string                    `bson:"versionLabel"`
+	LaunchURL                 string                    `bson:"launchUrl"`
+	RPCApiMinVersion          int32                     `bson:"rpcApiMinVersion"`
+	RPCApiMaxVersionExclusive int32                     `bson:"rpcApiMaxVersionExclusive"`
+	RequiredCapabilities      []string                  `bson:"requiredCapabilities"`
+	RequiredScopes            []string                  `bson:"requiredScopes"`
+	OptionalScopes            []string                  `bson:"optionalScopes"`
+	ReviewStatus              string                    `bson:"reviewStatus"`
+	CreatedBy                 string                    `bson:"createdBy"`
+	CreatedAt                 time.Time                 `bson:"createdAt"`
+	Revision                  int64                     `bson:"revision"`
+	UpdatedBy                 string                    `bson:"updatedBy"`
+	UpdatedAt                 time.Time                 `bson:"updatedAt"`
 }
 
 type oauthRedirectConfigurationDocument struct {
@@ -126,6 +127,7 @@ func applicationVersionAbandonmentFromDocument(document applicationVersionAbando
 }
 
 type applicationVersionReviewSnapshotDocument struct {
+	ScriptDependencies        []frozenScriptReferenceDocument    `bson:"scriptDependencies,omitempty"`
 	VersionLabel              string                             `bson:"versionLabel"`
 	LaunchURL                 string                             `bson:"launchUrl"`
 	RPCApiMinVersion          int32                              `bson:"rpcApiMinVersion"`
@@ -168,8 +170,9 @@ type applicationReviewDecisionDocument struct {
 }
 
 type applicationReviewApprovalValidationDocument struct {
-	ScopeCatalogRevision   int64  `bson:"scopeCatalogRevision"`
-	PreflightPolicyVersion string `bson:"preflightPolicyVersion"`
+	ScriptApprovals        []scriptApprovalDocument `bson:"scriptApprovals,omitempty"`
+	ScopeCatalogRevision   int64                    `bson:"scopeCatalogRevision"`
+	PreflightPolicyVersion string                   `bson:"preflightPolicyVersion"`
 }
 
 type applicationReviewDraftRestorationDocument struct {
@@ -248,6 +251,7 @@ func applicationVersionEntityToDocument(version *versiondomain.ApplicationVersio
 	}
 	return applicationVersionDocument{
 		VersionID:                 version.ID().String(),
+		ScriptReferences:          scriptReferencesToDocuments(version.ScriptReferences()),
 		ApplicationID:             version.ApplicationID().String(),
 		Sequence:                  version.Sequence().Int32(),
 		VersionLabel:              version.VersionLabel().String(),
@@ -353,7 +357,11 @@ func applicationVersionFromDocument(document applicationVersionDocument, oauthDo
 	if err != nil {
 		return nil, corruptApplicationVersion("invalid application version")
 	}
-	return version, nil
+	refs, err := scriptReferencesFromDocuments(document.ScriptReferences)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid script references")
+	}
+	return version.WithScriptReferences(refs), nil
 }
 
 func applicationVersionOAuthConfigToDocument(version *versiondomain.ApplicationVersion) (applicationVersionOAuthConfigDocument, error) {
@@ -423,11 +431,15 @@ func applicationVersionDocumentToSubmissionCandidate(document applicationVersion
 	if err != nil {
 		return nil, corruptApplicationVersion("invalid review snapshot")
 	}
+	refs, err := scriptReferencesFromDocuments(document.ScriptReferences)
+	if err != nil {
+		return nil, corruptApplicationVersion("invalid script references")
+	}
 	candidate, err := reviewdomain.NewSubmissionCandidate(
 		applicationID,
 		reviewdomain.ApplicationVersionID(versionID),
 		document.Revision,
-		snapshot,
+		snapshot.WithScriptReferences(refs),
 	)
 	if err != nil {
 		return nil, corruptApplicationVersion("invalid submission candidate")
@@ -441,6 +453,14 @@ func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applic
 	}
 	snapshot := review.Snapshot()
 	oauthRedirects := snapshot.OAuthRedirects()
+	facts := review.ScriptDependencies()
+	if len(facts) != len(snapshot.ScriptReferences()) {
+		return applicationReviewDocument{}, corruptApplicationReview("missing frozen script dependencies")
+	}
+	dependencies := make([]frozenScriptReferenceDocument, len(facts))
+	for i, fact := range facts {
+		dependencies[i] = frozenScriptReferenceToDocument(fact)
+	}
 	return applicationReviewDocument{
 		PolicyBinding:         reviewPolicyBindingDocument{Version: review.PolicyVersion().String()},
 		ReviewID:              review.ReviewID().String(),
@@ -452,6 +472,7 @@ func applicationReviewToDocument(review *reviewdomain.ApplicationReview) (applic
 		Decision:              nil,
 		DraftRestoration:      nil,
 		Snapshot: applicationVersionReviewSnapshotDocument{
+			ScriptDependencies:        dependencies,
 			VersionLabel:              snapshot.VersionLabel(),
 			LaunchURL:                 string(snapshot.LaunchURL()),
 			RPCApiMinVersion:          snapshot.RPCAPIMinVersion(),
@@ -545,7 +566,15 @@ func applicationReviewFromDocument(document applicationReviewDocument) (*reviewd
 	if err != nil {
 		return nil, corruptApplicationReview("invalid application review")
 	}
-	return review, nil
+	_, facts, err := frozenScriptReferencesFromDocuments(document.Snapshot.ScriptDependencies)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid frozen script dependencies")
+	}
+	bound, err := review.WithScriptDependencies(facts)
+	if err != nil {
+		return nil, corruptApplicationReview("mismatched script approval facts")
+	}
+	return bound, nil
 }
 
 func applicationReviewSnapshotFromDocument(document applicationVersionReviewSnapshotDocument) (*reviewdomain.ApplicationVersionReviewSnapshot, error) {
@@ -574,7 +603,11 @@ func applicationReviewSnapshotFromDocument(document applicationVersionReviewSnap
 	if err != nil {
 		return nil, corruptApplicationReview("invalid review snapshot")
 	}
-	return snapshot, nil
+	refs, _, err := frozenScriptReferencesFromDocuments(document.ScriptDependencies)
+	if err != nil {
+		return nil, corruptApplicationReview("invalid frozen script dependencies")
+	}
+	return snapshot.WithScriptReferences(refs), nil
 }
 
 func applicationReviewDecisionToDocument(
@@ -601,6 +634,11 @@ func applicationReviewDecisionToDocument(
 		document.ApprovalValidation = &applicationReviewApprovalValidationDocument{
 			ScopeCatalogRevision:   validation.ScopeCatalogRevision().Int64(),
 			PreflightPolicyVersion: validation.PreflightPolicyVersion().String(),
+		}
+		for _, fact := range validation.ScriptApprovals() {
+			document.ApprovalValidation.ScriptApprovals = append(document.ApprovalValidation.ScriptApprovals, scriptApprovalDocument{
+				VersionID: fact.VersionID, Digest: fact.Digest, DecisionID: fact.DecisionID,
+			})
 		}
 	}
 	return document, nil
@@ -648,8 +686,15 @@ func applicationReviewDecisionFromDocument(
 		if err != nil {
 			return nil, corruptApplicationReview("invalid approval validation")
 		}
+		approvals := make([]shared.ScriptApprovalFact, 0, len(document.ApprovalValidation.ScriptApprovals))
+		for _, fact := range document.ApprovalValidation.ScriptApprovals {
+			if !canonicalScriptID(fact.VersionID) || !canonicalScriptID(fact.DecisionID) || !shared.ValidScriptDigest(fact.Digest) {
+				return nil, corruptApplicationReview("invalid script approval fact")
+			}
+			approvals = append(approvals, shared.ScriptApprovalFact{VersionID: fact.VersionID, Digest: fact.Digest, DecisionID: fact.DecisionID})
+		}
 		decision, err := reviewdomain.NewApprovedDecision(
-			policyVersion, checkIDs, reason, validation, decidedBy, document.DecidedAt,
+			policyVersion, checkIDs, reason, validation.WithScriptApprovals(approvals), decidedBy, document.DecidedAt,
 		)
 		if err != nil {
 			return nil, corruptApplicationReview("invalid approved decision")
@@ -719,7 +764,11 @@ func applicationVersionDocumentToDecisionVersion(
 	if err != nil {
 		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid review snapshot")
 	}
-	return document.Revision, createdBy, *snapshot, nil
+	refs, err := scriptReferencesFromDocuments(document.ScriptReferences)
+	if err != nil {
+		return 0, "", reviewdomain.ApplicationVersionReviewSnapshot{}, corruptApplicationVersion("invalid script references")
+	}
+	return document.Revision, createdBy, *snapshot.WithScriptReferences(refs), nil
 }
 
 func reviewOAuthRedirectsFromVersionDocument(document applicationVersionDocument, oauthDocuments ...applicationVersionOAuthConfigDocument) (reviewdomain.OAuthRedirectConfiguration, error) {

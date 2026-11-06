@@ -105,3 +105,7 @@ func TestManagementQuery_BRVER019RequiresTrustedUser(t *testing.T) {
 }
 
 func stringPointer(value string) *string { return &value }
+
+func (f *fakeManagementQueryRepository) ListScriptCandidates(context.Context, shared.AuthID, shared.ApplicationID, int32, string) (*domain.ApplicationScriptCandidatePage, error) {
+	return nil, f.err
+}

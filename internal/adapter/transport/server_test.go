@@ -161,7 +161,7 @@ func TestServers_UCAPP003_HTTPIfMatchWinsBodyAndReturnsETag(t *testing.T) {
 	servers := newTestServersWithUpdate(t, &fakeCreateApplicationHandler{}, nil, updateHandler)
 	path := strings.Replace(UpdateApplicationVersionInternalPath, "{application_id}", testApplicationID, 1)
 	path = strings.Replace(path, "{version_id}", testApplicationVersionID, 1)
-	request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"versionLabel":"v1.1.0","launchUrl":"http://192.168.1.20:8081/","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":6,"requiredCapabilities":[],"requiredScopes":[],"optionalScopes":[],"expectedRevision":999,"revision":999,"reviewStatus":"APPROVED"}`))
+	request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"versionLabel":"v1.1.0","scriptReferences":{"items":[]},"launchUrl":"http://192.168.1.20:8081/","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":6,"requiredCapabilities":[],"requiredScopes":[],"optionalScopes":[],"expectedRevision":999,"revision":999,"reviewStatus":"APPROVED"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(IdentityHeader, token)
 	request.Header.Set("If-Match", `"1"`)
@@ -196,7 +196,7 @@ func TestServers_UCAPP003_HTTPPreconditions(t *testing.T) {
 			servers := newTestServersWithUpdate(t, &fakeCreateApplicationHandler{}, nil, handler)
 			path := strings.Replace(UpdateApplicationVersionInternalPath, "{application_id}", testApplicationID, 1)
 			path = strings.Replace(path, "{version_id}", testApplicationVersionID, 1)
-			request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"versionLabel":"v1.1.0","launchUrl":"https://example.edu/app","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":5}`))
+			request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"versionLabel":"v1.1.0","scriptReferences":{"items":[]},"launchUrl":"https://example.edu/app","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":5}`))
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set(IdentityHeader, token)
 			if test.ifMatch != "" {
@@ -282,7 +282,7 @@ func TestServers_UCAPP002_HTTPPathWinsAndReturnsCreatedETag(t *testing.T) {
 	request := httptest.NewRequest(
 		http.MethodPost,
 		path,
-		strings.NewReader(`{"applicationId":"evil","versionLabel":"v1.0.0","launchUrl":"https://example.edu/app","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":5,"requiredCapabilities":["user.profile.v1"],"requiredScopes":["profile.basic"],"optionalScopes":["schedule.read"]}`),
+		strings.NewReader(`{"applicationId":"evil","scriptReferences":{"items":[]},"versionLabel":"v1.0.0","launchUrl":"https://example.edu/app","rpcApiMinVersion":3,"rpcApiMaxVersionExclusive":5,"requiredCapabilities":["user.profile.v1"],"requiredScopes":["profile.basic"],"optionalScopes":["schedule.read"]}`),
 	)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(IdentityHeader, token)

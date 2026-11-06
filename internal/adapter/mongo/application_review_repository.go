@@ -169,12 +169,24 @@ func (repository *ApplicationReviewRepository) submitTransaction(
 	if err != nil {
 		return nil, fmt.Errorf("create pending application review: %w", err)
 	}
+	dependencies, err := freezeScriptDependencies(ctx, repository.database, candidate.Snapshot().ScriptReferences())
+	if err != nil {
+		return nil, err
+	}
+	review, err = review.WithScriptDependencies(dependencies)
+	if err != nil {
+		return nil, reviewport.ErrApplicationReviewDataInconsistent
+	}
 	reviewDocument, err := applicationReviewToDocument(review)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := repository.database.Collection(applicationReviewsCollectionName).InsertOne(ctx, reviewDocument); err != nil {
 		return nil, fmt.Errorf("insert application review: %w", err)
+	}
+
+	if err := registerScriptDependencies(ctx, repository.database, reviewID.String(), candidate.ApplicationID().String(), candidate.VersionID().String(), dependencies); err != nil {
+		return nil, err
 	}
 
 	updateResult, err := repository.database.Collection(applicationVersionsCollectionName).UpdateOne(

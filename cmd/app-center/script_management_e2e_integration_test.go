@@ -8,11 +8,16 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	appv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	appreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
+	appreviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review_query"
+	appversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
@@ -27,24 +32,27 @@ import (
 	"iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_043_045_ScriptManagementHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP041_042_043_045_048_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
 	key, keyPath := e2eIdentity(t)
-	addresses := e2eReserveAddresses(t, 2)
+	addresses := e2eReserveAddresses(t, 3)
+	e2eStartScopeCatalogServer(t, addresses[2])
 	configuration, err := config.Load(e2eEnvironment(map[string]string{
 		config.MongoURIEnv:      os.Getenv(mongoIntegrationURIEnv),
 		config.MongoDatabaseEnv: database.Name(),
 		config.HTTPAddrEnv:      addresses[0], config.GRPCAddrEnv: addresses[1],
 		config.IdentityIssuerEnv: e2eIssuer, config.IdentityAudienceEnv: e2eAudience,
 		config.IdentityPublicKeysEnv:     e2eKeyID + "=" + keyPath,
-		config.AuthScopeCatalogTargetEnv: e2eUnusedAuthTarget,
+		config.AuthScopeCatalogTargetEnv: addresses[2],
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, cleanup, err := wireApp(configuration)
+	app, cleanup, err := wireAppWithResolver(configuration, &e2eDNSResolver{addresses: map[string][]netip.Addr{
+		"reviewable.e2e.edu": {netip.MustParseAddr("8.8.8.8")},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,6 +256,64 @@ func TestE2E_UCAPP041_042_043_045_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	})
 	if err != nil || !largeReview.GetCanDecide() || largeReview.GetContentText() != large {
 		t.Fatal("native reviewer detail could not retrieve exact boundary bytes", err)
+	}
+
+	application, err := appv1.NewApplicationClient(connection).CreateApplication(developerContext, &appv1.CreateApplicationRequest{Name: "Script_Dependency_App"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appPath := "/v1/applications/" + application.GetId()
+	appVersionClient := appversionv1.NewApplicationVersionClient(connection)
+	appVersion := &appversionv1.CreateApplicationVersionRequest{
+		ApplicationId: application.GetId(), VersionLabel: "v1", LaunchUrl: "https://reviewable.e2e.edu/app",
+		RpcApiMinVersion: 1, RpcApiMaxVersionExclusive: 2, RequiredScopes: []string{"profile.basic"},
+	}
+	if _, err := appVersionClient.CreateApplicationVersion(developerContext, appVersion); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("native create accepted missing script references", err)
+	}
+	appVersion.ScriptReferences = &appversionv1.ScriptReferences{Items: []*appversionv1.ScriptReference{
+		{ScriptResourceId: resource.GetResourceId(), ScriptVersionId: draft.GetVersionId()},
+	}}
+	created, err := appVersionClient.CreateApplicationVersion(developerContext, appVersion)
+	if err != nil || len(created.GetScriptReferences().GetItems()) != 1 {
+		t.Fatal("native create did not save script reference", err)
+	}
+	var candidates appversionv1.ListApplicationScriptCandidatesResponse
+	httpCall(http.MethodGet, appPath+"/script-candidates?limit=1", developer, nil, http.StatusOK, &candidates)
+	if len(candidates.GetItems()) != 1 || candidates.GetNextCursor() == "" || candidates.GetItems()[0].GetDependency().GetScriptReviewId() != "" {
+		t.Fatal("candidate did not return bounded metadata")
+	}
+	otherDeveloper := e2eSignIdentity(t, key, "other-developer", "APPROVED")
+	httpCall(http.MethodGet, appPath+"/script-candidates", otherDeveloper, nil, http.StatusNotFound, nil)
+	submittedApp, err := appreviewv1.NewApplicationReviewClient(connection).SubmitApplicationVersionReview(developerContext, &appreviewv1.SubmitApplicationVersionReviewRequest{
+		ApplicationId: application.GetId(), VersionId: created.GetVersionId(), Command: &appreviewv1.SubmitApplicationVersionReviewCommand{ExpectedRevision: 1},
+	})
+	if err != nil || len(submittedApp.GetReview().GetSnapshot().GetScriptDependencies()) != 1 {
+		t.Fatal("app review did not freeze script reference", err)
+	}
+	appReviewer := e2eSignReviewerIdentity(t, key, "app-reviewer", "app.version.review")
+	appVersionPath := appPath + "/versions/" + created.GetVersionId()
+	appReviewPath := appVersionPath + "/reviews/" + submittedApp.GetReview().GetReviewId()
+	relatedPath := appReviewPath + "/scripts/" + draft.GetVersionId()
+	httpCall(http.MethodGet, relatedPath, developer, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, relatedPath, reviewer, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, appReviewPath+"/scripts/"+largeDraft.GetVersionId(), appReviewer, nil, http.StatusNotFound, nil)
+	var related appreviewqueryv1.ApplicationReviewScriptDetail
+	httpCall(http.MethodGet, relatedPath, appReviewer, nil, http.StatusOK, &related)
+	if related.GetContentText() != replacement || related.GetDependency().GetDigest() != modified.GetDigest() ||
+		related.GetDependency().GetState() != "SUBMITTED" || len(related.GetChecks()) != 4 {
+		t.Fatal("related review script detail lost frozen bytes, digest, or policy")
+	}
+	var appReviewDetail appreviewqueryv1.ApplicationVersionReviewDetail
+	httpCall(http.MethodGet, appReviewPath, appReviewer, nil, http.StatusOK, &appReviewDetail)
+	dependencies := appReviewDetail.GetReview().GetSnapshot().GetScriptDependencies()
+	if len(dependencies) != 1 || dependencies[0].GetState() != "SUBMITTED" {
+		t.Fatal("app review detail lacks current script dependency state")
+	}
+	var owned appversionv1.OwnedApplicationVersionDetail
+	httpCall(http.MethodGet, appVersionPath, developer, nil, http.StatusOK, &owned)
+	if len(owned.GetVersion().GetScriptReferences()) != 1 || len(owned.GetLatestReview().GetScriptDependencies()) != 1 {
+		t.Fatal("owned version detail lost current or frozen references")
 	}
 
 	e2eAssertCollectionCount(t, database, "script_resources", 1)

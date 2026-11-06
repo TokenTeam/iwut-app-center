@@ -16,6 +16,7 @@ var (
 )
 
 type ManagementQueryRepository interface {
+	ListScriptCandidates(context.Context, shared.AuthID, shared.ApplicationID, int32, string) (*domain.ApplicationScriptCandidatePage, error)
 	List(context.Context, shared.AuthID, shared.ApplicationID, *domain.ReviewStatus, int32, string) (*domain.OwnedVersionPage, error)
 	Get(context.Context, shared.AuthID, shared.ApplicationID, domain.ApplicationVersionID) (*domain.OwnedVersionDetail, error)
 }

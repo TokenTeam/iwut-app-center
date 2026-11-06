@@ -14,7 +14,7 @@ func TestAPIContract_UCAPP002_RequestExcludesServerOwnedFieldsAndResponseIsCompl
 	request := &applicationversionv1.CreateApplicationVersionRequest{}
 	wantRequest := []string{
 		"application_id", "launch_url", "oauth_redirects", "optional_scopes", "required_capabilities", "required_scopes",
-		"rpc_api_max_version_exclusive", "rpc_api_min_version", "version_label",
+		"rpc_api_max_version_exclusive", "rpc_api_min_version", "script_references", "version_label",
 	}
 	if fields := messageFieldNames(t, request); strings.Join(fields, ",") != strings.Join(wantRequest, ",") {
 		t.Fatalf("request fields = %v, want %v", fields, wantRequest)
@@ -29,7 +29,7 @@ func TestAPIContract_UCAPP002_RequestExcludesServerOwnedFieldsAndResponseIsCompl
 	wantResponse := []string{
 		"application_id", "created_at", "created_by", "launch_url", "oauth_redirects", "optional_scopes", "required_capabilities",
 		"required_scopes", "review_status", "revision", "rpc_api_max_version_exclusive", "rpc_api_min_version",
-		"sequence", "updated_at", "updated_by", "version_id", "version_label",
+		"script_references", "sequence", "updated_at", "updated_by", "version_id", "version_label",
 	}
 	sort.Strings(wantResponse)
 	if fields := messageFieldNames(t, response); strings.Join(fields, ",") != strings.Join(wantResponse, ",") {
@@ -45,7 +45,7 @@ func TestAPIContract_UCAPP003_HTTPBodyIsCompleteReplacementWithoutServerState(t 
 		t.Fatalf("outer request fields = %v, want %v", fields, wantOuter)
 	}
 	replacement := &applicationversionv1.DraftApplicationVersionReplacement{}
-	wantReplacement := []string{"launch_url", "oauth_redirects", "optional_scopes", "required_capabilities", "required_scopes", "rpc_api_max_version_exclusive", "rpc_api_min_version", "version_label"}
+	wantReplacement := []string{"launch_url", "oauth_redirects", "optional_scopes", "required_capabilities", "required_scopes", "rpc_api_max_version_exclusive", "rpc_api_min_version", "script_references", "version_label"}
 	if fields := messageFieldNames(t, replacement); strings.Join(fields, ",") != strings.Join(wantReplacement, ",") {
 		t.Fatalf("replacement fields = %v, want %v", fields, wantReplacement)
 	}

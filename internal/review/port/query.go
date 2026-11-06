@@ -14,6 +14,7 @@ var (
 )
 
 type ReviewQueryRepository interface {
+	GetScript(context.Context, shared.AuthID, shared.ApplicationID, reviewdomain.ApplicationVersionID, reviewdomain.ApplicationReviewID, string) (*reviewdomain.ApplicationReviewScriptDetail, error)
 	ListPending(context.Context, shared.AuthID, *shared.ApplicationID, int32, string) (*reviewdomain.PendingReviewPage, error)
 	Get(context.Context, shared.AuthID, shared.ApplicationID, reviewdomain.ApplicationVersionID, reviewdomain.ApplicationReviewID) (*reviewdomain.ReviewDetail, error)
 }

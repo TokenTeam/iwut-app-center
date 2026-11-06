@@ -498,6 +498,14 @@ func reviewErrorCode(err error) reviewdomain.ErrorCode {
 // toTransportError maps any error crossing the transport boundary. Unknown and
 // infrastructure errors collapse to Internal without leaking cause or details.
 func toTransportError(err error) error {
+	switch {
+	case errors.Is(err, shared.ErrInvalidScriptReferences):
+		return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_REFERENCES", "invalid script references")
+	case errors.Is(err, shared.ErrScriptDependencyPending):
+		return transportStatus(codes.FailedPrecondition, "ERROR_REASON_SCRIPT_DEPENDENCY_PENDING", "script dependency pending")
+	case errors.Is(err, shared.ErrScriptDependencyRejected):
+		return transportStatus(codes.FailedPrecondition, "ERROR_REASON_SCRIPT_DEPENDENCY_REJECTED", "script dependency rejected")
+	}
 	if errors.Is(err, shared.ErrAccountExitBlocked) {
 		return transportStatus(codes.FailedPrecondition, "ERROR_REASON_ACCOUNT_OWNER_EXIT_BLOCKED", "account lifecycle prevents new state")
 	}

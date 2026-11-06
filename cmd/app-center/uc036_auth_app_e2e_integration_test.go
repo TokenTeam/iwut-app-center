@@ -115,7 +115,7 @@ func TestE2E_UCAPP036_RealAuthOAuthTestClear(t *testing.T) {
 	for index, callback := range callbacks {
 		major := index + 1
 		version := appAPI.call(http.MethodPost, prefix+"/versions", ownerToken, map[string]any{
-			"versionLabel": []string{"1.0", "2.0"}[index], "launchUrl": "https://example.edu/apps/uc036/",
+			"scriptReferences": map[string]any{"items": []any{}}, "versionLabel": []string{"1.0", "2.0"}[index], "launchUrl": "https://example.edu/apps/uc036/",
 			"rpcApiMinVersion": major, "rpcApiMaxVersionExclusive": major + 1,
 			"requiredCapabilities": []string{}, "requiredScopes": []string{"openid"},
 			"optionalScopes": []string{"offline_access", "items.read"},

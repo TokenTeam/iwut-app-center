@@ -122,6 +122,7 @@ type ApplicationVersionReviewSnapshot struct {
 	requiredScopes            []ScopeName
 	optionalScopes            []ScopeName
 	oauthRedirects            OAuthRedirectConfiguration
+	scriptReferences          []shared.ScriptReference
 }
 
 func NewApplicationVersionReviewSnapshot(
@@ -196,7 +197,17 @@ func (snapshot ApplicationVersionReviewSnapshot) Equal(other ApplicationVersionR
 		slices.Equal(snapshot.requiredCapabilities, other.requiredCapabilities) &&
 		slices.Equal(snapshot.requiredScopes, other.requiredScopes) &&
 		slices.Equal(snapshot.optionalScopes, other.optionalScopes) &&
-		snapshot.oauthRedirects.Equal(other.oauthRedirects)
+		snapshot.oauthRedirects.Equal(other.oauthRedirects) &&
+		slices.Equal(snapshot.scriptReferences, other.scriptReferences)
+}
+
+func (snapshot ApplicationVersionReviewSnapshot) WithScriptReferences(refs []shared.ScriptReference) *ApplicationVersionReviewSnapshot {
+	snapshot.scriptReferences = slices.Clone(refs)
+	return &snapshot
+}
+
+func (snapshot ApplicationVersionReviewSnapshot) ScriptReferences() []shared.ScriptReference {
+	return slices.Clone(snapshot.scriptReferences)
 }
 
 type SubmissionCandidate struct {
@@ -243,6 +254,7 @@ func (candidate *SubmissionCandidate) AllScopes() []ScopeName {
 }
 
 type ApplicationReview struct {
+	scriptDependencies     []shared.FrozenScriptReference
 	reviewID               ApplicationReviewID
 	applicationID          shared.ApplicationID
 	versionID              ApplicationVersionID
@@ -370,6 +382,37 @@ func RestoreApplicationReview(
 		decision:               copyDecision(decision),
 		draftRestoration:       copyDraftRestoration(draftRestoration),
 	}, nil
+}
+
+// WithScriptDependencies binds the persisted script facts to the same version references.
+func (review ApplicationReview) WithScriptDependencies(facts []shared.FrozenScriptReference) (*ApplicationReview, error) {
+	refs := review.snapshot.scriptReferences
+	if len(facts) != len(refs) {
+		return nil, NewInternalError(nil)
+	}
+	for i, fact := range facts {
+		if fact.ScriptReference != refs[i] || !fact.Valid() {
+			return nil, NewInternalError(nil)
+		}
+	}
+	if review.decision != nil && review.decision.Outcome() == ReviewDecisionApproved {
+		validation := review.decision.ApprovalValidation()
+		approvals := validation.ScriptApprovals()
+		if len(approvals) != len(facts) {
+			return nil, NewInternalError(nil)
+		}
+		for i, approval := range approvals {
+			if approval.VersionID != facts[i].VersionID || approval.Digest != facts[i].Digest || !shared.IsUUIDv7(approval.DecisionID) {
+				return nil, NewInternalError(nil)
+			}
+		}
+	}
+	review.scriptDependencies = slices.Clone(facts)
+	return &review, nil
+}
+
+func (review *ApplicationReview) ScriptDependencies() []shared.FrozenScriptReference {
+	return slices.Clone(review.scriptDependencies)
 }
 
 func (review *ApplicationReview) ReviewID() ApplicationReviewID       { return review.reviewID }

@@ -55,3 +55,7 @@ func TestReviewQueryMapsErrors_BRREV034(t *testing.T) {
 		}
 	}
 }
+
+func (f *fakeReviewQueryRepository) GetScript(context.Context, shared.AuthID, shared.ApplicationID, reviewdomain.ApplicationVersionID, reviewdomain.ApplicationReviewID, string) (*reviewdomain.ApplicationReviewScriptDetail, error) {
+	return nil, f.err
+}

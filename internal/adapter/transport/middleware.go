@@ -153,7 +153,7 @@ func toIdentityTransportError(err error, operation string) error {
 }
 
 func isApplicationVersionManagementOperation(operation string) bool {
-	return operation == applicationversionv1.OperationApplicationVersionListApplicationVersions ||
+	return operation == applicationversionv1.OperationApplicationVersionListApplicationScriptCandidates || operation == applicationversionv1.OperationApplicationVersionListApplicationVersions ||
 		operation == applicationversionv1.OperationApplicationVersionGetApplicationVersion ||
 		operation == applicationversionv1.OperationApplicationVersionAbandonApplicationVersionDraft
 }
@@ -220,7 +220,7 @@ func hasLegacyIdentityHeader(ctx context.Context) bool {
 
 func isReviewQueryOperation(op string) bool {
 	switch op {
-	case vq.OperationApplicationReviewQueryServiceListPendingApplicationVersionReviews, vq.OperationApplicationReviewQueryServiceGetApplicationVersionReview, pq.OperationApplicationProfileReviewQueryServiceListPendingApplicationProfileReviews, pq.OperationApplicationProfileReviewQueryServiceGetApplicationProfileReview:
+	case vq.OperationApplicationReviewQueryServiceListPendingApplicationVersionReviews, vq.OperationApplicationReviewQueryServiceGetApplicationVersionReview, vq.OperationApplicationReviewQueryServiceGetApplicationReviewScript, pq.OperationApplicationProfileReviewQueryServiceListPendingApplicationProfileReviews, pq.OperationApplicationProfileReviewQueryServiceGetApplicationProfileReview:
 		return true
 	}
 	return false

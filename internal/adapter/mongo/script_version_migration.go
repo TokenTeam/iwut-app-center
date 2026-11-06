@@ -20,17 +20,7 @@ const (
 )
 
 func (m *Migrator) applyScriptVersionMigration(ctx context.Context) error {
-	if err := m.ensureValidatedCollection(ctx, scriptVersionsCollection, scriptCollectionValidator(bson.D{
-		scriptResourceIDProperty(), scriptUUIDField("versionId"), scriptResourceRevisionProperty(),
-		{Key: "versionLabel", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "pattern", Value: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"}}},
-		{Key: "contentFormat", Value: bson.D{{Key: "enum", Value: bson.A{domain.JSONFormat}}}},
-		{Key: "contentText", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: domain.MaxContentBytes}}},
-		scriptDigestField(),
-		{Key: "state", Value: bson.D{{Key: "enum", Value: bson.A{domain.VersionDraft, domain.VersionSubmitted, domain.VersionApproved, domain.VersionRejected}}}},
-		scriptContributorsField(),
-		scriptAuditActorProperty("createdBy"), scriptAuditDateProperty("createdAt"),
-		scriptAuditActorProperty("updatedBy"), scriptAuditDateProperty("updatedAt"),
-	})); err != nil {
+	if err := m.ensureValidatedCollection(ctx, scriptVersionsCollection, scriptVersionDocumentValidator()); err != nil {
 		return err
 	}
 	if err := m.ensureValidatedCollection(ctx, scriptVersionAuditsCollection, scriptVersionAuditValidator(bson.A{scriptDraftCreated, scriptDraftReplaced})); err != nil {
@@ -48,6 +38,20 @@ func (m *Migrator) applyScriptVersionMigration(ctx context.Context) error {
 		Options: options.Index().SetName(scriptVersionAuditIndex).SetUnique(true),
 	})
 	return err
+}
+
+func scriptVersionDocumentValidator() bson.D {
+	return scriptCollectionValidator(bson.D{
+		scriptResourceIDProperty(), scriptUUIDField("versionId"), scriptResourceRevisionProperty(),
+		{Key: "versionLabel", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "pattern", Value: "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"}}},
+		{Key: "contentFormat", Value: bson.D{{Key: "enum", Value: bson.A{domain.JSONFormat}}}},
+		{Key: "contentText", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: domain.MaxContentBytes}}},
+		scriptDigestField(),
+		{Key: "state", Value: bson.D{{Key: "enum", Value: bson.A{domain.VersionDraft, domain.VersionSubmitted, domain.VersionApproved, domain.VersionRejected}}}},
+		scriptContributorsField(),
+		scriptAuditActorProperty("createdBy"), scriptAuditDateProperty("createdAt"),
+		scriptAuditActorProperty("updatedBy"), scriptAuditDateProperty("updatedAt"),
+	})
 }
 
 func scriptVersionAuditValidator(actions bson.A) bson.D {

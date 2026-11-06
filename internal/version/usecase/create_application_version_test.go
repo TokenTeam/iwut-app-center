@@ -375,7 +375,7 @@ func TestCreateApplicationVersion_BR_VER_008_RequestCannotSpecifyServerFields(t 
 		"RequiredScopes",
 		"OptionalScopes",
 		"PKCERedirectURIs",
-		"ConfidentialRedirectURIs",
+		"ConfidentialRedirectURIs", "ScriptReferences",
 	}
 	if commandType.NumField() != len(wantFields) {
 		t.Fatalf("command has %d fields, want %d", commandType.NumField(), len(wantFields))

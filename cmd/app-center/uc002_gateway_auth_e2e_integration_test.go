@@ -129,7 +129,7 @@ func gatewayHTTP(t *testing.T, ctx context.Context, method, path, session string
 	return resp.StatusCode, resp.Header, data
 }
 func uc002VersionRequest(app, label, scope string) *vv.CreateApplicationVersionRequest {
-	return &vv.CreateApplicationVersionRequest{ApplicationId: app, VersionLabel: label, LaunchUrl: "https://apps.whut.edu.cn/uc002", RpcApiMinVersion: 1, RpcApiMaxVersionExclusive: 2, RequiredCapabilities: []string{}, RequiredScopes: []string{scope}, OptionalScopes: []string{}, OauthRedirects: &vv.OAuthRedirectConfiguration{PkceRedirectUris: []string{"https://apps.whut.edu.cn/uc002/callback"}, ConfidentialRedirectUris: []string{}}}
+	return &vv.CreateApplicationVersionRequest{ScriptReferences: &vv.ScriptReferences{}, ApplicationId: app, VersionLabel: label, LaunchUrl: "https://apps.whut.edu.cn/uc002", RpcApiMinVersion: 1, RpcApiMaxVersionExclusive: 2, RequiredCapabilities: []string{}, RequiredScopes: []string{scope}, OptionalScopes: []string{}, OauthRedirects: &vv.OAuthRedirectConfiguration{PkceRedirectUris: []string{"https://apps.whut.edu.cn/uc002/callback"}, ConfidentialRedirectUris: []string{}}}
 }
 func uc002Web(t *testing.T, ctx context.Context, session string, request *vv.CreateApplicationVersionRequest) (*vv.CreateApplicationVersionResponse, int) {
 	t.Helper()

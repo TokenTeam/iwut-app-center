@@ -48,6 +48,7 @@ type DraftApplicationVersion struct {
 	requiredCapabilities CapabilitySet
 	scopeRequest         ScopeRequest
 	oauthRedirects       OAuthRedirectConfiguration
+	scriptReferences     []shared.ScriptReference
 	createdBy            shared.AuthID
 	createdAt            time.Time
 }
@@ -130,6 +131,7 @@ type DraftApplicationVersionReplacement struct {
 	requiredCapabilities CapabilitySet
 	scopeRequest         ScopeRequest
 	oauthRedirects       OAuthRedirectConfiguration
+	scriptReferences     []shared.ScriptReference
 }
 
 func NewDraftApplicationVersionReplacement(
@@ -196,6 +198,7 @@ type ApplicationVersion struct {
 	requiredCapabilities CapabilitySet
 	scopeRequest         ScopeRequest
 	oauthRedirects       OAuthRedirectConfiguration
+	scriptReferences     []shared.ScriptReference
 	reviewStatus         ReviewStatus
 	createdBy            shared.AuthID
 	createdAt            time.Time
@@ -208,11 +211,15 @@ func NewApplicationVersion(draft *DraftApplicationVersion, sequence VersionSeque
 	if draft == nil {
 		return nil, NewInternalError(nil)
 	}
-	return RestoreApplicationVersion(
+	version, err := RestoreApplicationVersion(
 		draft.ID(), draft.ApplicationID(), sequence, draft.VersionLabel(), draft.LaunchURL(), draft.RPCApiRange(),
 		draft.requiredCapabilities, draft.scopeRequest, ReviewStatusDraft, draft.CreatedBy(), draft.CreatedAt(),
 		1, draft.UpdatedBy(), draft.UpdatedAt(), draft.OAuthRedirects(),
 	)
+	if err != nil {
+		return nil, err
+	}
+	return version.WithScriptReferences(draft.scriptReferences), nil
 }
 
 // RestoreApplicationVersion reconstructs a persisted version after every
@@ -290,6 +297,7 @@ func (version *ApplicationVersion) ReplaceDraft(
 	copy.requiredCapabilities = replacement.requiredCapabilities
 	copy.scopeRequest = replacement.scopeRequest
 	copy.oauthRedirects = replacement.oauthRedirects
+	copy.scriptReferences = slices.Clone(replacement.scriptReferences)
 	copy.revision++
 	copy.updatedBy = updatedBy
 	copy.updatedAt = updatedAt.UTC()
@@ -331,7 +339,8 @@ func (version *ApplicationVersion) hasReplacement(replacement DraftApplicationVe
 		slices.Equal(version.requiredCapabilities.values, replacement.requiredCapabilities.values) &&
 		slices.Equal(version.scopeRequest.required, replacement.scopeRequest.required) &&
 		slices.Equal(version.scopeRequest.optional, replacement.scopeRequest.optional) &&
-		version.oauthRedirects.Equal(replacement.oauthRedirects)
+		version.oauthRedirects.Equal(replacement.oauthRedirects) &&
+		slices.Equal(version.scriptReferences, replacement.scriptReferences)
 }
 
 func (version *ApplicationVersion) ID() ApplicationVersionID { return version.id }
@@ -360,3 +369,31 @@ func (version *ApplicationVersion) CreatedAt() time.Time       { return version.
 func (version *ApplicationVersion) Revision() int64            { return version.revision }
 func (version *ApplicationVersion) UpdatedBy() shared.AuthID   { return version.updatedBy }
 func (version *ApplicationVersion) UpdatedAt() time.Time       { return version.updatedAt }
+
+// WithScriptReferences returns a draft with already validated and normalized references.
+func (draft DraftApplicationVersion) WithScriptReferences(refs []shared.ScriptReference) *DraftApplicationVersion {
+	draft.scriptReferences = slices.Clone(refs)
+	return &draft
+}
+
+func (draft *DraftApplicationVersion) ScriptReferences() []shared.ScriptReference {
+	return slices.Clone(draft.scriptReferences)
+}
+
+func (replacement DraftApplicationVersionReplacement) WithScriptReferences(refs []shared.ScriptReference) DraftApplicationVersionReplacement {
+	replacement.scriptReferences = slices.Clone(refs)
+	return replacement
+}
+
+func (replacement DraftApplicationVersionReplacement) ScriptReferences() []shared.ScriptReference {
+	return slices.Clone(replacement.scriptReferences)
+}
+
+func (version ApplicationVersion) WithScriptReferences(refs []shared.ScriptReference) *ApplicationVersion {
+	version.scriptReferences = slices.Clone(refs)
+	return &version
+}
+
+func (version *ApplicationVersion) ScriptReferences() []shared.ScriptReference {
+	return slices.Clone(version.scriptReferences)
+}

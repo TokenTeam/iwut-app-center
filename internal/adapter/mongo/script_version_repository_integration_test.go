@@ -20,7 +20,7 @@ func TestScriptVersionRepositoryIntegration_UCAPP042_BRSCR004006(t *testing.T) {
 	versions := NewScriptVersionRepository(db)
 	documents := db.Collection(scriptVersionsCollection)
 	audits := db.Collection(scriptVersionAuditsCollection)
-	assertIndexNames(t, documents, []string{"_id_", scriptVersionIDIndex, scriptVersionLabelIndex, "ix_script_versions_resource_created", "ix_script_versions_resource_state_created"})
+	assertIndexNames(t, documents, []string{"_id_", scriptVersionIDIndex, scriptVersionLabelIndex, "ix_script_versions_resource_created", "ix_script_versions_resource_state_created", "ix_script_candidate_created"})
 	assertIndexNames(t, audits, []string{"_id_", scriptVersionAuditIndex})
 
 	at := time.Date(2026, 11, 6, 12, 0, 0, 123456789, time.UTC)

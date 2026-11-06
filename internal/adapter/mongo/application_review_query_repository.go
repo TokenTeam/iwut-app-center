@@ -130,43 +130,83 @@ func (r *ApplicationReviewQueryRepository) ListPending(ctx context.Context, revi
 }
 func (r *ApplicationReviewQueryRepository) Get(ctx context.Context, reviewer shared.AuthID, applicationID shared.ApplicationID, versionID reviewdomain.ApplicationVersionID, reviewID reviewdomain.ApplicationReviewID) (*reviewdomain.ReviewDetail, error) {
 	return withReviewQuerySnapshot(r, ctx, func(tx context.Context, now time.Time) (*reviewdomain.ReviewDetail, error) {
-		var d applicationReviewDocument
-		err := r.database.Collection(applicationReviewsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "versionId": versionID.String(), "reviewId": reviewID.String()}).Decode(&d)
-		if errors.Is(err, m.ErrNoDocuments) {
-			return nil, reviewport.ErrReviewQueryNotFound
-		}
-		if err != nil {
-			return nil, err
-		}
-		review, err := applicationReviewFromDocument(d)
-		if err != nil {
-			return nil, reviewport.ErrReviewQueryStateInconsistent
-		}
-		var app applicationDocument
-		if err = r.database.Collection(applicationsCollectionName).FindOne(tx, bson.M{"id": applicationID.String()}).Decode(&app); err != nil {
-			return nil, reviewport.ErrReviewQueryStateInconsistent
-		}
-		var version applicationVersionDocument
-		if err = r.database.Collection(applicationVersionsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "versionId": versionID.String()}).Decode(&version); err != nil {
-			return nil, reviewport.ErrReviewQueryStateInconsistent
-		}
-		if review.Status() == reviewdomain.ReviewStatusPending {
-			var oauth applicationVersionOAuthConfigDocument
-			if err = r.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "applicationVersionId": versionID.String()}).Decode(&oauth); err != nil || !pendingVersionReviewMatchesVersion(review, version, oauth) {
-				return nil, reviewport.ErrReviewQueryStateInconsistent
-			}
-		}
-		policy, err := r.loadBoundReviewPolicy(tx, review.PolicyVersion())
-		if err != nil {
-			return nil, err
-		}
-		core, err := managementCore(app)
-		if err != nil {
-			return nil, reviewport.ErrReviewQueryStateInconsistent
-		}
-		return &reviewdomain.ReviewDetail{Application: reviewdomain.ReviewApplicationContext{ApplicationID: app.ID, Name: app.Name, AdminID: app.AdminID, LifecycleStatus: core.LifecycleStatus, PlatformAvailabilityStatus: core.PlatformAvailabilityStatus}, Version: reviewdomain.ReviewVersionContext{VersionID: version.VersionID, Sequence: version.Sequence, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy}, Review: review, ReviewPolicy: policy, DecisionEligibility: versionReviewEligibility(reviewer, app.AdminID, version.CreatedBy, d.SubmittedBy), AsOf: now}, nil
+		return r.readDetail(tx, now, reviewer, applicationID, versionID, reviewID, true)
 	})
 }
+func (r *ApplicationReviewQueryRepository) readDetail(tx context.Context, now time.Time, reviewer shared.AuthID, applicationID shared.ApplicationID, versionID reviewdomain.ApplicationVersionID, reviewID reviewdomain.ApplicationReviewID, includeDependencies bool) (*reviewdomain.ReviewDetail, error) {
+	var d applicationReviewDocument
+	err := r.database.Collection(applicationReviewsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "versionId": versionID.String(), "reviewId": reviewID.String()}).Decode(&d)
+	if errors.Is(err, m.ErrNoDocuments) {
+		return nil, reviewport.ErrReviewQueryNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	review, err := applicationReviewFromDocument(d)
+	if err != nil {
+		return nil, reviewport.ErrReviewQueryStateInconsistent
+	}
+	var app applicationDocument
+	if err = r.database.Collection(applicationsCollectionName).FindOne(tx, bson.M{"id": applicationID.String()}).Decode(&app); err != nil {
+		return nil, reviewport.ErrReviewQueryStateInconsistent
+	}
+	var version applicationVersionDocument
+	if err = r.database.Collection(applicationVersionsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "versionId": versionID.String()}).Decode(&version); err != nil {
+		return nil, reviewport.ErrReviewQueryStateInconsistent
+	}
+	if review.Status() == reviewdomain.ReviewStatusPending {
+		var oauth applicationVersionOAuthConfigDocument
+		if err = r.database.Collection(applicationVersionOAuthConfigsCollectionName).FindOne(tx, bson.M{"applicationId": applicationID.String(), "applicationVersionId": versionID.String()}).Decode(&oauth); err != nil || !pendingVersionReviewMatchesVersion(review, version, oauth) {
+			return nil, reviewport.ErrReviewQueryStateInconsistent
+		}
+	}
+	policy, err := r.loadBoundReviewPolicy(tx, review.PolicyVersion())
+	if err != nil {
+		return nil, err
+	}
+	core, err := managementCore(app)
+	if err != nil {
+		return nil, reviewport.ErrReviewQueryStateInconsistent
+	}
+	var dependencies []shared.ScriptDependencySummary
+	if includeDependencies {
+		dependencies, err = scriptDependencySummaries(tx, r.database, d.ReviewID, d.ApplicationID, d.VersionID, review.ScriptDependencies())
+		if err != nil {
+			return nil, reviewport.ErrReviewQueryStateInconsistent
+		}
+	}
+	return &reviewdomain.ReviewDetail{ScriptDependencies: dependencies, Application: reviewdomain.ReviewApplicationContext{ApplicationID: app.ID, Name: app.Name, AdminID: app.AdminID, LifecycleStatus: core.LifecycleStatus, PlatformAvailabilityStatus: core.PlatformAvailabilityStatus}, Version: reviewdomain.ReviewVersionContext{VersionID: version.VersionID, Sequence: version.Sequence, ReviewStatus: version.ReviewStatus, Revision: version.Revision, CreatedBy: version.CreatedBy}, Review: review, ReviewPolicy: policy, DecisionEligibility: versionReviewEligibility(reviewer, app.AdminID, version.CreatedBy, d.SubmittedBy), AsOf: now}, nil
+}
+
+func (r *ApplicationReviewQueryRepository) GetScript(ctx context.Context, reviewer shared.AuthID, app shared.ApplicationID, version reviewdomain.ApplicationVersionID, review reviewdomain.ApplicationReviewID, scriptVersionID string) (*reviewdomain.ApplicationReviewScriptDetail, error) {
+	return withReviewQuerySnapshot(r, ctx, func(tx context.Context, now time.Time) (*reviewdomain.ApplicationReviewScriptDetail, error) {
+		detail, err := r.readDetail(tx, now, reviewer, app, version, review, false)
+		if err != nil {
+			return nil, err
+		}
+		for _, fact := range detail.Review.ScriptDependencies() {
+			if fact.VersionID != scriptVersionID {
+				continue
+			}
+			dependency, err := loadFrozenScriptDependency(tx, r.database, review.String(), app.String(), version.String(), fact)
+			if err != nil {
+				return nil, reviewport.ErrReviewQueryStateInconsistent
+			}
+			policy, err := dependency.review.PolicyBinding.policy()
+			if err != nil {
+				return nil, reviewport.ErrReviewQueryStateInconsistent
+			}
+			checks := make([]reviewdomain.ApplicationReviewScriptCheck, len(policy.Checks))
+			for i, c := range policy.Checks {
+				checks[i] = reviewdomain.ApplicationReviewScriptCheck{ID: c.ID, Title: c.Title, Description: c.Description, Mandatory: c.Mandatory}
+			}
+			return &reviewdomain.ApplicationReviewScriptDetail{Dependency: dependency.summary(fact.ScriptReference),
+				Text: dependency.review.Snapshot.Text, PolicyVersion: policy.Version, Checks: checks}, nil
+		}
+		return nil, reviewport.ErrReviewQueryNotFound
+	})
+}
+
 func withReviewQuerySnapshot[T any](r *ApplicationReviewQueryRepository, ctx context.Context, fn func(context.Context, time.Time) (T, error)) (T, error) {
 	var zero T
 	session, err := r.database.Client().StartSession()
@@ -243,6 +283,10 @@ func pendingVersionReviewMatchesVersion(review *reviewdomain.ApplicationReview, 
 		return false
 	}
 	snapshot := document.Snapshot
+	refs, err := scriptReferencesFromDocuments(version.ScriptReferences)
+	if err != nil || !slices.Equal(refs, review.Snapshot().ScriptReferences()) {
+		return false
+	}
 	return snapshot.VersionLabel == version.VersionLabel && snapshot.LaunchURL == version.LaunchURL && snapshot.RPCApiMinVersion == version.RPCApiMinVersion && snapshot.RPCApiMaxVersionExclusive == version.RPCApiMaxVersionExclusive &&
 		slices.Equal(snapshot.RequiredCapabilities, version.RequiredCapabilities) && slices.Equal(snapshot.RequiredScopes, version.RequiredScopes) && slices.Equal(snapshot.OptionalScopes, version.OptionalScopes) &&
 		slices.Equal(snapshot.OAuthRedirects.PKCERedirectURIs, oauth.OAuthRedirects.PKCERedirectURIs) && slices.Equal(snapshot.OAuthRedirects.ConfidentialRedirectURIs, oauth.OAuthRedirects.ConfidentialRedirectURIs)

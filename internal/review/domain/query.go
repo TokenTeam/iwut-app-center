@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"iwut-app-center/internal/shared"
+	"time"
+)
 
 type ReviewConflict string
 
@@ -39,10 +42,23 @@ type ReviewPolicyContext struct {
 	RequiredCheckDefinitions []ReviewCheckDefinition
 }
 type ReviewDetail struct {
+	ScriptDependencies  []shared.ScriptDependencySummary
 	Application         ReviewApplicationContext
 	Version             ReviewVersionContext
 	Review              *ApplicationReview
 	ReviewPolicy        ReviewPolicyContext
 	DecisionEligibility DecisionEligibility
 	AsOf                time.Time
+}
+
+type ApplicationReviewScriptDetail struct {
+	Dependency    shared.ScriptDependencySummary
+	Text          string
+	PolicyVersion string
+	Checks        []ApplicationReviewScriptCheck
+}
+
+type ApplicationReviewScriptCheck struct {
+	ID, Title, Description string
+	Mandatory              bool
 }

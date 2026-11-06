@@ -294,6 +294,11 @@ func applicationReviewResource(review *reviewdomain.ApplicationReview) *applicat
 		SubmittedBy:            review.SubmittedBy().String(),
 		SubmittedAt:            timestamppb.New(review.SubmittedAt()),
 	}
+	for _, fact := range review.ScriptDependencies() {
+		resource.Snapshot.ScriptDependencies = append(resource.Snapshot.ScriptDependencies, scriptDependencyResponse(shared.ScriptDependencySummary{
+			ScriptReference: fact.ScriptReference, Format: fact.Format, Digest: fact.Digest, ReviewID: fact.ReviewID,
+		}))
+	}
 	if restoration := review.DraftRestoration(); restoration != nil {
 		resource.DraftRestoration = &applicationreviewv1.ApplicationReviewDraftRestoration{
 			RestoredBy:            restoration.RestoredBy().String(),
@@ -321,6 +326,10 @@ func applicationReviewResource(review *reviewdomain.ApplicationReview) *applicat
 			resource.Decision.ApprovalValidation = &applicationreviewv1.ApplicationReviewApprovalValidation{
 				ScopeCatalogRevision:   validation.ScopeCatalogRevision().Int64(),
 				PreflightPolicyVersion: validation.PreflightPolicyVersion().String(),
+			}
+			for _, fact := range validation.ScriptApprovals() {
+				resource.Decision.ApprovalValidation.ScriptApprovals = append(resource.Decision.ApprovalValidation.ScriptApprovals,
+					&applicationreviewv1.ScriptApprovalFact{ScriptVersionId: fact.VersionID, Digest: fact.Digest, ScriptDecisionId: fact.DecisionID})
 			}
 		}
 	}

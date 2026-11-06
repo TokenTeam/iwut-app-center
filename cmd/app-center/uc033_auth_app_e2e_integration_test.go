@@ -141,7 +141,7 @@ func TestE2E_UCAPP033_RealAuthOAuthArchival(t *testing.T) {
 
 	callback := "https://www.whut.edu.cn/uc033-oauth-callback"
 	version := appAPI.call(http.MethodPost, prefix+"/versions", ownerToken, map[string]any{
-		"versionLabel": "1.0.0", "launchUrl": "https://example.edu/apps/uc033/",
+		"scriptReferences": map[string]any{"items": []any{}}, "versionLabel": "1.0.0", "launchUrl": "https://example.edu/apps/uc033/",
 		"rpcApiMinVersion": 1, "rpcApiMaxVersionExclusive": 2,
 		"requiredCapabilities": []string{}, "requiredScopes": []string{"openid"},
 		"optionalScopes": []string{"offline_access", "items.read"},

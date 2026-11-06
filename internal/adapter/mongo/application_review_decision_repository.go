@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	reviewdomain "iwut-app-center/internal/review/domain"
 	reviewport "iwut-app-center/internal/review/port"
@@ -158,6 +159,7 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 		return nil, reviewport.ErrApplicationReviewAlreadyDecided
 	}
 	if !currentReview.Snapshot().Equal(reviewReference.Snapshot()) ||
+		!slices.Equal(currentReview.ScriptDependencies(), reviewReference.ScriptDependencies()) ||
 		currentReview.SourceVersionRevision() != reviewReference.SourceVersionRevision() ||
 		currentReview.SubmittedBy() != reviewReference.SubmittedBy() {
 		return nil, reviewport.ErrApplicationReviewStateInconsistent
@@ -214,6 +216,15 @@ func (repository *ApplicationReviewDecisionRepository) decideTransaction(
 	if decision.Outcome() == reviewdomain.ReviewDecisionApproved {
 		if _, err = policy.ValidateConfirmation(decision.ConfirmedCheckIDs()); err != nil {
 			return nil, err
+		}
+		facts, err := verifyScriptApprovals(ctx, repository.database, reviewID.String(), applicationID.String(), versionID.String(), currentReview.ScriptDependencies())
+		if err != nil {
+			return nil, err
+		}
+		decision, err = reviewdomain.NewApprovedDecision(decision.ReviewPolicyVersion(), decision.ConfirmedCheckIDs(), decision.Reason(),
+			decision.ApprovalValidation().WithScriptApprovals(facts), decision.DecidedBy(), decision.DecidedAt())
+		if err != nil {
+			return nil, reviewport.ErrApplicationReviewDataInconsistent
 		}
 	}
 	decisionDocument, err := applicationReviewDecisionToDocument(decision)

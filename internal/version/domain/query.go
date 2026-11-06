@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"iwut-app-center/internal/shared"
+	"time"
+)
 
 type OwnedReviewDecision struct {
 	Outcome   string
@@ -11,16 +14,18 @@ type OwnedReviewDecision struct {
 type OwnedDraftRestoration struct{ RestoredAt time.Time }
 
 type OwnedLatestReview struct {
-	ReviewID         string
-	Attempt          int32
-	Status           string
-	SubmittedBy      string
-	SubmittedAt      time.Time
-	Decision         *OwnedReviewDecision
-	DraftRestoration *OwnedDraftRestoration
+	ScriptDependencies []shared.ScriptDependencySummary
+	ReviewID           string
+	Attempt            int32
+	Status             string
+	SubmittedBy        string
+	SubmittedAt        time.Time
+	Decision           *OwnedReviewDecision
+	DraftRestoration   *OwnedDraftRestoration
 }
 
 type OwnedVersion struct {
+	ScriptReferences                                     []shared.ScriptDependencySummary
 	VersionID, ApplicationID, VersionLabel, LaunchURL    string
 	Sequence                                             int32
 	RPCApiMinVersion, RPCApiMaxVersionExclusive          int32
@@ -42,4 +47,13 @@ type OwnedVersionPage struct {
 type OwnedVersionDetail struct {
 	Version OwnedVersion
 	AsOf    time.Time
+}
+
+type ApplicationScriptCandidate struct {
+	Dependency                                  shared.ScriptDependencySummary
+	ResourceName, ResourcePurpose, VersionLabel string
+}
+type ApplicationScriptCandidatePage struct {
+	Items      []ApplicationScriptCandidate
+	NextCursor string
 }

@@ -20,6 +20,7 @@ type UpdateDraftApplicationVersionCommand struct {
 	OptionalScopes            []string
 	PKCERedirectURIs          []string
 	ConfidentialRedirectURIs  []string
+	ScriptReferences          []shared.ScriptReference
 }
 
 type UpdateDraftApplicationVersionHandler struct {
@@ -81,6 +82,10 @@ func (handler *UpdateDraftApplicationVersionHandler) Handle(
 	if err != nil {
 		return nil, err
 	}
+	refs, err := shared.NormalizeScriptReferences(command.ScriptReferences)
+	if err != nil {
+		return nil, err
+	}
 	oauthRedirects, err := domain.NewOAuthRedirectConfiguration(
 		append([]string{}, command.PKCERedirectURIs...),
 		append([]string{}, command.ConfidentialRedirectURIs...),
@@ -121,10 +126,12 @@ func (handler *UpdateDraftApplicationVersionHandler) Handle(
 
 	updatedAt := handler.clock.Now().UTC()
 	version, err := handler.repository.ReplaceDraft(
-		ctx, applicationID, versionID, identity.AuthID, command.ExpectedRevision, replacement, updatedAt,
+		ctx, applicationID, versionID, identity.AuthID, command.ExpectedRevision, replacement.WithScriptReferences(refs), updatedAt,
 	)
 	if err != nil {
 		switch {
+		case errors.Is(err, shared.ErrInvalidScriptReferences):
+			return nil, err
 		case errors.Is(err, port.ErrApplicationVersionNotFound):
 			return nil, domain.ErrApplicationVersionNotFound
 		case errors.Is(err, port.ErrApplicationAdminRequired):
