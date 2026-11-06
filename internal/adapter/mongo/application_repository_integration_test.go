@@ -443,6 +443,7 @@ func TestMigratorIntegration_LedgerIDsAreUniqueOrderedAndExact(t *testing.T) {
 		scriptResourceMigrationID,
 		scriptVersionMigrationID,
 		scriptReviewMigrationID,
+		scriptQueryMigrationID,
 	}
 	sort.Strings(want)
 	if fmt.Sprint(got) != fmt.Sprint(want) {
@@ -505,6 +506,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: scriptResourceMigrationID, apply: sequential.applyScriptResourceMigration},
 		{id: scriptVersionMigrationID, apply: sequential.applyScriptVersionMigration},
 		{id: scriptReviewMigrationID, apply: sequential.applyScriptReviewMigration},
+		{id: scriptQueryMigrationID, apply: sequential.applyScriptQueryMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)

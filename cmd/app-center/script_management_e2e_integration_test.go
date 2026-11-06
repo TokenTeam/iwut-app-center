@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
 	"google.golang.org/grpc/codes"
@@ -26,7 +27,7 @@ import (
 	"iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_043_ScriptManagementHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP041_042_043_045_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
@@ -194,6 +195,60 @@ func TestE2E_UCAPP041_042_043_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	if _, err := versionClient.ReplaceScriptVersionDraft(maintainerContext, replace); status.Code(err) != codes.Aborted {
 		t.Fatal("submitted script could still be edited", status.Code(err))
 	}
+	reviewer := e2eSignReviewerIdentity(t, key, "script-reviewer", "app.script.review")
+	conflicted := e2eSignReviewerIdentity(t, key, "script-maintainer", "app.script.review")
+	publisher := e2eSignReviewerIdentity(t, key, "script-publisher", "app.script.publish")
+	suspender := e2eSignReviewerIdentity(t, key, "script-suspender", "app.script.suspend")
+	restorer := e2eSignReviewerIdentity(t, key, "script-restorer", "app.script.restore")
+	reviewPath := submitPath + "/" + submitted.GetReviewId()
+	for _, caller := range []string{maintainer, reviewer, publisher, suspender, restorer} {
+		var metadata resourcev1.ScriptResource
+		httpCall(http.MethodGet, resourcePath+"/"+resource.GetResourceId(), caller, nil, http.StatusOK, &metadata)
+		if metadata.GetResourceId() != resource.GetResourceId() {
+			t.Fatal("wrong resource")
+		}
+	}
+	httpCall(http.MethodGet, versionsPath+"?limit=bad", developer, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, versionsPath+"?limit=bad", "", nil, http.StatusUnauthorized, nil)
+	httpCall(http.MethodGet, versionsPath+"?limit=0", maintainer, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, versionsPath+"?limit=1&limit=2", maintainer, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, versionsPath+"?resourceId="+resource.GetResourceId(), maintainer, nil, http.StatusBadRequest, nil)
+
+	var resources queryv1.ListScriptResourcesResponse
+	httpCall(http.MethodGet, resourcePath+"?limit=1", suspender, nil, http.StatusOK, &resources)
+	if len(resources.GetItems()) != 1 {
+		t.Fatal("resource list is missing resource")
+	}
+	var summary queryv1.GetScriptVersionResponse
+	httpCall(http.MethodGet, versionsPath+"/"+draft.GetVersionId(), publisher, nil, http.StatusOK, &summary)
+	if summary.ContentText != nil || summary.GetVersion().GetDigest() != modified.GetDigest() {
+		t.Fatal("publisher received text or lost digest")
+	}
+	httpCall(http.MethodGet, reviewPath, publisher, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, versionsPath+"/"+draft.GetVersionId(), suspender, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, reviewPath, developer, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, "/v1/script-reviews/pending", maintainer, nil, http.StatusForbidden, nil)
+	var queue queryv1.ListPendingScriptReviewsResponse
+	httpCall(http.MethodGet, "/v1/script-reviews/pending?resourceId="+resource.GetResourceId()+"&limit=1", reviewer, nil, http.StatusOK, &queue)
+	if len(queue.GetItems()) != 1 || queue.GetNextCursor() == "" {
+		t.Fatal("pending queue did not apply limit")
+	}
+
+	var detail queryv1.GetScriptReviewResponse
+	httpCall(http.MethodGet, reviewPath, conflicted, nil, http.StatusOK, &detail)
+	if detail.GetCanDecide() || len(detail.GetConflicts()) != 2 || detail.GetContentText() != replacement ||
+		detail.GetVersion().GetRevision() != 3 || len(detail.GetChecks()) != 4 || detail.GetChecks()[0].GetDescription() == "" {
+		t.Fatal("conflicted reviewer detail lost snapshot, checks or conflict")
+	}
+	reviewerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, reviewer))
+	queryClient := queryv1.NewScriptQueryServiceClient(connection)
+	largeReview, err := queryClient.GetScriptReview(reviewerContext, &queryv1.GetScriptReviewRequest{
+		ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(), ReviewId: second.GetReviewId(),
+	})
+	if err != nil || !largeReview.GetCanDecide() || largeReview.GetContentText() != large {
+		t.Fatal("native reviewer detail could not retrieve exact boundary bytes", err)
+	}
+
 	e2eAssertCollectionCount(t, database, "script_resources", 1)
 	e2eAssertCollectionCount(t, database, "script_resource_audits", 2)
 	e2eAssertCollectionCount(t, database, "script_versions", 2)

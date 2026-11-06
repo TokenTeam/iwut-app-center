@@ -63,7 +63,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 				if operation == applicationmanagementv1.OperationApplicationManagementQueryServiceListMyApplications || operation == applicationmanagementv1.OperationApplicationManagementQueryServiceGetMyApplication {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
-				if isReviewQueryOperation(operation) || isReviewDecisionOperation(operation) || scriptManagementOperation(operation) {
+				if isReviewQueryOperation(operation) || isReviewDecisionOperation(operation) || scriptManagementOperation(operation) || scriptQueryOperation(operation) {
 					transporter.ReplyHeader().Set("Cache-Control", "private, no-store")
 				}
 				if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod {
@@ -110,7 +110,7 @@ func identityMiddleware(verifier *IdentityVerifier) middleware.Middleware {
 }
 
 func toIdentityTransportError(err error, operation string) error {
-	if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod || scriptManagementOperation(operation) {
+	if isMyTestApplicationOperation(operation) || operation == LeaveApplicationAsTesterGRPCMethod || scriptManagementOperation(operation) || scriptQueryOperation(operation) {
 		if errors.Is(err, errIdentityRequired) {
 			return transportStatus(codes.Unauthenticated, ReasonUserIdentityRequired, "user identity is required")
 		}

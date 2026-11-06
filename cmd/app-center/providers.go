@@ -95,6 +95,10 @@ func provideApplicationVersionManagementCursorKey(configuration config.Config) (
 	return mongo.DeriveApplicationVersionManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
 }
 
+func provideScriptQueryCursorKey(configuration config.Config) (mongo.ScriptQueryCursorKey, error) {
+	return mongo.DeriveScriptQueryCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
+}
+
 func provideTesterManagementCursorKey(configuration config.Config) (mongo.TesterManagementCursorKey, error) {
 	return mongo.DeriveTesterManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
 }
