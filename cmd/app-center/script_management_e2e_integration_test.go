@@ -20,7 +20,9 @@ import (
 	appversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
+	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
+	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -32,13 +34,14 @@ import (
 	"iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_043_045_048_ScriptManagementHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP041_042_043_044_045_048_049_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
 	key, keyPath := e2eIdentity(t)
 	addresses := e2eReserveAddresses(t, 3)
-	e2eStartScopeCatalogServer(t, addresses[2])
+	_, auth := e2eStartAuthServer(t, addresses[2])
+	auth.SetStatus("developer-without-maintain", developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED)
 	configuration, err := config.Load(e2eEnvironment(map[string]string{
 		config.MongoURIEnv:      os.Getenv(mongoIntegrationURIEnv),
 		config.MongoDatabaseEnv: database.Name(),
@@ -321,6 +324,83 @@ func TestE2E_UCAPP041_042_043_045_048_ScriptManagementHTTPAndGRPC(t *testing.T) 
 	e2eAssertCollectionCount(t, database, "script_versions", 2)
 	e2eAssertCollectionCount(t, database, "script_version_audits", 5)
 	e2eAssertCollectionCount(t, database, "script_reviews", 2)
+	// Script decisions use the independent review permission and immutable policy.
+	decisionPath := reviewPath + "/decision"
+	httpCall(http.MethodPost, decisionPath, "", []byte("{"), http.StatusUnauthorized, nil)
+	httpCall(http.MethodPost, decisionPath, maintainer, []byte("{"), http.StatusForbidden, nil)
+	approve := &reviewv1.DecideScriptVersionReviewInput{ExpectedVersionRevision: 3, PolicyVersion: domain.InitialPolicyVersion, Decision: reviewv1.ScriptReviewAction_SCRIPT_REVIEW_ACTION_APPROVE}
+	for _, check := range detail.GetChecks() {
+		approve.ConfirmedCheckIds = append(approve.ConfirmedCheckIds, check.GetId())
+	}
+	httpCall(http.MethodPost, decisionPath, conflicted, marshal(approve), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, decisionPath, reviewer, []byte(`{"expectedVersionRevision":"3","decidedBy":"spoof"}`), http.StatusBadRequest, nil)
+	appReviewerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, appReviewer))
+	appReviewClient := appreviewv1.NewApplicationReviewClient(connection)
+	appApprove := &appreviewv1.DecideApplicationVersionReviewRequest{ApplicationId: application.GetId(), VersionId: created.GetVersionId(), ReviewId: submittedApp.GetReview().GetReviewId(), Command: &appreviewv1.DecideApplicationVersionReviewCommand{
+		Outcome: appreviewv1.ReviewDecisionAction_APPROVE, ExpectedPolicyVersion: appReviewDetail.GetReviewPolicy().GetVersion(), ConfirmedCheckIds: appReviewDetail.GetReviewPolicy().GetRequiredCheckIds()}}
+	if _, err := appReviewClient.DecideApplicationVersionReview(appReviewerContext, appApprove); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("pending script must block application approval", err)
+	}
+	var decided reviewv1.ScriptReviewDecisionReceipt
+	httpCall(http.MethodPost, decisionPath, reviewer, marshal(approve), http.StatusOK, &decided)
+	if decided.GetVersionRevision() != 4 || decided.GetDecision().GetDecidedBy() != "script-reviewer" || decided.GetCascade() != nil {
+		t.Fatal("script approval receipt")
+	}
+	httpCall(http.MethodPost, decisionPath, reviewer, marshal(approve), http.StatusConflict, nil)
+	approvedApp, err := appReviewClient.DecideApplicationVersionReview(appReviewerContext, appApprove)
+	if err != nil || approvedApp.GetReview().GetStatus() != "APPROVED" || len(approvedApp.GetReview().GetDecision().GetApprovalValidation().GetScriptApprovals()) != 1 {
+		t.Fatal("real script approval did not unblock application", err)
+	}
+	httpCall(http.MethodGet, reviewPath, reviewer, nil, http.StatusOK, &detail)
+	if detail.GetStatus() != queryv1.ScriptReviewStatus_SCRIPT_REVIEW_STATUS_APPROVED || detail.GetCanDecide() || detail.GetDecision().GetDecisionId() != decided.GetDecision().GetDecisionId() {
+		t.Fatal("terminal script query")
+	}
+	// A second real app consumes the other script, then the production worker rejects it.
+	otherApplication, err := appv1.NewApplicationClient(connection).CreateApplication(developerContext, &appv1.CreateApplicationRequest{Name: "Script_Rejected_App"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherInput := proto.Clone(appVersion).(*appversionv1.CreateApplicationVersionRequest)
+	otherInput.ApplicationId = otherApplication.GetId()
+	otherInput.ScriptReferences.Items[0].ScriptVersionId = largeDraft.GetVersionId()
+	otherVersion, err := appVersionClient.CreateApplicationVersion(developerContext, otherInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherReview, err := appReviewClient.SubmitApplicationVersionReview(developerContext, &appreviewv1.SubmitApplicationVersionReviewRequest{ApplicationId: otherApplication.GetId(), VersionId: otherVersion.GetVersionId(), Command: &appreviewv1.SubmitApplicationVersionReviewCommand{ExpectedRevision: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejected, err := reviewv1.NewScriptReviewServiceClient(connection).DecideScriptVersionReview(reviewerContext, &reviewv1.DecideScriptVersionReviewRequest{
+		ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(), ReviewId: second.GetReviewId(), Command: &reviewv1.DecideScriptVersionReviewInput{
+			ExpectedVersionRevision: largeReview.GetVersion().GetRevision(), PolicyVersion: largeReview.GetPolicyVersion(), Decision: reviewv1.ScriptReviewAction_SCRIPT_REVIEW_ACTION_REJECT, Reason: "private script review reason"}})
+	if err != nil || rejected.GetCascade().GetStatus() != reviewv1.ScriptCascadeStatus_SCRIPT_CASCADE_STATUS_PENDING || rejected.GetCascade().GetTotal() != 1 {
+		t.Fatal("rejection task ACK", err)
+	}
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		final, err := queryClient.GetScriptReview(reviewerContext, &queryv1.GetScriptReviewRequest{ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(), ReviewId: second.GetReviewId()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if final.GetCascade().GetStatus() == reviewv1.ScriptCascadeStatus_SCRIPT_CASCADE_STATUS_COMPLETE {
+			if final.GetCascade().GetRejected() != 1 || final.GetCascade().GetApplicationClosed() != 0 || !final.GetCascade().GetObservedAt().IsValid() {
+				t.Fatal("invalid completion projection")
+			}
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("production cascade did not complete", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+	finalApp, err := appreviewqueryv1.NewApplicationReviewQueryServiceClient(connection).GetApplicationVersionReview(appReviewerContext, &appreviewqueryv1.GetApplicationVersionReviewRequest{ApplicationId: otherApplication.GetId(), VersionId: otherVersion.GetVersionId(), ReviewId: otherReview.GetReview().GetReviewId()})
+	if err != nil || finalApp.GetReview().GetStatus() != "REJECTED" || finalApp.GetReview().GetDecision().GetDecidedBy() != "auth-e2e-system" || strings.Contains(finalApp.GetReview().GetDecision().GetReason(), "private script review reason") || len(finalApp.GetReview().GetDecision().GetConfirmedCheckIds()) != 0 {
+		t.Fatal("production system rejection audit", err)
+	}
+
 }
 
 func assertScriptSubmission(t *testing.T, result *versionv1.ScriptVersionReviewSubmission, revision int64) {

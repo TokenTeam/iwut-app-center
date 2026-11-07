@@ -18,15 +18,7 @@ func (m *Migrator) applyScriptDependencyMigration(ctx context.Context) error {
 	versionSchema := version[0].Value.(bson.A)[0].(bson.D)[0].Value.(bson.D)
 	addSchemaProperty(versionSchema, "scriptReferences", scriptReferenceArray(scriptReferenceFields()))
 
-	review := withPublicationFence(applicationReviewRestorationValidator())
-	reviewSchema := review[0].Value.(bson.A)[0].(bson.D)[0].Value.(bson.D)
-	properties := schemaDocument(reviewSchema, "properties")
-	addSchemaProperty(schemaDocument(properties, "snapshot"), "scriptDependencies", scriptReferenceArray(frozenScriptReferenceFields()))
-	decision := schemaDocument(properties, "decision")[0].Value.(bson.A)[1].(bson.D)
-	approval := schemaDocument(schemaDocument(decision, "properties"), "approvalValidation")[0].Value.(bson.A)[1].(bson.D)
-	addSchemaProperty(approval, "scriptApprovals", scriptReferenceArray(bson.D{
-		scriptUUIDField("scriptVersionId"), scriptDigestField(), scriptUUIDField("scriptDecisionId"),
-	}))
+	review := scriptDependencyReviewValidator()
 
 	scriptVersion := scriptVersionDocumentValidator()
 	addSchemaProperty(scriptVersion[0].Value.(bson.D), "dependencyFence",
@@ -63,6 +55,20 @@ func (m *Migrator) applyScriptDependencyMigration(ctx context.Context) error {
 		return fmt.Errorf("create app review script dependency indexes: %w", err)
 	}
 	return nil
+}
+
+func scriptDependencyReviewValidator() bson.D {
+	review := withPublicationFence(applicationReviewRestorationValidator())
+	reviewSchema := review[0].Value.(bson.A)[0].(bson.D)[0].Value.(bson.D)
+	properties := schemaDocument(reviewSchema, "properties")
+	addSchemaProperty(schemaDocument(properties, "snapshot"), "scriptDependencies", scriptReferenceArray(frozenScriptReferenceFields()))
+	decision := schemaDocument(properties, "decision")[0].Value.(bson.A)[1].(bson.D)
+	approval := schemaDocument(schemaDocument(decision, "properties"), "approvalValidation")[0].Value.(bson.A)[1].(bson.D)
+	addSchemaProperty(approval, "scriptApprovals", scriptReferenceArray(bson.D{
+		scriptUUIDField("scriptVersionId"), scriptDigestField(), scriptUUIDField("scriptDecisionId"),
+	}))
+
+	return review
 }
 
 func schemaDocument(doc bson.D, key string) bson.D {

@@ -7,7 +7,8 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	dm "go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	scriptdomain "iwut-app-center/internal/script/domain"
+	scriptport "iwut-app-center/internal/script/port"
 
 	reviewdomain "iwut-app-center/internal/review/domain"
 	reviewport "iwut-app-center/internal/review/port"
@@ -119,21 +120,25 @@ func TestScriptDependenciesIntegration_UCAPP048_BRSDP001002003004(t *testing.T) 
 
 func seedTerminalScriptDependency(t *testing.T, db *dm.Database, scriptVersionID, scriptReviewID, state string, scriptDecidedAt time.Time) string {
 	t.Helper()
-	ctx := t.Context()
-	decisionID := nextIntegrationApplicationID(t).String()
 
-	if _, err := db.Collection(scriptVersionsCollection).UpdateOne(ctx, bson.M{"versionId": scriptVersionID}, bson.M{
-		"$set": bson.M{"state": state, "updatedBy": "script-reviewer", "updatedAt": scriptDecidedAt},
-		"$inc": bson.M{"revision": int64(1)},
-	}); err != nil {
+	var doc scriptVersionDocument
+	if err := db.Collection(scriptVersionsCollection).FindOne(t.Context(), bson.M{"versionId": scriptVersionID}).Decode(&doc); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Collection(scriptReviewsCollection).UpdateOne(ctx, bson.M{"reviewId": scriptReviewID}, bson.M{
-		"$set": bson.M{"status": state, "decision": scriptReviewDecisionDocument{ID: decisionID, Outcome: state, Actor: "script-reviewer", At: scriptDecidedAt}},
-	}, options.UpdateOne().SetBypassDocumentValidation(true)); err != nil {
+	input := scriptdomain.DecisionInput{ExpectedRevision: doc.Revision, PolicyVersion: scriptdomain.InitialPolicyVersion, Action: "REJECT", Reason: "script requires changes"}
+	if state == "APPROVED" {
+		input.Action, input.Reason = "APPROVE", ""
+		for _, check := range scriptdomain.InitialReviewPolicy().Checks {
+			input.ConfirmedCheckIDs = append(input.ConfirmedCheckIDs, check.ID)
+		}
+	}
+	result, err := NewScriptVersionRepository(db).DecideReview(t.Context(), scriptport.DecideReview{ResourceID: doc.ResourceID, VersionID: doc.VersionID,
+		ReviewID: scriptdomain.ReviewID(scriptReviewID), Input: input, DecisionID: nextIntegrationApplicationID(t).String(),
+		TaskID: nextIntegrationApplicationID(t).String(), Actor: "script-reviewer", At: scriptDecidedAt})
+	if err != nil {
 		t.Fatal(err)
 	}
-	return decisionID
+	return result.Decision.ID
 }
 
 func TestRejectedScriptDependenciesIntegration_UCAPP048_BRSDP003004005(t *testing.T) {

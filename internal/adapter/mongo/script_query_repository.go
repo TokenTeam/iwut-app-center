@@ -225,10 +225,13 @@ func (r *ScriptQueryRepository) GetVersion(ctx context.Context, reader port.Scri
 			if err != nil {
 				return empty, err
 			}
-			if _, err := readPendingScriptReview(doc, parent, version); err != nil {
+			if _, err := readScriptReview(doc, parent, version); err != nil {
 				return empty, err
 			}
 			result.ReviewID = doc.ReviewID
+			if doc.Decision != nil {
+				result.DecisionID = doc.Decision.ID
+			}
 		}
 		if reader.Maintain || (reader.Review && version.State != domain.VersionDraft) {
 			result.Text = &version.Content.Text
@@ -338,7 +341,7 @@ func (r *ScriptQueryRepository) GetReview(ctx context.Context, resource domain.R
 		if version.Validate() != nil {
 			return empty, port.ErrScriptQueryInconsistent
 		}
-		review, err := readPendingScriptReview(doc, parent, version)
+		review, err := readScriptReview(doc, parent, version)
 		if err != nil {
 			return empty, err
 		}
@@ -346,7 +349,11 @@ func (r *ScriptQueryRepository) GetReview(ctx context.Context, resource domain.R
 		if err != nil {
 			return empty, err
 		}
-		return port.ScriptReviewDetail{Review: review, Version: summary}, nil
+		progress, err := loadScriptCascadeProgress(tx, r.db, review)
+		if err != nil {
+			return empty, err
+		}
+		return port.ScriptReviewDetail{Review: review, Version: summary, Cascade: progress}, nil
 	})
 }
 
@@ -360,6 +367,10 @@ func scriptVersionSummary(doc scriptVersionDocument) (port.ScriptVersionSummary,
 	}
 	switch doc.State {
 	case domain.VersionDraft:
+	case domain.VersionApproved, domain.VersionRejected:
+		if doc.Revision < 3 {
+			return port.ScriptVersionSummary{}, port.ErrScriptQueryInconsistent
+		}
 	case domain.VersionSubmitted:
 		if doc.Revision < 2 {
 			return port.ScriptVersionSummary{}, port.ErrScriptQueryInconsistent

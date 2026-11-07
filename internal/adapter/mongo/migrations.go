@@ -101,6 +101,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: scriptReviewMigrationID, apply: migrator.applyScriptReviewMigration},
 		{id: scriptQueryMigrationID, apply: migrator.applyScriptQueryMigration},
 		{id: scriptDependencyMigrationID, apply: migrator.applyScriptDependencyMigration},
+		{id: scriptDecisionMigrationID, apply: migrator.applyScriptDecisionMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {
@@ -784,6 +785,11 @@ func applicationReviewDecisionSchema() bson.D {
 		}},
 		{Key: "additionalProperties", Value: false},
 		{Key: "properties", Value: bson.D{
+			{Key: "scriptRejection", Value: scriptNestedObject(bson.D{
+				{Key: "cause", Value: bson.D{{Key: "enum", Value: bson.A{"SCRIPT_VERSION_REJECTED"}}}},
+				scriptUUIDField("scriptResourceId"), scriptUUIDField("scriptVersionId"), scriptDigestField(),
+				scriptUUIDField("scriptReviewId"), scriptUUIDField("scriptDecisionId"), scriptAuditActorProperty("triggeredBy"),
+			})},
 			{Key: "outcome", Value: bson.D{
 				{Key: "bsonType", Value: "string"},
 				{Key: "enum", Value: bson.A{"APPROVED", "REJECTED"}},

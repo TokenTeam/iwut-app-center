@@ -40,9 +40,10 @@ type ScriptVersionSummary struct {
 }
 
 type ScriptVersionDetail struct {
-	Version  ScriptVersionSummary
-	Text     *string
-	ReviewID domain.ReviewID
+	Version    ScriptVersionSummary
+	Text       *string
+	ReviewID   domain.ReviewID
+	DecisionID string
 }
 
 type ScriptReviewSummary struct {
@@ -54,6 +55,7 @@ type ScriptReviewSummary struct {
 }
 
 type ScriptReviewDetail struct {
+	Cascade *domain.CascadeProgress
 	Review  domain.Review
 	Version ScriptVersionSummary
 }

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
+	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
 	kerrors "github.com/go-kratos/kratos/v2/errors"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
@@ -37,13 +38,15 @@ const (
 type ScriptManagementService struct {
 	resourcev1.UnimplementedScriptResourceServiceServer
 	versionv1.UnimplementedScriptVersionServiceServer
+	reviewv1.UnimplementedScriptReviewServiceServer
 	resources   *scriptuc.ResourceHandlers
 	drafts      *scriptuc.DraftHandlers
 	submissions *scriptuc.SubmitDraftHandler
+	decisions   *scriptuc.DecideReviewHandler
 }
 
-func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler) *ScriptManagementService {
-	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions}
+func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler, decisions *scriptuc.DecideReviewHandler) *ScriptManagementService {
+	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions, decisions: decisions}
 }
 
 func scriptMaintainer(ctx context.Context, operation string) (shared.TrustedIdentity, error) {
@@ -168,7 +171,7 @@ func scriptVersionResponse(version domain.Version) *versionv1.ScriptVersion {
 
 func scriptManagementOperation(operation string) bool {
 	switch operation {
-	case createScriptResource, replaceScriptResource, createScriptDraft, replaceScriptDraft, submitScriptReview:
+	case createScriptResource, replaceScriptResource, createScriptDraft, replaceScriptDraft, submitScriptReview, decideScriptReview:
 		return true
 	default:
 		return false
@@ -185,6 +188,8 @@ func scriptHTTPWriteOperation(r *http.Request) string {
 		return ""
 	}
 	switch {
+	case r.Method == http.MethodPost && len(p) == 9 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "reviews" && p[7] != "" && p[8] == "decision":
+		return decideScriptReview
 	case r.Method == http.MethodPost && len(p) == 3:
 		return createScriptResource
 	case r.Method == http.MethodPut && len(p) == 5 && p[3] != "" && p[4] == "metadata":
@@ -214,7 +219,11 @@ func scriptManagementHTTPFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 				khttp.DefaultErrorEncoder(w, r, toIdentityTransportError(err, operation))
 				return
 			}
-			if err := scriptuc.RequireMaintainer(identity); err != nil {
+			authorize := scriptuc.RequireMaintainer
+			if operation == decideScriptReview {
+				authorize = scriptuc.RequireScriptReviewer
+			}
+			if err := authorize(identity); err != nil {
 				khttp.DefaultErrorEncoder(w, r, scriptManagementError(operation, err))
 				return
 			}
@@ -273,6 +282,8 @@ func validScriptHTTPBody(w http.ResponseWriter, r *http.Request, operation strin
 		input = &versionv1.CreateScriptVersionDraftInput{}
 	case replaceScriptDraft:
 		input = &versionv1.ReplaceScriptVersionDraftInput{}
+	case decideScriptReview:
+		input = &reviewv1.DecideScriptVersionReviewInput{}
 	case submitScriptReview:
 		input = &versionv1.SubmitScriptVersionReviewInput{}
 	}
@@ -287,6 +298,9 @@ func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation
 	w.Header().Set("Cache-Control", "private, no-store")
 	converted := kerrors.FromError(err)
 	reasons := resourcev1.ErrorReason_value
+	if operation == decideScriptReview {
+		reasons = reviewv1.ErrorReason_value
+	}
 	if scriptVersionOperation(operation) {
 		reasons = versionv1.ErrorReason_value
 	}
@@ -301,6 +315,9 @@ func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation
 }
 
 func invalidScriptRequest(operation string) error {
+	if operation == decideScriptReview {
+		return scriptDecisionError(domain.ErrInvalidDecision)
+	}
 	if scriptVersionOperation(operation) {
 		return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_VERSION_REQUEST", "invalid script version request")
 	}
@@ -308,6 +325,9 @@ func invalidScriptRequest(operation string) error {
 }
 
 func scriptManagementError(operation string, err error) error {
+	if operation == decideScriptReview {
+		return scriptDecisionError(err)
+	}
 	draft := scriptVersionOperation(operation)
 	switch {
 	case errors.Is(err, domain.ErrIdentityRequired):

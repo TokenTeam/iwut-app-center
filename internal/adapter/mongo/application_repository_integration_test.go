@@ -331,7 +331,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 	assertIndexNames(t, database.Collection(applicationReviewsCollectionName), []string{
 		"_id_", applicationReviewIDUniqueIndexName, applicationReviewAttemptUniqueIndexName,
 		applicationReviewSourceUniqueIndexName, applicationReviewPendingUniqueIndexName,
-		applicationReviewQueueIndexName,
+		applicationReviewQueueIndexName, "ix_app_review_script_verification",
 	})
 	assertIndexNames(t, database.Collection(applicationFiltersCollectionName), []string{
 		"_id_", applicationFilterApplicationUniqueIndexName,
@@ -369,7 +369,7 @@ func TestMigratorIntegration_UpgradesExisting0001DatabaseToLatest(t *testing.T) 
 	assertIndexNames(t, database.Collection(applicationReviewsCollectionName), []string{
 		"_id_", applicationReviewIDUniqueIndexName, applicationReviewAttemptUniqueIndexName,
 		applicationReviewSourceUniqueIndexName, applicationReviewPendingUniqueIndexName,
-		applicationReviewQueueIndexName,
+		applicationReviewQueueIndexName, "ix_app_review_script_verification",
 	})
 	assertIndexNames(t, database.Collection(versionReviewPoliciesCollectionName), []string{
 		"_id_", versionReviewPolicyVersionUniqueIndexName,
@@ -453,6 +453,7 @@ func expectedIntegrationMigrationIDs() []string {
 		scriptReviewMigrationID,
 		scriptQueryMigrationID,
 		scriptDependencyMigrationID,
+		scriptDecisionMigrationID,
 	}
 }
 
@@ -513,6 +514,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: scriptReviewMigrationID, apply: sequential.applyScriptReviewMigration},
 		{id: scriptQueryMigrationID, apply: sequential.applyScriptQueryMigration},
 		{id: scriptDependencyMigrationID, apply: sequential.applyScriptDependencyMigration},
+		{id: scriptDecisionMigrationID, apply: sequential.applyScriptDecisionMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)

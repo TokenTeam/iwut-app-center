@@ -43,6 +43,7 @@ import (
 	runtimev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/runtime_resolution"
 	scriptqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	scriptresourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
+	scriptreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	scriptversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
 	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	testermanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_management"
@@ -423,6 +424,7 @@ func NewServers(
 	if scripts != nil {
 		scriptresourcev1.RegisterScriptResourceServiceHTTPServer(httpServer, scripts)
 		scriptversionv1.RegisterScriptVersionServiceHTTPServer(httpServer, scripts)
+		scriptreviewv1.RegisterScriptReviewServiceHTTPServer(httpServer, scripts)
 	}
 	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)
 	if profileReviewQueryService != nil {
@@ -532,6 +534,7 @@ func NewServers(
 	if scripts != nil {
 		scriptresourcev1.RegisterScriptResourceServiceServer(grpcServer, scripts)
 		scriptversionv1.RegisterScriptVersionServiceServer(grpcServer, scripts)
+		scriptreviewv1.RegisterScriptReviewServiceServer(grpcServer, scripts)
 	}
 	if scriptQueries != nil {
 		scriptqueryv1.RegisterScriptQueryServiceServer(grpcServer, scriptQueries)

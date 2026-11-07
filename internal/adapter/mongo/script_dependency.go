@@ -44,10 +44,13 @@ type scriptDependencyDocument struct {
 }
 
 type scriptReviewDecisionDocument struct {
-	ID      string    `bson:"decisionId"`
-	Outcome string    `bson:"outcome"`
-	Actor   string    `bson:"decidedBy"`
-	At      time.Time `bson:"decidedAt"`
+	PolicyVersion     string    `bson:"policyVersion"`
+	ConfirmedCheckIDs []string  `bson:"confirmedCheckIds"`
+	Reason            string    `bson:"reason"`
+	ID                string    `bson:"decisionId"`
+	Outcome           string    `bson:"outcome"`
+	Actor             string    `bson:"decidedBy"`
+	At                time.Time `bson:"decidedAt"`
 }
 
 func scriptReferencesToDocuments(refs []shared.ScriptReference) []scriptReferenceDocument {
@@ -137,28 +140,7 @@ func loadScriptDependency(ctx context.Context, db *dm.Database, ref shared.Scrip
 }
 
 func scriptDependencyReviewMatches(review scriptReviewDocument, resource script.Resource, version script.Version) bool {
-	if version.State == script.VersionSubmitted {
-		_, err := readPendingScriptReview(review, resource, version)
-		return review.Decision == nil && err == nil
-	}
-	if version.State != script.VersionApproved && version.State != script.VersionRejected {
-		return false
-	}
-	decision := review.Decision
-	if decision == nil || !canonicalScriptID(decision.ID) || decision.Outcome != string(version.State) || review.Status != decision.Outcome ||
-		decision.Actor == "" || !validScriptQueryTime(decision.At) || decision.At.Before(review.SubmittedAt) ||
-		decision.Actor != version.UpdatedBy.String() || !decision.At.Equal(version.UpdatedAt) {
-		return false
-	}
-	// The immutable snapshot must still match the Version as it was submitted.
-	submitted := version
-	submitted.State = script.VersionSubmitted
-	submitted.Revision--
-	submitted.UpdatedBy = review.SubmittedBy
-	submitted.UpdatedAt = review.SubmittedAt
-	review.Status = script.ReviewPending
-	review.Decision = nil
-	_, err := readPendingScriptReview(review, resource, submitted)
+	_, err := readScriptReview(review, resource, version)
 	return err == nil
 }
 

@@ -78,6 +78,7 @@ type ReviewSnapshot struct {
 }
 
 type Review struct {
+	Decision    *Decision
 	ID          ReviewID
 	Status      string
 	Snapshot    ReviewSnapshot

@@ -159,7 +159,18 @@ type applicationReviewDocument struct {
 	SubmittedAt            time.Time                                  `bson:"submittedAt"`
 }
 
+type scriptRejectionCauseDocument struct {
+	Cause       string `bson:"cause"`
+	ResourceID  string `bson:"scriptResourceId"`
+	VersionID   string `bson:"scriptVersionId"`
+	Digest      string `bson:"digest"`
+	ReviewID    string `bson:"scriptReviewId"`
+	DecisionID  string `bson:"scriptDecisionId"`
+	TriggeredBy string `bson:"triggeredBy"`
+}
+
 type applicationReviewDecisionDocument struct {
+	ScriptRejection     *scriptRejectionCauseDocument                `bson:"scriptRejection,omitempty"`
 	Outcome             string                                       `bson:"outcome"`
 	ReviewPolicyVersion string                                       `bson:"reviewPolicyVersion"`
 	ConfirmedCheckIDs   []string                                     `bson:"confirmedCheckIds"`
@@ -641,6 +652,11 @@ func applicationReviewDecisionToDocument(
 			})
 		}
 	}
+	if cause := decision.ScriptRejection(); cause != nil {
+		document.ScriptRejection = &scriptRejectionCauseDocument{Cause: "SCRIPT_VERSION_REJECTED", ResourceID: cause.ResourceID,
+			VersionID: cause.VersionID, Digest: cause.Digest, ReviewID: cause.ReviewID, DecisionID: cause.DecisionID, TriggeredBy: cause.TriggeredBy.String()}
+	}
+
 	return document, nil
 }
 
@@ -674,6 +690,15 @@ func applicationReviewDecisionFromDocument(
 	if !decidedBy.IsValid() || document.DecidedAt.IsZero() {
 		return nil, corruptApplicationReview("invalid decision audit")
 	}
+	if cause := document.ScriptRejection; cause != nil {
+		if cause.Cause != "SCRIPT_VERSION_REJECTED" || outcome != reviewdomain.ReviewDecisionRejected || len(checkIDs) != 0 ||
+			document.ApprovalValidation != nil || reason != reviewdomain.SystemScriptRejectionReason {
+			return nil, corruptApplicationReview("invalid script rejection cause")
+		}
+		return reviewdomain.NewScriptRejectedDecision(policyVersion, reviewdomain.ScriptRejectionCause{ResourceID: cause.ResourceID,
+			VersionID: cause.VersionID, Digest: cause.Digest, ReviewID: cause.ReviewID, DecisionID: cause.DecisionID, TriggeredBy: shared.AuthID(cause.TriggeredBy)}, decidedBy, document.DecidedAt)
+	}
+
 	switch outcome {
 	case reviewdomain.ReviewDecisionApproved:
 		if document.ApprovalValidation == nil {

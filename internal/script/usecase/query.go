@@ -50,9 +50,14 @@ func ScriptReadAccess(identity shared.TrustedIdentity, kind ScriptReadKind) (por
 	return scope, nil
 }
 
-type ScriptQuery struct{ repo port.ScriptQueryRepository }
+type ScriptQuery struct {
+	repo  port.ScriptQueryRepository
+	clock port.Clock
+}
 
-func NewScriptQuery(repo port.ScriptQueryRepository) *ScriptQuery { return &ScriptQuery{repo: repo} }
+func NewScriptQuery(repo port.ScriptQueryRepository, clock port.Clock) *ScriptQuery {
+	return &ScriptQuery{repo: repo, clock: clock}
+}
 
 func scriptPage(limit *int32, cursor string) (port.ScriptPageRequest, error) {
 	page := port.ScriptPageRequest{Limit: 20, Cursor: cursor}
@@ -169,6 +174,9 @@ func (q *ScriptQuery) GetReview(ctx context.Context, identity shared.TrustedIden
 		return ScriptReviewResult{}, err
 	}
 	result := ScriptReviewResult{ScriptReviewDetail: detail}
+	if result.Cascade != nil {
+		result.Cascade.ObservedAt = q.clock.Now().UTC()
+	}
 	contributors := detail.Review.Snapshot.Contributors
 	if len(contributors) > 0 && contributors[0] == scope.Actor {
 		result.Conflicts = append(result.Conflicts, "VERSION_CREATOR")

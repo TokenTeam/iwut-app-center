@@ -258,6 +258,7 @@ func (validation *ApprovalValidation) PreflightPolicyVersion() PreflightPolicyVe
 // empty for an APPROVED decision without a note. ApprovalValidation is present
 // only for APPROVED decisions.
 type ApplicationReviewDecision struct {
+	scriptRejection     *ScriptRejectionCause
 	outcome             ReviewDecision
 	reviewPolicyVersion ReviewPolicyVersion
 	confirmedCheckIDs   []ReviewCheckID
@@ -389,5 +390,34 @@ func copyApprovalValidation(validation *ApprovalValidation) *ApprovalValidation 
 		return nil
 	}
 	copy := *validation
+	return &copy
+}
+
+// ScriptRejectionCause identifies the immutable script decision that caused a system rejection.
+type ScriptRejectionCause struct {
+	ResourceID, VersionID, Digest, ReviewID, DecisionID string
+	TriggeredBy                                         shared.AuthID
+}
+
+const SystemScriptRejectionReason = "引用的脚本版本未通过审核，待处理应用审核已由系统自动拒绝。"
+
+func NewScriptRejectedDecision(policy ReviewPolicyVersion, cause ScriptRejectionCause, system shared.AuthID, at time.Time) (*ApplicationReviewDecision, error) {
+	if !shared.IsUUIDv7(cause.ResourceID) || !shared.IsUUIDv7(cause.VersionID) || !shared.IsUUIDv7(cause.ReviewID) ||
+		!shared.IsUUIDv7(cause.DecisionID) || !shared.ValidScriptDigest(cause.Digest) || !cause.TriggeredBy.IsValid() {
+		return nil, NewInternalError(nil)
+	}
+	decision, err := NewRejectedDecision(policy, SystemScriptRejectionReason, system, at)
+	if err != nil {
+		return nil, err
+	}
+	decision.scriptRejection = &cause
+	return decision, nil
+}
+
+func (d *ApplicationReviewDecision) ScriptRejection() *ScriptRejectionCause {
+	if d.scriptRejection == nil {
+		return nil
+	}
+	copy := *d.scriptRejection
 	return &copy
 }

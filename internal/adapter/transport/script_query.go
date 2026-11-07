@@ -100,7 +100,7 @@ func (s *ScriptQueryService) GetScriptVersion(ctx context.Context, req *queryv1.
 	if err != nil {
 		return nil, scriptQueryError(err)
 	}
-	return &queryv1.GetScriptVersionResponse{Version: scriptVersionSummaryResponse(item.Version), ContentText: item.Text, ReviewId: string(item.ReviewID)}, nil
+	return &queryv1.GetScriptVersionResponse{Version: scriptVersionSummaryResponse(item.Version), ContentText: item.Text, ReviewId: string(item.ReviewID), DecisionId: item.DecisionID}, nil
 }
 
 func (s *ScriptQueryService) ListPendingScriptReviews(ctx context.Context, req *queryv1.ListPendingScriptReviewsRequest) (*queryv1.ListPendingScriptReviewsResponse, error) {
@@ -132,10 +132,11 @@ func (s *ScriptQueryService) GetScriptReview(ctx context.Context, req *queryv1.G
 	out := &queryv1.GetScriptReviewResponse{
 		Submission: scriptPendingSummaryResponse(port.ScriptReviewSummary{ResourceID: snapshot.ResourceID, VersionID: snapshot.VersionID,
 			ID: review.ID, Label: snapshot.Label, Digest: snapshot.Content.Digest, SubmittedAt: review.SubmittedAt}),
-		Status: queryv1.ScriptReviewStatus_SCRIPT_REVIEW_STATUS_PENDING, Version: scriptVersionSummaryResponse(result.Version),
+		Status: queryv1.ScriptReviewStatus(queryv1.ScriptReviewStatus_value["SCRIPT_REVIEW_STATUS_"+review.Status]), Version: scriptVersionSummaryResponse(result.Version),
 		ContentText: snapshot.Content.Text, SourceRevision: snapshot.SourceRevision, ResourceName: snapshot.ResourceMetadata.Name,
 		ResourcePurpose: snapshot.ResourceMetadata.Purpose, ResourceRevision: snapshot.ResourceRevision,
 		PolicyVersion: review.Policy.Version, CanDecide: result.CanDecide,
+		Decision: scriptDecisionResponse(review.Decision), Cascade: scriptCascadeResponse(result.Cascade),
 	}
 	for _, check := range review.Policy.Checks {
 		out.Checks = append(out.Checks, &queryv1.ScriptReviewCheck{Id: check.ID, Title: check.Title, Description: check.Description, Mandatory: check.Mandatory})

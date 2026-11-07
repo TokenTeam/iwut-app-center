@@ -266,7 +266,8 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	draftHandlers := usecase11.NewDraftHandlers(scriptVersionUUIDv7Generator, systemClock, scriptVersionRepository)
 	scriptReviewUUIDv7Generator := generator.NewScriptReviewUUIDv7Generator()
 	submitDraftHandler := usecase11.NewSubmitDraftHandler(scriptReviewUUIDv7Generator, systemClock, scriptVersionRepository)
-	scriptManagementService := transport.NewScriptManagementService(resourceHandlers, draftHandlers, submitDraftHandler)
+	decideReviewHandler := usecase11.NewDecideReviewHandler(scriptReviewUUIDv7Generator, systemClock, scriptVersionRepository)
+	scriptManagementService := transport.NewScriptManagementService(resourceHandlers, draftHandlers, submitDraftHandler, decideReviewHandler)
 	scriptQueryCursorKey, err := provideScriptQueryCursorKey(configuration)
 	if err != nil {
 		cleanup3()
@@ -275,7 +276,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		return nil, nil, err
 	}
 	scriptQueryRepository := mongo.NewScriptQueryRepository(database, scriptQueryCursorKey)
-	scriptQuery := usecase11.NewScriptQuery(scriptQueryRepository)
+	scriptQuery := usecase11.NewScriptQuery(scriptQueryRepository, systemClock)
 	scriptQueryService := transport.NewScriptQueryService(scriptQuery)
 	serviceIdentityConfig := provideServiceIdentityConfig(configuration)
 	serviceIdentityVerifier, err := provideServiceIdentityVerifier(serviceIdentityConfig, systemClock)
@@ -311,7 +312,10 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 		return nil, nil, err
 	}
 	mainApplicationClosureWorker := provideApplicationClosureWorker(applicationClosureHandlers, grpcApplicationClosure)
-	app := provideAppWithOwnerExit(servers, mainOwnerExitWorker, mainApplicationClosureWorker)
+	scriptCascadeRepository := mongo.NewScriptCascadeRepository(database)
+	cascadeHandler := usecase11.NewCascadeHandler(scriptReviewUUIDv7Generator, systemClock, scriptCascadeRepository, grpcSystemPrincipalResolver)
+	mainScriptCascadeWorker := provideScriptCascadeWorker(cascadeHandler)
+	app := provideAppWithOwnerExit(servers, mainOwnerExitWorker, mainApplicationClosureWorker, mainScriptCascadeWorker)
 	return app, func() {
 		cleanup3()
 		cleanup2()
