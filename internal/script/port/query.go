@@ -60,7 +60,18 @@ type ScriptReviewDetail struct {
 	Version ScriptVersionSummary
 }
 
+type PublicationHistoryItem struct {
+	EventID    domain.PublicationEventID
+	ResourceID domain.ResourceID
+	Action     string
+	Revision   int64
+	Version    *domain.PublishedScript
+	At         time.Time
+}
+
 type ScriptQueryRepository interface {
+	GetPublication(context.Context, domain.ResourceID) (domain.PublicationState, error)
+	ListPublicationHistory(context.Context, ScriptReadScope, domain.ResourceID, ScriptPageRequest) (ScriptPage[PublicationHistoryItem], error)
 	ListResources(context.Context, ScriptReadScope, ScriptPageRequest) (ScriptPage[domain.Resource], error)
 	GetResource(context.Context, domain.ResourceID) (domain.Resource, error)
 	ListVersions(context.Context, ScriptReadScope, domain.ResourceID, domain.VersionState, ScriptPageRequest) (ScriptPage[ScriptVersionSummary], error)

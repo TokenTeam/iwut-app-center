@@ -41,6 +41,7 @@ import (
 	catalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/catalog"
 	oauthclientv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/oauth_client"
 	runtimev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/runtime_resolution"
+	scriptpublicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	scriptqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	scriptresourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	scriptreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
@@ -425,6 +426,7 @@ func NewServers(
 		scriptresourcev1.RegisterScriptResourceServiceHTTPServer(httpServer, scripts)
 		scriptversionv1.RegisterScriptVersionServiceHTTPServer(httpServer, scripts)
 		scriptreviewv1.RegisterScriptReviewServiceHTTPServer(httpServer, scripts)
+		scriptpublicationv1.RegisterScriptPublicationServiceHTTPServer(httpServer, scripts)
 	}
 	profilereviewv1.RegisterApplicationProfileReviewHTTPServer(httpServer, profileReviewService)
 	if profileReviewQueryService != nil {
@@ -535,6 +537,7 @@ func NewServers(
 		scriptresourcev1.RegisterScriptResourceServiceServer(grpcServer, scripts)
 		scriptversionv1.RegisterScriptVersionServiceServer(grpcServer, scripts)
 		scriptreviewv1.RegisterScriptReviewServiceServer(grpcServer, scripts)
+		scriptpublicationv1.RegisterScriptPublicationServiceServer(grpcServer, scripts)
 	}
 	if scriptQueries != nil {
 		scriptqueryv1.RegisterScriptQueryServiceServer(grpcServer, scriptQueries)

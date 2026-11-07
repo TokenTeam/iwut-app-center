@@ -78,6 +78,9 @@ func (r *ScriptResourceRepository) CreateResource(ctx context.Context, resource 
 		if _, err := r.database.Collection(scriptResourcesCollectionName).InsertOne(tx, document); err != nil {
 			return domain.Resource{}, fmt.Errorf("insert script resource: %w", err)
 		}
+		if err := initializeScriptPublication(tx, r.database, resource); err != nil {
+			return domain.Resource{}, err
+		}
 		if err := r.insertAudit(tx, resource, scriptResourceCreated); err != nil {
 			return domain.Resource{}, err
 		}

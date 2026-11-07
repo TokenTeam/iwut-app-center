@@ -22,6 +22,8 @@ const (
 	ScriptVersionRead
 	ScriptPendingRead
 	ScriptReviewRead
+	ScriptPublicationRead
+	ScriptPublicationHistoryRead
 )
 
 func ScriptReadAccess(identity shared.TrustedIdentity, kind ScriptReadKind) (port.ScriptReadScope, error) {
@@ -35,12 +37,14 @@ func ScriptReadAccess(identity shared.TrustedIdentity, kind ScriptReadKind) (por
 	}
 	var allowed bool
 	switch kind {
-	case ScriptResourceRead:
+	case ScriptResourceRead, ScriptPublicationRead:
 		allowed = scope.Maintain || scope.Review || scope.Publish || scope.Suspend || scope.Restore
 	case ScriptVersionRead:
 		allowed = scope.Maintain || scope.Review || scope.Publish
 	case ScriptPendingRead:
 		allowed = scope.Review
+	case ScriptPublicationHistoryRead:
+		allowed = scope.Publish
 	case ScriptReviewRead:
 		allowed = scope.Maintain || scope.Review
 	}
@@ -198,4 +202,31 @@ func scriptQueryIDs(resourceID, versionID string) (domain.ResourceID, domain.Ver
 	}
 	version, err := domain.ParseVersionID(versionID)
 	return resource, version, err
+}
+
+func (q *ScriptQuery) GetPublication(ctx context.Context, identity shared.TrustedIdentity, resource string) (domain.PublicationState, error) {
+	if _, err := ScriptReadAccess(identity, ScriptPublicationRead); err != nil {
+		return domain.PublicationState{}, err
+	}
+	id, err := domain.ParseResourceID(resource)
+	if err != nil {
+		return domain.PublicationState{}, err
+	}
+	return q.repo.GetPublication(ctx, id)
+}
+func (q *ScriptQuery) ListPublicationHistory(ctx context.Context, identity shared.TrustedIdentity, resource string, limit *int32, cursor string) (port.ScriptPage[port.PublicationHistoryItem], error) {
+	var empty port.ScriptPage[port.PublicationHistoryItem]
+	scope, err := ScriptReadAccess(identity, ScriptPublicationHistoryRead)
+	if err != nil {
+		return empty, err
+	}
+	id, err := domain.ParseResourceID(resource)
+	if err != nil {
+		return empty, err
+	}
+	page, err := scriptPage(limit, cursor)
+	if err != nil {
+		return empty, err
+	}
+	return q.repo.ListPublicationHistory(ctx, scope, id, page)
 }

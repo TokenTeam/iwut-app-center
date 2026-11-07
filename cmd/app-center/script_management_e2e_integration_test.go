@@ -18,6 +18,7 @@ import (
 	appreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	appreviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review_query"
 	appversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
+	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
@@ -34,7 +35,7 @@ import (
 	"iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_043_044_045_048_049_ScriptManagementHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP041_042_043_044_045_046_048_049_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
@@ -210,9 +211,9 @@ func TestE2E_UCAPP041_042_043_044_045_048_049_ScriptManagementHTTPAndGRPC(t *tes
 	conflicted := e2eSignReviewerIdentity(t, key, "script-maintainer", "app.script.review")
 	publisher := e2eSignReviewerIdentity(t, key, "script-publisher", "app.script.publish")
 	suspender := e2eSignReviewerIdentity(t, key, "script-suspender", "app.script.suspend")
-	restorer := e2eSignReviewerIdentity(t, key, "script-restorer", "app.script.restore")
+	publicationRestorer := e2eSignReviewerIdentity(t, key, "script-restorer", "app.script.restore")
 	reviewPath := submitPath + "/" + submitted.GetReviewId()
-	for _, caller := range []string{maintainer, reviewer, publisher, suspender, restorer} {
+	for _, caller := range []string{maintainer, reviewer, publisher, suspender, publicationRestorer} {
 		var metadata resourcev1.ScriptResource
 		httpCall(http.MethodGet, resourcePath+"/"+resource.GetResourceId(), caller, nil, http.StatusOK, &metadata)
 		if metadata.GetResourceId() != resource.GetResourceId() {
@@ -400,6 +401,64 @@ func TestE2E_UCAPP041_042_043_044_045_048_049_ScriptManagementHTTPAndGRPC(t *tes
 	if err != nil || finalApp.GetReview().GetStatus() != "REJECTED" || finalApp.GetReview().GetDecision().GetDecidedBy() != "auth-e2e-system" || strings.Contains(finalApp.GetReview().GetDecision().GetReason(), "private script review reason") || len(finalApp.GetReview().GetDecision().GetConfirmedCheckIds()) != 0 {
 		t.Fatal("production system rejection audit", err)
 	}
+
+	publicationPath := resourcePath + "/" + resource.GetResourceId() + "/publication"
+	var publication publicationv1.ScriptPublicationState
+	httpCall(http.MethodGet, publicationPath, suspender, nil, http.StatusOK, &publication)
+	if publication.GetHead() != nil || publication.GetPublicationRevision() != 1 || publication.GetAvailabilityRevision() != 1 {
+		t.Fatal("new resource publication state")
+	}
+	publishPath := versionsPath + "/" + draft.GetVersionId() + "/publication"
+	publishInput := &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 1}
+	httpCall(http.MethodPost, publishPath, "", []byte("{"), http.StatusUnauthorized, nil)
+	httpCall(http.MethodPost, publishPath, maintainer, []byte("{"), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, publishPath, reviewer, marshal(publishInput), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, publishPath, publisher, []byte(`{"expectedPublicationRevision":"1","decidedBy":"spoof"}`), http.StatusBadRequest, nil)
+	var publicationResult publicationv1.ScriptPublicationCommandResult
+	httpCall(http.MethodPost, publishPath, publisher, marshal(publishInput), http.StatusOK, &publicationResult)
+	if !publicationResult.GetChanged() || publicationResult.GetState().GetHead().GetVersionId() != draft.GetVersionId() || publicationResult.GetState().GetPublicationRevision() != 2 || publicationResult.GetEventId() == "" {
+		t.Fatal("script publication ACK")
+	}
+	publisherContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, publisher))
+	publications := publicationv1.NewScriptPublicationServiceClient(connection)
+	publicationNoop, err := publications.PublishScriptVersion(publisherContext, &publicationv1.PublishScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}})
+	if err != nil || publicationNoop.GetChanged() || publicationNoop.GetEventId() != "" || publicationNoop.GetEventAt() != nil {
+		t.Fatal("matching publication no-op", err)
+	}
+	httpCall(http.MethodPost, publishPath, publisher, marshal(publishInput), http.StatusConflict, nil)
+	if _, err := publications.PublishScriptVersion(publisherContext, &publicationv1.PublishScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("rejected version published", err)
+	}
+	suspendPath := resourcePath + "/" + resource.GetResourceId() + "/distribution/suspend"
+	suspendInput := &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 1, Reason: "operator suspend"}
+	httpCall(http.MethodPost, suspendPath, publisher, marshal(suspendInput), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, suspendPath, suspender, marshal(suspendInput), http.StatusOK, &publicationResult)
+	if publicationResult.GetState().GetAvailability() != publicationv1.ScriptDistributionAvailability_SCRIPT_DISTRIBUTION_AVAILABILITY_SUSPENDED || publicationResult.GetState().GetPublicationRevision() != 2 {
+		t.Fatal("suspend changed publication")
+	}
+	clearInput := &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}
+	httpCall(http.MethodPost, publicationPath+"/head/clear", publisher, marshal(clearInput), http.StatusOK, &publicationResult)
+	if publicationResult.GetState().GetHead() != nil || publicationResult.GetState().GetPublicationRevision() != 3 {
+		t.Fatal("clear suspended head")
+	}
+	publishInput.ExpectedPublicationRevision = 3
+	httpCall(http.MethodPost, publishPath, publisher, marshal(publishInput), http.StatusBadRequest, nil)
+	restorePath := resourcePath + "/" + resource.GetResourceId() + "/distribution/restore"
+	restoreInput := &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "  operator restore  "}
+	httpCall(http.MethodPost, restorePath, suspender, marshal(restoreInput), http.StatusForbidden, nil)
+	restorerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, publicationRestorer))
+	restored, err := publications.RestoreScriptDistribution(restorerContext, &publicationv1.RestoreScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: restoreInput})
+	if err != nil || restored.GetState().GetHead() != nil || restored.GetState().GetPublicationRevision() != 3 || restored.GetState().GetAvailabilityRevision() != 3 {
+		t.Fatal("restore changed permanent publication", err)
+	}
+	httpCall(http.MethodGet, publicationPath+"/history", suspender, nil, http.StatusForbidden, nil)
+	var history queryv1.ListScriptPublicationHistoryResponse
+	httpCall(http.MethodGet, publicationPath+"/history?limit=1", publisher, nil, http.StatusOK, &history)
+	if len(history.GetItems()) != 1 || history.GetNextCursor() == "" || history.GetItems()[0].GetAction() != publicationv1.ScriptPublicationAction_SCRIPT_PUBLICATION_ACTION_CLEAR_HEAD {
+		t.Fatal("publication history")
+	}
+	e2eAssertCollectionCount(t, database, "script_published_versions", 1)
+	e2eAssertCollectionCount(t, database, "script_publication_events", 4)
 
 }
 

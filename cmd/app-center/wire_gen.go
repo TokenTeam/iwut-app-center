@@ -267,7 +267,10 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	scriptReviewUUIDv7Generator := generator.NewScriptReviewUUIDv7Generator()
 	submitDraftHandler := usecase11.NewSubmitDraftHandler(scriptReviewUUIDv7Generator, systemClock, scriptVersionRepository)
 	decideReviewHandler := usecase11.NewDecideReviewHandler(scriptReviewUUIDv7Generator, systemClock, scriptVersionRepository)
-	scriptManagementService := transport.NewScriptManagementService(resourceHandlers, draftHandlers, submitDraftHandler, decideReviewHandler)
+	scriptPublicationUUIDv7Generator := generator.NewScriptPublicationUUIDv7Generator()
+	scriptPublicationRepository := mongo.NewScriptPublicationRepository(database)
+	publicationHandler := usecase11.NewPublicationHandler(scriptPublicationUUIDv7Generator, systemClock, scriptPublicationRepository)
+	scriptManagementService := transport.NewScriptManagementService(resourceHandlers, draftHandlers, submitDraftHandler, decideReviewHandler, publicationHandler)
 	scriptQueryCursorKey, err := provideScriptQueryCursorKey(configuration)
 	if err != nil {
 		cleanup3()

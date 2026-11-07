@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
+	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
 	permissionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/script_maintainer_permission"
 	permissionsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/script_permission"
@@ -28,7 +30,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages(t *testing.T) {
+func TestE2E_UCAPP041_042_043_044_045_046_ScriptManagementLocalImages(t *testing.T) {
 	forwardAuthAddress := os.Getenv("UC041_ADMIN_FORWARD_AUTH_ADDR")
 	if forwardAuthAddress == "" {
 		t.Skip("run scripts/test-uc002-gateway-auth-integration.sh --script-management")
@@ -37,6 +39,7 @@ func TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages(t *testing.T) {
 	defer cancel()
 	manager := registerAuthFixture(t, ctx)
 	maintainer := registerAuthFixture(t, ctx)
+	reviewer := registerAuthFixture(t, ctx)
 
 	output, err := exec.CommandContext(ctx, "docker", "exec", os.Getenv("UC002_AUTH_CONTAINER_NAME"),
 		"/app/auth-center", "bootstrap-platform-admin", "--auth-id", manager.authID).CombinedOutput()
@@ -59,7 +62,7 @@ func TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages(t *testing.T) {
 	}
 	forwardAuth := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("iwut_uc041_fixture")
-		if r.URL.Path != "/internal/forward-auth" || err != nil || (cookie.Value != manager.session && cookie.Value != maintainer.session) {
+		if r.URL.Path != "/internal/forward-auth" || err != nil || (cookie.Value != manager.session && cookie.Value != maintainer.session && cookie.Value != reviewer.session) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -288,4 +291,69 @@ func TestE2E_UCAPP041_042_043_045_ScriptManagementLocalImages(t *testing.T) {
 	e2eAssertCollectionCount(t, database, "script_versions", 1)
 	e2eAssertCollectionCount(t, database, "script_version_audits", 3)
 	e2eAssertCollectionCount(t, database, "script_reviews", 1)
+	// A separately registered reviewer receives only the independent review permission.
+	reviewerPermissions := new(permissionsv1.ScriptPermissions)
+	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:get", manager.session, &permissionsv1.GetScriptPermissionsRequest{SubjectAuthId: reviewer.authID}, reviewerPermissions, http.StatusOK)
+	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:manage", manager.session, &permissionsv1.ManageScriptPermissionRequest{
+		SubjectAuthId: reviewer.authID, Permission: reviewPermission, Action: grantPermission, ExpectedPermissionRevision: proto.Int64(reviewerPermissions.GetPermissionRevision()), Reason: "independent script reviewer"}, reviewerPermissions, http.StatusOK)
+	reviewerRPC := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", reviewer.session))
+	independent, err := queryClient.GetScriptReview(reviewerRPC, reviewQuery)
+	if err != nil || !independent.GetCanDecide() {
+		t.Fatal("independent reviewer qualification", err)
+	}
+	checks := make([]string, 0, len(independent.GetChecks()))
+	for _, check := range independent.GetChecks() {
+		if check.GetMandatory() {
+			checks = append(checks, check.GetId())
+		}
+	}
+	approved, err := reviewv1.NewScriptReviewServiceClient(edge).DecideScriptVersionReview(reviewerRPC, &reviewv1.DecideScriptVersionReviewRequest{
+		ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), ReviewId: submission.GetReviewId(), Command: &reviewv1.DecideScriptVersionReviewInput{
+			ExpectedVersionRevision: independent.GetVersion().GetRevision(), PolicyVersion: independent.GetPolicyVersion(), Decision: reviewv1.ScriptReviewAction_SCRIPT_REVIEW_ACTION_APPROVE, ConfirmedCheckIds: checks}})
+	if err != nil || approved.GetDecision().GetDecidedBy() != reviewer.authID {
+		t.Fatal("real independent script approval", err)
+	}
+	const publicationBase = "/app-center/v1/script-resources/"
+	publicationPath := publicationBase + resource.GetResourceId() + "/publication"
+	publishPath := versionPath + "/publication"
+	publishInput := &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 1}
+	httpCall(adminHost, http.MethodPost, publishPath, maintainer.session, publishInput, nil, http.StatusForbidden)
+	setPermission(publishPermission, grantPermission)
+	var published publicationv1.ScriptPublicationCommandResult
+	httpCall(adminHost, http.MethodPost, publishPath, maintainer.session, publishInput, &published, http.StatusOK)
+	if published.GetState().GetHead().GetVersionId() != draft.GetVersionId() || !published.GetChanged() {
+		t.Fatal("real Auth publish permission")
+	}
+	httpCall("developer.uc002.test", http.MethodPost, publishPath, maintainer.session, publishInput, nil, http.StatusNotFound)
+	var history queryv1.ListScriptPublicationHistoryResponse
+	if code := gatewayWeb(t, ctx, maintainer.session, queryv1.ScriptQueryService_ListScriptPublicationHistory_FullMethodName, &queryv1.ListScriptPublicationHistoryRequest{ResourceId: resource.GetResourceId()}, &history); code != int(codes.OK) || len(history.GetItems()) != 1 {
+		t.Fatal("publication history through gRPC-Web", code)
+	}
+	setPermission(publishPermission, revokePermission)
+	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).ClearScriptHead(maintainerRPC, &publicationv1.ClearScriptHeadRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); status.Code(err) != codes.PermissionDenied {
+		t.Fatal("same Session retained publication permission", err)
+	}
+	const suspendPermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_SUSPEND
+	const restorePermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_RESTORE
+	setPermission(suspendPermission, grantPermission)
+	httpCall(adminHost, http.MethodPost, publicationBase+resource.GetResourceId()+"/distribution/suspend", maintainer.session, &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 1, Reason: "real suspension"}, &published, http.StatusOK)
+	if published.GetState().GetAvailability() != publicationv1.ScriptDistributionAvailability_SCRIPT_DISTRIBUTION_AVAILABILITY_SUSPENDED {
+		t.Fatal("real suspend")
+	}
+	httpCall(adminHost, http.MethodGet, publicationPath+"/history", maintainer.session, nil, nil, http.StatusForbidden)
+	setPermission(suspendPermission, revokePermission)
+	setPermission(restorePermission, grantPermission)
+	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).SuspendScriptDistribution(maintainerRPC, &publicationv1.SuspendScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "not a suspender"}}); status.Code(err) != codes.PermissionDenied {
+		t.Fatal("restore implied suspend", err)
+	}
+	if code := gatewayWeb(t, ctx, maintainer.session, publicationv1.ScriptPublicationService_RestoreScriptDistribution_FullMethodName, &publicationv1.RestoreScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "real restore"}}, &published); code != int(codes.OK) {
+		t.Fatal("real restore through gRPC-Web", code)
+	}
+	if published.GetState().GetHead().GetVersionId() != draft.GetVersionId() || published.GetState().GetPublicationRevision() != 2 || published.GetState().GetAvailabilityRevision() != 3 {
+		t.Fatal("restore changed head")
+	}
+	setPermission(restorePermission, revokePermission)
+	e2eAssertCollectionCount(t, database, "script_published_versions", 1)
+	e2eAssertCollectionCount(t, database, "script_publication_events", 3)
+
 }

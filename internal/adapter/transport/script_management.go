@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
@@ -39,14 +40,16 @@ type ScriptManagementService struct {
 	resourcev1.UnimplementedScriptResourceServiceServer
 	versionv1.UnimplementedScriptVersionServiceServer
 	reviewv1.UnimplementedScriptReviewServiceServer
-	resources   *scriptuc.ResourceHandlers
-	drafts      *scriptuc.DraftHandlers
-	submissions *scriptuc.SubmitDraftHandler
-	decisions   *scriptuc.DecideReviewHandler
+	publicationv1.UnimplementedScriptPublicationServiceServer
+	resources    *scriptuc.ResourceHandlers
+	drafts       *scriptuc.DraftHandlers
+	submissions  *scriptuc.SubmitDraftHandler
+	decisions    *scriptuc.DecideReviewHandler
+	publications *scriptuc.PublicationHandler
 }
 
-func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler, decisions *scriptuc.DecideReviewHandler) *ScriptManagementService {
-	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions, decisions: decisions}
+func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler, decisions *scriptuc.DecideReviewHandler, publications *scriptuc.PublicationHandler) *ScriptManagementService {
+	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions, decisions: decisions, publications: publications}
 }
 
 func scriptMaintainer(ctx context.Context, operation string) (shared.TrustedIdentity, error) {
@@ -170,6 +173,9 @@ func scriptVersionResponse(version domain.Version) *versionv1.ScriptVersion {
 }
 
 func scriptManagementOperation(operation string) bool {
+	if scriptPublicationAction(operation) != "" {
+		return true
+	}
 	switch operation {
 	case createScriptResource, replaceScriptResource, createScriptDraft, replaceScriptDraft, submitScriptReview, decideScriptReview:
 		return true
@@ -188,6 +194,14 @@ func scriptHTTPWriteOperation(r *http.Request) string {
 		return ""
 	}
 	switch {
+	case r.Method == http.MethodPost && len(p) == 7 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "publication":
+		return publishScriptVersion
+	case r.Method == http.MethodPost && len(p) == 7 && p[3] != "" && p[4] == "publication" && p[5] == "head" && p[6] == "clear":
+		return clearScriptHead
+	case r.Method == http.MethodPost && len(p) == 6 && p[3] != "" && p[4] == "distribution" && p[5] == "suspend":
+		return suspendScriptDistribution
+	case r.Method == http.MethodPost && len(p) == 6 && p[3] != "" && p[4] == "distribution" && p[5] == "restore":
+		return restoreScriptDistribution
 	case r.Method == http.MethodPost && len(p) == 9 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "reviews" && p[7] != "" && p[8] == "decision":
 		return decideScriptReview
 	case r.Method == http.MethodPost && len(p) == 3:
@@ -222,6 +236,11 @@ func scriptManagementHTTPFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 			authorize := scriptuc.RequireMaintainer
 			if operation == decideScriptReview {
 				authorize = scriptuc.RequireScriptReviewer
+			}
+			if action := scriptPublicationAction(operation); action != "" {
+				authorize = func(identity shared.TrustedIdentity) error {
+					return scriptuc.RequirePublicationPermission(identity, action)
+				}
 			}
 			if err := authorize(identity); err != nil {
 				khttp.DefaultErrorEncoder(w, r, scriptManagementError(operation, err))
@@ -274,6 +293,10 @@ func validScriptHTTPBody(w http.ResponseWriter, r *http.Request, operation strin
 	}
 	var input proto.Message
 	switch operation {
+	case publishScriptVersion, clearScriptHead:
+		input = &publicationv1.ScriptPublicationRevisionInput{}
+	case suspendScriptDistribution, restoreScriptDistribution:
+		input = &publicationv1.ScriptAvailabilityInput{}
 	case createScriptResource:
 		input = &resourcev1.CreateScriptResourceRequest{}
 	case replaceScriptResource:
@@ -298,6 +321,9 @@ func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation
 	w.Header().Set("Cache-Control", "private, no-store")
 	converted := kerrors.FromError(err)
 	reasons := resourcev1.ErrorReason_value
+	if scriptPublicationAction(operation) != "" {
+		reasons = publicationv1.ErrorReason_value
+	}
 	if operation == decideScriptReview {
 		reasons = reviewv1.ErrorReason_value
 	}
@@ -315,6 +341,9 @@ func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation
 }
 
 func invalidScriptRequest(operation string) error {
+	if scriptPublicationAction(operation) != "" {
+		return scriptPublicationError(domain.ErrInvalidPublicationRequest)
+	}
 	if operation == decideScriptReview {
 		return scriptDecisionError(domain.ErrInvalidDecision)
 	}
@@ -325,6 +354,9 @@ func invalidScriptRequest(operation string) error {
 }
 
 func scriptManagementError(operation string, err error) error {
+	if scriptPublicationAction(operation) != "" {
+		return scriptPublicationError(err)
+	}
 	if operation == decideScriptReview {
 		return scriptDecisionError(err)
 	}

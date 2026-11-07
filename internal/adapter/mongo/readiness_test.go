@@ -32,8 +32,8 @@ func TestSupportsTransactions(t *testing.T) {
 func TestRequiredMigrationRecorded(t *testing.T) {
 	t.Parallel()
 
-	if RequiredMigrationID != "0039_script_decisions_and_cascade" {
-		t.Fatalf("RequiredMigrationID = %q, want 0039_script_decisions_and_cascade", RequiredMigrationID)
+	if RequiredMigrationID != "0040_script_publication_and_availability" {
+		t.Fatalf("RequiredMigrationID = %q, want 0040_script_publication_and_availability", RequiredMigrationID)
 	}
 	if requiredMigrationRecorded(nil) {
 		t.Fatal("empty ledger must not satisfy the required migration")

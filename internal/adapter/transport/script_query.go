@@ -183,7 +183,7 @@ func scriptQueryError(err error) error {
 		return transportStatus(codes.NotFound, "ERROR_REASON_SCRIPT_VERSION_NOT_FOUND", "script version not found")
 	case errors.Is(err, port.ErrScriptReviewNotFound):
 		return transportStatus(codes.NotFound, "ERROR_REASON_SCRIPT_REVIEW_NOT_FOUND", "script review not found")
-	case errors.Is(err, port.ErrScriptQueryInconsistent), errors.Is(err, domain.ErrInternal):
+	case errors.Is(err, port.ErrScriptQueryInconsistent), errors.Is(err, domain.ErrPublicationInconsistent), errors.Is(err, domain.ErrInternal):
 		return transportStatus(codes.Internal, "ERROR_REASON_SCRIPT_QUERY_INCONSISTENT", "script query state is inconsistent")
 	default:
 		return transportStatus(codes.Unavailable, "ERROR_REASON_SCRIPT_QUERY_UNAVAILABLE", "script query unavailable")
@@ -210,6 +210,14 @@ func scriptQueryHTTPRoute(r *http.Request) (operation string, kind scriptuc.Scri
 	}
 	if len(parts) == 4 && parts[3] != "" {
 		return queryv1.OperationScriptQueryServiceGetScriptResource, scriptuc.ScriptResourceRead, ""
+	}
+	if len(parts) >= 5 && parts[3] != "" && parts[4] == "publication" {
+		if len(parts) == 5 {
+			return queryv1.OperationScriptQueryServiceGetScriptPublication, scriptuc.ScriptPublicationRead, ""
+		}
+		if len(parts) == 6 && parts[5] == "history" {
+			return queryv1.OperationScriptQueryServiceListScriptPublicationHistory, scriptuc.ScriptPublicationHistoryRead, "limit cursor"
+		}
 	}
 	if len(parts) < 5 || parts[3] == "" || parts[4] != "versions" {
 		return "", 0, ""
