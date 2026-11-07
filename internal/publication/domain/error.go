@@ -43,6 +43,8 @@ const (
 	ErrorCodeStablePublicationRequiredByGrey         ErrorCode = "StablePublicationRequiredByGrey"
 	ErrorCodeGreyStableBaselineRequired              ErrorCode = "GreyStableBaselineRequired"
 	ErrorCodeApplicationPublicationStateInconsistent ErrorCode = "ApplicationPublicationStateInconsistent"
+	ErrorCodeApplicationScriptDependencyUnavailable  ErrorCode = "ApplicationScriptDependencyUnavailable"
+	ErrorCodeApplicationPublicationUnavailable       ErrorCode = "ApplicationPublicationUnavailable"
 	ErrorCodeInternal                                ErrorCode = "Internal"
 )
 
@@ -75,6 +77,10 @@ func NewApplicationProfileStateInconsistentError(cause error) *Error {
 
 func NewApplicationPublicationStateInconsistentError(cause error) *Error {
 	return newError(ErrorCategoryInternal, ErrorCodeApplicationPublicationStateInconsistent, "application publication state is inconsistent", cause)
+}
+
+func NewApplicationPublicationUnavailableError(cause error) *Error {
+	return newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationPublicationUnavailable, "application publication is unavailable", cause)
 }
 
 func (e *Error) Error() string           { return e.message }
@@ -113,5 +119,7 @@ var (
 	ErrStablePublicationRequiredByGrey         = newError(ErrorCategoryConflict, ErrorCodeStablePublicationRequiredByGrey, "stable publication is required by grey rollout", nil)
 	ErrGreyStableBaselineRequired              = newError(ErrorCategoryConflict, ErrorCodeGreyStableBaselineRequired, "grey rollout requires a stable baseline", nil)
 	ErrApplicationPublicationStateInconsistent = newError(ErrorCategoryInternal, ErrorCodeApplicationPublicationStateInconsistent, "application publication state is inconsistent", nil)
+	ErrApplicationScriptDependencyUnavailable  = newError(ErrorCategoryConflict, ErrorCodeApplicationScriptDependencyUnavailable, "application script dependency is unavailable", nil)
+	ErrApplicationPublicationUnavailable       = newError(ErrorCategoryDependencyUnavailable, ErrorCodeApplicationPublicationUnavailable, "application publication is unavailable", nil)
 	ErrInternal                                = newError(ErrorCategoryInternal, ErrorCodeInternal, "internal failure", nil)
 )

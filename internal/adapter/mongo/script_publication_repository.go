@@ -130,10 +130,6 @@ func (r *ScriptPublicationRepository) publishedFact(ctx context.Context, resourc
 	if err != nil {
 		return nil, err
 	}
-	if fact.Version != scriptPublishedVersion(version) || !canonicalScriptID(fact.FirstEventID) ||
-		!shared.AuthID(fact.PublishedBy).IsValid() || !validScriptQueryTime(fact.PublishedAt) {
-		return nil, domain.ErrPublicationInconsistent
-	}
 	var first scriptPublicationEventDocument
 	err = r.db.Collection(scriptPublicationEventsCollection).FindOne(ctx, bson.M{"eventId": fact.FirstEventID}).Decode(&first)
 	if errors.Is(err, dm.ErrNoDocuments) {
@@ -142,12 +138,23 @@ func (r *ScriptPublicationRepository) publishedFact(ctx context.Context, resourc
 	if err != nil {
 		return nil, err
 	}
+	if err := validateScriptPublicationProof(resourceID, version, fact, first); err != nil {
+		return nil, err
+	}
+	return &fact, nil
+}
+
+func validateScriptPublicationProof(resourceID domain.ResourceID, version domain.PublishedScript, fact scriptPublishedFactDocument, first scriptPublicationEventDocument) error {
+	if fact.Version != scriptPublishedVersion(version) || !canonicalScriptID(fact.FirstEventID) ||
+		!shared.AuthID(fact.PublishedBy).IsValid() || !validScriptQueryTime(fact.PublishedAt) {
+		return domain.ErrPublicationInconsistent
+	}
 	if first.ResourceID != string(resourceID) || first.Namespace != "PUBLICATION" || first.Action != domain.PublishScript ||
 		first.Version == nil || *first.Version != fact.Version || first.Revision < 2 || first.Actor != fact.PublishedBy ||
 		!first.At.Equal(fact.PublishedAt) || first.Reason != "" {
-		return nil, domain.ErrPublicationInconsistent
+		return domain.ErrPublicationInconsistent
 	}
-	return &fact, nil
+	return nil
 }
 
 func (r *ScriptPublicationRepository) loadState(ctx context.Context, resourceID domain.ResourceID) (domain.PublicationState, scriptAvailabilityDocument, error) {

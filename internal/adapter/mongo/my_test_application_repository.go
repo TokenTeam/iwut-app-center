@@ -15,6 +15,7 @@ import (
 	cd "iwut-app-center/internal/catalog/domain"
 	cp "iwut-app-center/internal/catalog/port"
 	pd "iwut-app-center/internal/profile/domain"
+	script "iwut-app-center/internal/script/domain"
 	"iwut-app-center/internal/shared"
 	td "iwut-app-center/internal/tester/domain"
 )
@@ -281,6 +282,9 @@ func (r *MyTestApplicationRepository) items(ctx context.Context, members []myTes
 	if err != nil {
 		return nil, err
 	}
+	if err := preparePureTestScriptGates(ctx, r.database, readyIDs, major, host, facts); err != nil {
+		return nil, err
+	}
 	for _, d := range onlineMembers {
 		app := shared.ApplicationID(d.ApplicationID)
 		profile := profiles[d.ApplicationID]
@@ -289,14 +293,15 @@ func (r *MyTestApplicationRepository) items(ctx context.Context, members []myTes
 		var missing []cd.CapabilityName
 		if profile != nil {
 			target, missing, err = resolvePureTest(app, major, host, facts)
-			if err != nil {
-				return nil, err
-			}
 			state = cd.MyTestTargetUnavailable
-			if len(missing) > 0 {
+			switch {
+			case errors.Is(err, script.ErrScriptContentUnavailable):
+				state = cd.MyTestScriptDependencyUnavailable
+			case err != nil:
+				return nil, err
+			case len(missing) > 0:
 				state = cd.MyTestCapabilitiesInsufficient
-			}
-			if target != nil {
+			case target != nil:
 				state = cd.MyTestReady
 			}
 		}

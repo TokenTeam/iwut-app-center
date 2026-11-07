@@ -20,6 +20,7 @@ import (
 	catalogport "iwut-app-center/internal/catalog/port"
 	filterdomain "iwut-app-center/internal/filter/domain"
 	profiledomain "iwut-app-center/internal/profile/domain"
+	script "iwut-app-center/internal/script/domain"
 	"iwut-app-center/internal/shared"
 	testerdomain "iwut-app-center/internal/tester/domain"
 )
@@ -68,6 +69,9 @@ func (r *PublicCatalogRepository) ListPublic(ctx context.Context, authID shared.
 		}
 		facts, err := r.loadCatalogFacts(tx, publications, authID)
 		if err != nil {
+			return nil, err
+		}
+		if err := r.prepareScriptGates(tx, publications, authID, major, host, facts); err != nil {
 			return nil, err
 		}
 		items := make([]*catalogdomain.PublicApplicationCatalogItem, 0, pageSize)
@@ -123,6 +127,9 @@ func (r *PublicCatalogRepository) GetPublic(ctx context.Context, applicationID s
 		if err != nil {
 			return nil, err
 		}
+		if err := r.prepareScriptGates(tx, []applicationPublicationDocument{publication}, authID, major, host, facts); err != nil {
+			return nil, err
+		}
 		item, eligible, _, err := r.catalogItem(publication, authID, major, host, facts)
 		if err != nil {
 			return nil, err
@@ -168,6 +175,8 @@ type catalogFacts struct {
 	versions         map[string]applicationVersionDocument
 	oauth            map[string]applicationVersionOAuthConfigDocument
 	reviews          map[string]applicationReviewDocument
+	scriptResults    map[string]error
+	planScripts      bool
 }
 
 func (r *PublicCatalogRepository) loadCatalogFacts(ctx context.Context, publications []applicationPublicationDocument, authID shared.AuthID) (*catalogFacts, error) {
@@ -305,53 +314,79 @@ func collectRaw(ctx context.Context, collection *drivermongo.Collection, filter 
 	return cursor.Err()
 }
 
+type catalogSelection struct {
+	applicationID shared.ApplicationID
+	profile       *catalogdomain.PublicApplicationProfile
+	target        *catalogdomain.LaunchTargetDescriptor
+}
+
 func (r *PublicCatalogRepository) catalogItem(publication applicationPublicationDocument, authID shared.AuthID, major int32, host []catalogdomain.CapabilityName, f *catalogFacts) (*catalogdomain.PublicApplicationCatalogItem, bool, int, error) {
-	applicationID, ok := shared.ParseApplicationID(publication.ApplicationID)
-	if !ok {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+	selected, eligible, err := r.selectCatalogTarget(publication, authID, major, host, f)
+	if err != nil || !eligible {
+		return nil, false, 0, err
 	}
-	if !f.applications[publication.ApplicationID] {
-		return nil, false, 0, nil
-	}
-	restored, err := applicationPublicationFromDocument(publication)
-	if err != nil || restored.ApplicationID() != applicationID || restored.RPCAPIMajor() != major {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
-	}
-	if publication.StableVersionID == nil {
-		return nil, false, 0, nil
-	}
-	_, stableCompatible, err := resolveCatalogCandidate(applicationID, publication, *publication.StableVersionID, major, catalogdomain.LaunchChannelStable, []string{"SET_STABLE_VERSION"}, host, f)
+	applicationID, profile, target := selected.applicationID, selected.profile, selected.target
+	filterProjection, filterBytes, err := catalogFilter(applicationID, f)
 	if err != nil {
 		return nil, false, 0, err
 	}
+	item, err := catalogdomain.NewPublicApplicationCatalogItem(applicationID, profile, target, filterProjection)
+	if err != nil {
+		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+	}
+	return item, true, filterBytes + 4096, nil
+}
+
+func (r *PublicCatalogRepository) selectCatalogTarget(publication applicationPublicationDocument, authID shared.AuthID, major int32, host []catalogdomain.CapabilityName, f *catalogFacts) (*catalogSelection, bool, error) {
+	applicationID, ok := shared.ParseApplicationID(publication.ApplicationID)
+	if !ok {
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
+	}
+	if !f.applications[publication.ApplicationID] {
+		return nil, false, nil
+	}
+	restored, err := applicationPublicationFromDocument(publication)
+	if err != nil || restored.ApplicationID() != applicationID || restored.RPCAPIMajor() != major {
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
+	}
+	if publication.StableVersionID == nil {
+		return nil, false, nil
+	}
+	_, stableCompatible, err := resolveCatalogCandidate(applicationID, publication, *publication.StableVersionID, major, catalogdomain.LaunchChannelStable, []string{"SET_STABLE_VERSION"}, host, f)
+	if err != nil {
+		if errors.Is(err, script.ErrScriptContentUnavailable) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
 	if !stableCompatible {
-		return nil, false, 0, nil
+		return nil, false, nil
 	}
 	profileProjection, ok := f.profiles[publication.ApplicationID]
 	if !ok || profileProjection.CurrentPublishedProfileRevisionID == nil {
-		return nil, false, 0, nil
+		return nil, false, nil
 	}
 	profileDocument, ok := f.profileRevisions[*profileProjection.CurrentPublishedProfileRevisionID]
 	if !ok {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 	}
 	profileRevision, err := profileRevisionFromDocument(profileDocument)
 	if err != nil || profileRevision.ApplicationID() != applicationID || profileRevision.ReviewStatus() != profiledomain.ReviewStatusApproved {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 	}
 	profileReview, ok := f.profileReviews[profileRevision.ProfileRevisionID().String()]
 	if !ok || !approvedProfileSnapshotMatches(profileRevision, profileReview) {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 	}
 	profile, err := catalogdomain.NewPublicApplicationProfile(profileRevision.ProfileRevisionID().String(), profileRevision.DisplayName().String(), optionalDescription(profileRevision.Description()), optionalIcon(profileRevision.Icon()))
 	if err != nil {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 	}
 	activeTester := false
 	if membership, ok := f.memberships[publication.ApplicationID]; ok {
 		restored, restoreErr := testerMembershipFromDocument(membership)
 		if restoreErr != nil || restored.ApplicationID() != applicationID || restored.TesterAuthID() != authID || restored.Status() != testerdomain.MembershipStatusActive {
-			return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+			return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 		}
 		activeTester = true
 	}
@@ -365,14 +400,17 @@ func (r *PublicCatalogRepository) catalogItem(publication applicationPublication
 			}
 		}
 		if err := checkLatestTestHistory(publication, latest); err != nil {
-			return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+			return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 		}
 	}
 	if activeTester && publication.TestVersionID != nil {
 		target, _, err = resolveCatalogCandidate(applicationID, publication, *publication.TestVersionID, major, catalogdomain.LaunchChannelTest, []string{"SET_TEST_VERSION"}, host, f)
 	}
 	if err != nil {
-		return nil, false, 0, err
+		if errors.Is(err, script.ErrScriptContentUnavailable) {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
 	if target == nil && authID.IsValid() {
 		if rollout := restored.GreyRollout(); rollout != nil && rollout.Matches(authID) {
@@ -380,23 +418,21 @@ func (r *PublicCatalogRepository) catalogItem(publication applicationPublication
 		}
 	}
 	if err != nil {
-		return nil, false, 0, err
+		if errors.Is(err, script.ErrScriptContentUnavailable) {
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
 	if target == nil {
 		target, _, err = resolveCatalogCandidate(applicationID, publication, *publication.StableVersionID, major, catalogdomain.LaunchChannelStable, []string{"SET_STABLE_VERSION"}, host, f)
 	}
+	if errors.Is(err, script.ErrScriptContentUnavailable) {
+		return nil, false, nil
+	}
 	if err != nil || target == nil {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
+		return nil, false, catalogport.ErrApplicationCatalogStateInconsistent
 	}
-	filterProjection, filterBytes, err := catalogFilter(applicationID, f)
-	if err != nil {
-		return nil, false, 0, err
-	}
-	item, err := catalogdomain.NewPublicApplicationCatalogItem(applicationID, profile, target, filterProjection)
-	if err != nil {
-		return nil, false, 0, catalogport.ErrApplicationCatalogStateInconsistent
-	}
-	return item, true, filterBytes + 4096, nil
+	return &catalogSelection{applicationID: applicationID, profile: profile, target: target}, true, nil
 }
 
 func approvedProfileSnapshotMatches(revision *profiledomain.ApplicationProfileRevision, review *profiledomain.ApplicationProfileReview) bool {
@@ -459,6 +495,11 @@ func resolveCatalogCandidate(applicationID shared.ApplicationID, publication app
 	}
 	if len(catalogdomain.MissingCapabilities(required, host)) != 0 {
 		return nil, false, nil
+	}
+	if !f.planScripts {
+		if err := preparedApplicationScriptGate(approved, f.scriptResults); err != nil {
+			return nil, false, mapRuntimeScriptError(err, catalogport.ErrApplicationCatalogStateInconsistent, script.ErrScriptContentUnavailable)
+		}
 	}
 	descriptor, e := catalogdomain.NewLaunchTargetDescriptor(applicationID, publication.PublicationID, publication.Revision, channel, major, version.VersionID, version.VersionLabel, version.LaunchURL, version.RPCApiMinVersion, version.RPCApiMaxVersionExclusive, required, version.RequiredScopes, version.OptionalScopes)
 	if e != nil {

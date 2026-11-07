@@ -277,7 +277,7 @@ func publicationTransportError(ctx context.Context, err error) error {
 		}
 		slog.ErrorContext(ctx, "application publication invariant failed", "reason", reason)
 	}
-	if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired) || errors.Is(err, publicationdomain.ErrStablePublicationRequiredByGrey) || errors.Is(err, publicationdomain.ErrGreyStableBaselineRequired)) {
+	if isHTTP(ctx) && (errors.Is(err, publicationdomain.ErrApplicationScriptDependencyUnavailable) || errors.Is(err, publicationdomain.ErrApplicationVersionNotApproved) || errors.Is(err, publicationdomain.ErrApplicationVersionRpcApiIncompatible) || errors.Is(err, publicationdomain.ErrInvalidApplicationScope) || errors.Is(err, publicationdomain.ErrApplicationLaunchURLNotReviewable) || errors.Is(err, publicationdomain.ErrOAuthClientRegistrationRequired) || errors.Is(err, publicationdomain.ErrApplicationProfileRequired) || errors.Is(err, publicationdomain.ErrStablePublicationRequiredByGrey) || errors.Is(err, publicationdomain.ErrGreyStableBaselineRequired)) {
 		var domainError *publicationdomain.Error
 		if errors.As(err, &domainError) {
 			spec := publicationDomainErrorSpecs[domainError.Code()]

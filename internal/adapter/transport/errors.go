@@ -98,6 +98,8 @@ const (
 	ReasonApplicationProfileRequired              = "ERROR_REASON_APPLICATION_PROFILE_REQUIRED"
 	ReasonStablePublicationRequiredByGrey         = "ERROR_REASON_STABLE_PUBLICATION_REQUIRED_BY_GREY"
 	ReasonApplicationPublicationStateInconsistent = "ERROR_REASON_APPLICATION_PUBLICATION_STATE_INCONSISTENT"
+	ReasonApplicationScriptDependencyUnavailable  = "ERROR_REASON_APPLICATION_SCRIPT_DEPENDENCY_UNAVAILABLE"
+	ReasonApplicationPublicationUnavailable       = "ERROR_REASON_APPLICATION_PUBLICATION_UNAVAILABLE"
 	ReasonGreyStableBaselineRequired              = "ERROR_REASON_GREY_STABLE_BASELINE_REQUIRED"
 
 	ReasonInvalidApplicationName                         = "ERROR_REASON_INVALID_APPLICATION_NAME"
@@ -380,6 +382,8 @@ var publicationDomainErrorSpecs = map[publicationdomain.ErrorCode]errorSpec{
 	publicationdomain.ErrorCodeStablePublicationRequiredByGrey:         {code: codes.FailedPrecondition, reason: ReasonStablePublicationRequiredByGrey, message: "stable publication is required by grey rollout"},
 	publicationdomain.ErrorCodeGreyStableBaselineRequired:              {code: codes.FailedPrecondition, reason: ReasonGreyStableBaselineRequired, message: "grey rollout requires a stable baseline"},
 	publicationdomain.ErrorCodeApplicationPublicationStateInconsistent: {code: codes.Internal, reason: ReasonApplicationPublicationStateInconsistent, message: "application publication state is inconsistent"},
+	publicationdomain.ErrorCodeApplicationScriptDependencyUnavailable:  {code: codes.FailedPrecondition, reason: ReasonApplicationScriptDependencyUnavailable, message: "application script dependency is unavailable"},
+	publicationdomain.ErrorCodeApplicationPublicationUnavailable:       {code: codes.Unavailable, reason: ReasonApplicationPublicationUnavailable, message: "application publication is unavailable"},
 	publicationdomain.ErrorCodeDeveloperIdentityRequired:               {code: codes.Unauthenticated, reason: ReasonDeveloperIdentityRequired, message: "developer identity is required"},
 	publicationdomain.ErrorCodeDeveloperApprovalRequired:               {code: codes.PermissionDenied, reason: ReasonDeveloperApprovalRequired, message: "approved developer status is required"},
 	publicationdomain.ErrorCodeApplicationVersionNotFound:              {code: codes.NotFound, reason: ReasonApplicationVersionNotFound, message: "application version not found"},

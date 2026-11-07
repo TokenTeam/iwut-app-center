@@ -8,10 +8,11 @@ import (
 type MyTestAvailability string
 
 const (
-	MyTestReady                    MyTestAvailability = "READY"
-	MyTestProfileRequired          MyTestAvailability = "PROFILE_REQUIRED"
-	MyTestTargetUnavailable        MyTestAvailability = "TEST_TARGET_UNAVAILABLE"
-	MyTestCapabilitiesInsufficient MyTestAvailability = "HOST_CAPABILITIES_INSUFFICIENT"
+	MyTestReady                       MyTestAvailability = "READY"
+	MyTestProfileRequired             MyTestAvailability = "PROFILE_REQUIRED"
+	MyTestTargetUnavailable           MyTestAvailability = "TEST_TARGET_UNAVAILABLE"
+	MyTestCapabilitiesInsufficient    MyTestAvailability = "HOST_CAPABILITIES_INSUFFICIENT"
+	MyTestScriptDependencyUnavailable MyTestAvailability = "SCRIPT_DEPENDENCY_UNAVAILABLE"
 )
 
 const (
@@ -58,7 +59,7 @@ func NewMyTestApplicationItem(app shared.ApplicationID, membership OwnTestMember
 		if profile != nil || target != nil || len(missing) != 0 {
 			return nil, ErrMyTestApplicationStateInconsistent
 		}
-	case MyTestTargetUnavailable:
+	case MyTestTargetUnavailable, MyTestScriptDependencyUnavailable:
 		if profile == nil || target != nil || len(missing) != 0 {
 			return nil, ErrMyTestApplicationStateInconsistent
 		}

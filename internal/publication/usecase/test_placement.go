@@ -124,6 +124,9 @@ func equalRevision(a, b *int64) bool {
 	return *a == *b
 }
 func mapRepositoryError(err error) error {
+	if errors.Is(err, port.ErrApplicationPublicationUnavailable) || errors.Is(err, domain.ErrApplicationPublicationUnavailable) {
+		return domain.NewApplicationPublicationUnavailableError(err)
+	}
 	if errors.Is(err, port.ErrApplicationProfileStateInconsistent) || errors.Is(err, domain.ErrApplicationProfileStateInconsistent) {
 		return domain.NewApplicationProfileStateInconsistentError(err)
 	}
@@ -137,6 +140,7 @@ func mapRepositoryError(err error) error {
 		{port.ErrApplicationVersionNotFound, domain.ErrApplicationVersionNotFound},
 		{port.ErrApplicationAdminRequired, domain.ErrApplicationAdminRequired},
 		{port.ErrApplicationVersionNotApproved, domain.ErrApplicationVersionNotApproved},
+		{port.ErrApplicationScriptDependencyUnavailable, domain.ErrApplicationScriptDependencyUnavailable},
 		{port.ErrApplicationReviewStateInconsistent, domain.ErrApplicationReviewStateInconsistent},
 		{port.ErrApplicationVersionRpcApiIncompatible, domain.ErrApplicationVersionRpcApiIncompatible},
 		{port.ErrApplicationPublicationAlreadyExists, domain.ErrApplicationPublicationAlreadyExists},

@@ -60,9 +60,12 @@ func (r *TestLaunchResolver) resolveSnapshot(ctx context.Context, app shared.App
 	if err != nil {
 		return nil, err
 	}
+	if err := preparePureTestScriptGates(ctx, r.database, []string{app.String()}, major, host, facts); err != nil {
+		return nil, mapRuntimeScriptError(err, cp.ErrApplicationTestPublicationInconsistent, cp.ErrApplicationTestTargetUnavailable)
+	}
 	target, missing, err := resolvePureTest(app, major, host, facts)
 	if err != nil {
-		return nil, cp.ErrApplicationTestPublicationInconsistent
+		return nil, mapRuntimeScriptError(err, cp.ErrApplicationTestPublicationInconsistent, cp.ErrApplicationTestTargetUnavailable)
 	}
 	if len(missing) > 0 {
 		return nil, cd.NewHostCapabilitiesInsufficientError(missing)

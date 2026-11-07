@@ -2,7 +2,6 @@ package domain
 
 import (
 	"iwut-app-center/internal/shared"
-	"regexp"
 	"slices"
 	"unicode/utf8"
 )
@@ -11,20 +10,18 @@ type CapabilityName string
 
 func (n CapabilityName) String() string { return string(n) }
 
-var capabilityNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.v[1-9][0-9]*$`)
-
 // NormalizeHostCapabilities interprets the host declaration as a set. It does
 // not impose the duplicate rejection rule used for persisted requirements.
 func NormalizeHostCapabilities(values []string) ([]CapabilityName, error) {
+	values, err := shared.NormalizeRuntimeCapabilities(values)
+	if err != nil {
+		return nil, ErrInvalidHostCapabilities
+	}
 	result := make([]CapabilityName, 0, len(values))
 	for _, value := range values {
-		if !capabilityNamePattern.MatchString(value) {
-			return nil, ErrInvalidHostCapabilities
-		}
 		result = append(result, CapabilityName(value))
 	}
-	slices.Sort(result)
-	return slices.Compact(result), nil
+	return result, nil
 }
 func MissingCapabilities(required, host []CapabilityName) []CapabilityName {
 	available := make(map[CapabilityName]struct{}, len(host))
@@ -126,7 +123,7 @@ func validLaunchDescriptor(applicationID shared.ApplicationID, publicationID str
 		return false
 	}
 	for _, capability := range requiredCapabilities {
-		if !capabilityNamePattern.MatchString(string(capability)) {
+		if !shared.ValidRuntimeCapabilityName(string(capability)) {
 			return false
 		}
 	}

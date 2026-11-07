@@ -281,6 +281,9 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	scriptQueryRepository := mongo.NewScriptQueryRepository(database, scriptQueryCursorKey)
 	scriptQuery := usecase11.NewScriptQuery(scriptQueryRepository, systemClock)
 	scriptQueryService := transport.NewScriptQueryService(scriptQuery)
+	scriptDistributionRepository := mongo.NewScriptDistributionRepository(database, scriptQueryCursorKey)
+	scriptDistribution := usecase11.NewScriptDistribution(scriptDistributionRepository, systemClock)
+	scriptDistributionService := transport.NewScriptDistributionService(scriptDistribution)
 	serviceIdentityConfig := provideServiceIdentityConfig(configuration)
 	serviceIdentityVerifier, err := provideServiceIdentityVerifier(serviceIdentityConfig, systemClock)
 	if err != nil {
@@ -292,7 +295,7 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	oAuthProviderRepository := mongo.NewOAuthProviderRepository(database, secretFactory)
 	providerHandlers := usecase9.NewProviderHandlers(systemClock, oAuthProviderRepository)
 	oAuthClientProviderService := transport.NewOAuthClientProviderService(providerHandlers)
-	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationReviewQueryService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationManagementQueryService, applicationProfileRevisionService, applicationProfileReviewService, applicationProfileReviewQueryService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, applicationArchivalService, applicationTesterManagementService, testApplicationCatalogService, scriptManagementService, scriptQueryService, serviceIdentityVerifier, oAuthClientProviderService)
+	servers, err := transport.NewServersWithApplicationCatalogAndOAuthProvider(serverConfig, identityVerifier, applicationService, applicationVersionService, applicationReviewService, applicationReviewQueryService, applicationPublicationService, testerJoinLinkService, testerMembershipService, catalogService, runtimeResolutionService, applicationCatalogService, applicationManagementQueryService, applicationProfileRevisionService, applicationProfileReviewService, applicationProfileReviewQueryService, oAuthClientService, applicationFilterService, applicationAdminTransferService, applicationClosureService, applicationOperationsService, applicationArchivalService, applicationTesterManagementService, testApplicationCatalogService, scriptManagementService, scriptQueryService, scriptDistributionService, serviceIdentityVerifier, oAuthClientProviderService)
 	if err != nil {
 		cleanup3()
 		cleanup2()

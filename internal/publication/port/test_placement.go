@@ -28,6 +28,8 @@ var (
 	ErrStablePublicationRequiredByGrey         = errors.New("stable publication required by grey")
 	ErrGreyStableBaselineRequired              = errors.New("grey stable baseline required")
 	ErrApplicationPublicationStateInconsistent = errors.New("application publication state inconsistent")
+	ErrApplicationScriptDependencyUnavailable  = errors.New("application script dependency unavailable")
+	ErrApplicationPublicationUnavailable       = errors.New("application publication unavailable")
 )
 
 type UUIDv7Generator interface{ NewUUIDv7() (string, error) }

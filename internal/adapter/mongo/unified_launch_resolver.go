@@ -186,6 +186,9 @@ func (resolver *UnifiedLaunchResolver) resolveCandidate(ctx context.Context, app
 	if len(catalogdomain.MissingCapabilities(required, host)) != 0 {
 		return nil, false, nil
 	}
+	if _, err := applicationDistributedScripts(ctx, resolver.database, approved, false); err != nil {
+		return nil, false, mapRuntimeScriptError(err, catalogport.ErrApplicationRuntimeStateInconsistent, catalogport.ErrApplicationLaunchTargetUnavailable)
+	}
 	descriptor, createErr := catalogdomain.NewLaunchTargetDescriptor(applicationID, publication.PublicationID, publication.Revision, channel, major, version.VersionID, version.VersionLabel, version.LaunchURL, version.RPCApiMinVersion, version.RPCApiMaxVersionExclusive, required, version.RequiredScopes, version.OptionalScopes)
 	if createErr != nil {
 		return nil, false, catalogport.ErrApplicationRuntimeStateInconsistent

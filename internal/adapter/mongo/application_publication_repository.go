@@ -166,6 +166,18 @@ func (r *ApplicationPublicationRepository) loadTestPlacementCandidate(ctx contex
 			}
 		}
 	}
+	noOp := candidate.IsNoOp()
+	if oauthChannel == "STABLE" {
+		noOp = publication != nil && publication.StableVersionIDPtr() != nil && *publication.StableVersionIDPtr() == versionID
+	} else if oauthChannel == "GREY" {
+		// Grey no-op/reduction was classified before entering this loader.
+		noOp = false
+	}
+	if !noOp {
+		if _, err := applicationDistributedScripts(ctx, r.database, approved, lock); err != nil {
+			return nil, publicationScriptGateError(err)
+		}
+	}
 	return candidate, nil
 }
 
@@ -553,6 +565,15 @@ func (r *ApplicationPublicationRepository) loadGreyPlacementCandidate(ctx contex
 		if lock {
 			if err := r.database.Collection(applicationsCollectionName).FindOneAndUpdate(ctx, appFilter, bson.D{{Key: "$inc", Value: bson.D{{Key: "coordinationRevision", Value: int64(1)}}}}).Err(); err != nil {
 				return nil, err
+			}
+		}
+		if change == publicationdomain.GreyChangeDecrease {
+			review, err := loadApplicationScriptReview(ctx, r.database, applicationID.String(), versionID.String())
+			if err != nil {
+				return nil, publicationScriptGateError(err)
+			}
+			if _, err := applicationDistributedScripts(ctx, r.database, review, lock); err != nil {
+				return nil, publicationScriptGateError(err)
 			}
 		}
 		return candidate, nil

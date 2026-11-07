@@ -258,6 +258,13 @@ func (r *OAuthProviderRepository) resolveRuntimeSnapshot(ctx context.Context, cl
 	if versionID == nil {
 		return nil, oauthport.ErrRuntimeUnavailable
 	}
+	approved, err := loadApplicationScriptReview(ctx, r.database, configuration.ApplicationID.String(), *versionID)
+	if err == nil {
+		_, err = applicationDistributedScripts(ctx, r.database, approved, false)
+	}
+	if err != nil {
+		return nil, mapRuntimeScriptError(err, oauthport.ErrStateInconsistent, oauthport.ErrRuntimeUnavailable)
+	}
 	runtime, createErr := oauthdomain.NewRuntimeConfiguration(configuration, major, application.AdminID(), *versionID, publication.Revision, redirects, required, optional, display, observedAt)
 	if createErr != nil {
 		return nil, oauthport.ErrStateInconsistent

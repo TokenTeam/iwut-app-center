@@ -5,25 +5,33 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	appv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
+	apppubv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_publication"
 	appreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	appreviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review_query"
 	appversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
+	distributionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_distribution"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
+	linkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
+	memberv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
+	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -35,7 +43,7 @@ import (
 	"iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_043_044_045_046_048_049_ScriptManagementHTTPAndGRPC(t *testing.T) {
+func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()
 	_, database := e2eIsolatedDatabase(t, ctx, true)
@@ -89,7 +97,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_048_049_ScriptManagementHTTPAndGRPC(t 
 	resourceClient := resourcev1.NewScriptResourceServiceClient(connection)
 	versionClient := versionv1.NewScriptVersionServiceClient(connection)
 
-	httpCall := func(method, path, token string, body []byte, expectedStatus int, target proto.Message) {
+	httpCall := func(method, path, token string, body []byte, expectedStatus int, target proto.Message) []byte {
 		t.Helper()
 		request, err := http.NewRequestWithContext(ctx, method, "http://"+addresses[0]+path, bytes.NewReader(body))
 		if err != nil {
@@ -114,6 +122,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_048_049_ScriptManagementHTTPAndGRPC(t 
 				t.Fatal("decode response:", err)
 			}
 		}
+		return raw
 	}
 	marshal := func(message proto.Message) []byte {
 		t.Helper()
@@ -352,6 +361,28 @@ func TestE2E_UCAPP041_042_043_044_045_046_048_049_ScriptManagementHTTPAndGRPC(t 
 	if err != nil || approvedApp.GetReview().GetStatus() != "APPROVED" || len(approvedApp.GetReview().GetDecision().GetApprovalValidation().GetScriptApprovals()) != 1 {
 		t.Fatal("real script approval did not unblock application", err)
 	}
+	profileReviewer := e2eSignReviewerIdentity(t, key, "script-profile-reviewer", "app.profile.review")
+	e2eApproveApplicationProfile(t, ctx, connection, application.GetId(), developer, profileReviewer)
+	appPublications := apppubv1.NewApplicationPublicationClient(connection)
+	placeApp := &apppubv1.PlaceApprovedVersionInTestSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 1, Command: &apppubv1.PlaceApprovedVersionInTestSlotCommand{VersionId: created.GetVersionId()}}
+	if _, err := appPublications.PlaceApprovedVersionInTestSlot(developerContext, placeApp); status.Code(err) != codes.FailedPrecondition || e2eErrorReason(status.Convert(err)) != transport.ReasonApplicationScriptDependencyUnavailable {
+		t.Fatal("unpublished script did not block actual App publication", err)
+	}
+	failedPlacement, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://"+addresses[0]+appPath+"/publications/1/test-slot", bytes.NewReader(marshal(placeApp.GetCommand())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedPlacement.Header.Set("Content-Type", "application/json")
+	failedPlacement.Header.Set(transport.IdentityHeader, developer)
+	failedResponse, err := http.DefaultClient.Do(failedPlacement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, failedResponse.Body)
+	_ = failedResponse.Body.Close()
+	if failedResponse.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatal("script gate HTTP status", failedResponse.StatusCode)
+	}
 	httpCall(http.MethodGet, reviewPath, reviewer, nil, http.StatusOK, &detail)
 	if detail.GetStatus() != queryv1.ScriptReviewStatus_SCRIPT_REVIEW_STATUS_APPROVED || detail.GetCanDecide() || detail.GetDecision().GetDecisionId() != decided.GetDecision().GetDecisionId() {
 		t.Fatal("terminal script query")
@@ -459,6 +490,149 @@ func TestE2E_UCAPP041_042_043_044_045_046_048_049_ScriptManagementHTTPAndGRPC(t 
 	}
 	e2eAssertCollectionCount(t, database, "script_published_versions", 1)
 	e2eAssertCollectionCount(t, database, "script_publication_events", 4)
+
+	// Exercise the generated HTTP clients, rather than reconstructing their URLs.
+	ordinary := e2eSignReviewerIdentity(t, key, "ordinary-script-reader")
+	ordinaryContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, ordinary))
+	httpClient, err := khttp.NewClient(ctx, khttp.WithEndpoint("http://"+addresses[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpClient.Close()
+	generated := distributionv1.NewScriptDistributionServiceHTTPClient(httpClient)
+	header := http.Header{transport.IdentityHeader: []string{ordinary}}
+	getContent := &distributionv1.GetPublishedScriptContentRequest{ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), ExpectedDigest: modified.GetDigest()}
+	content, err := generated.GetPublishedScriptContent(ctx, getContent, khttp.Header(&header))
+	if err != nil || content.GetContentText() != replacement || header.Get("Cache-Control") != "private, no-store" {
+		t.Fatal("generated independent HTTP content", err)
+	}
+	contentPath := "/v1/scripts/" + resource.GetResourceId() + "/versions/" + draft.GetVersionId() + "/content?expectedDigest=" + modified.GetDigest()
+	httpCall(http.MethodGet, contentPath, "", nil, http.StatusUnauthorized, nil)
+	httpCall(http.MethodGet, contentPath+"&authId=spoof", ordinary, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, strings.Replace(contentPath, modified.GetDigest(), strings.Repeat("0", 64), 1), ordinary, nil, http.StatusNotFound, nil)
+	httpCall(http.MethodGet, "/v1/scripts/"+resource.GetResourceId()+"/versions/"+largeDraft.GetVersionId()+"/content?expectedDigest="+largeDraft.GetDigest(), ordinary, nil, http.StatusNotFound, nil)
+	var library distributionv1.PublishedScriptPage
+	httpCall(http.MethodGet, "/v1/scripts", ordinary, nil, http.StatusOK, &library)
+	if len(library.GetItems()) != 0 {
+		t.Fatal("cleared head remained recommended")
+	}
+	placed, err := appPublications.PlaceApprovedVersionInTestSlot(developerContext, placeApp)
+	if err != nil {
+		t.Fatal("published script failed to unblock App publication", err)
+	}
+	links := linkv1.NewTesterJoinLinkClient(connection)
+	joinLink, err := links.CreateOrRotateTesterJoinLink(developerContext, &linkv1.CreateOrRotateTesterJoinLinkRequest{ApplicationId: application.GetId(), Command: &linkv1.CreateOrRotateTesterJoinLinkCommand{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joinURL, _ := url.Parse(joinLink.GetJoinUrl())
+	fragment, _ := url.ParseQuery(joinURL.Fragment)
+	if _, err := memberv1.NewTesterMembershipClient(connection).JoinApplicationAsTester(ordinaryContext, &memberv1.JoinApplicationAsTesterRequest{JoinLinkId: joinLink.GetJoinLink().GetJoinLinkId(), Command: &memberv1.JoinApplicationAsTesterCommand{Secret: fragment.Get("secret")}}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := &distributionv1.ScriptRuntimeQuery{Mode: distributionv1.ScriptRuntimeMode_SCRIPT_RUNTIME_MODE_PURE_TEST, HostRpcApiMajor: 1}
+	manifestInput := &distributionv1.ResolveApplicationScriptManifestInput{Runtime: runtime}
+	manifestRequest := &distributionv1.ResolveApplicationScriptManifestRequest{ApplicationId: application.GetId(), ApplicationVersionId: created.GetVersionId(), Query: manifestInput}
+	distribution := distributionv1.NewScriptDistributionServiceClient(connection)
+	var headers metadata.MD
+	manifest, err := distribution.ResolveApplicationScriptManifest(ordinaryContext, manifestRequest, grpc.Header(&headers))
+	if err != nil || len(manifest.GetScripts()) != 1 || manifest.GetScripts()[0].GetVersionId() != draft.GetVersionId() || len(headers.Get("cache-control")) != 1 {
+		t.Fatal("qualified native manifest", err)
+	}
+	manifestPath := appVersionPath + "/scripts:resolve"
+	httpCall(http.MethodPost, manifestPath, "", []byte("{"), http.StatusUnauthorized, nil)
+	httpCall(http.MethodPost, manifestPath, ordinary, []byte(`{"runtime":{"mode":99,"hostRpcApiMajor":1}}`), http.StatusBadRequest, nil)
+	httpCall(http.MethodPost, manifestPath, ordinary, []byte(`{"runtime":{"mode":"SCRIPT_RUNTIME_MODE_PURE_TEST","hostRpcApiMajor":1,"authId":"spoof"}}`), http.StatusBadRequest, nil)
+	httpCall(http.MethodPost, manifestPath+"?channel=STABLE", ordinary, marshal(manifestInput), http.StatusBadRequest, nil)
+	bodyRequest := &distributionv1.GetApplicationScriptContentRequest{ApplicationId: application.GetId(), ApplicationVersionId: created.GetVersionId(), ScriptVersionId: draft.GetVersionId(), Query: &distributionv1.GetApplicationScriptContentInput{Runtime: runtime, ExpectedDigest: modified.GetDigest()}}
+	header = http.Header{transport.IdentityHeader: []string{ordinary}}
+	appBody, err := generated.GetApplicationScriptContent(ctx, bodyRequest, khttp.Header(&header))
+	if err != nil || appBody.GetContentText() != replacement || appBody.GetPublicationRevision() != placed.GetPublication().GetRevision() || header.Get("Cache-Control") != "private, no-store" {
+		t.Fatal("generated exact application content", err)
+	}
+	badNative := proto.Clone(bodyRequest).(*distributionv1.GetApplicationScriptContentRequest)
+	badNative.Query.Runtime.ProtoReflect().SetUnknown([]byte{0x98, 0x06, 0x01})
+	if _, err := distribution.GetApplicationScriptContent(ordinaryContext, badNative); status.Code(err) != codes.InvalidArgument {
+		t.Fatal("unknown nested native field", err)
+	}
+	badNative = proto.Clone(bodyRequest).(*distributionv1.GetApplicationScriptContentRequest)
+	badNative.ApplicationVersionId = otherVersion.GetVersionId()
+	if _, err := distribution.GetApplicationScriptContent(ordinaryContext, badNative); status.Code(err) != codes.NotFound {
+		t.Fatal("unselected target", err)
+	}
+	if _, err := publications.SuspendScriptDistribution(metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, suspender)), &publicationv1.SuspendScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 3, Reason: "runtime gate verification"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := distribution.GetApplicationScriptContent(ordinaryContext, bodyRequest); status.Code(err) != codes.NotFound {
+		t.Fatal("old manifest bypassed current gate", err)
+	}
+	if _, err := appPublications.ClearTestSlot(developerContext, &apppubv1.ClearTestSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 1, ExpectedPublicationRevision: placed.GetPublication().GetRevision()}); err != nil {
+		t.Fatal("paused script prevented clear", err)
+	}
+	if _, err := publications.RestoreScriptDistribution(restorerContext, &publicationv1.RestoreScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 4, Reason: "runtime restoration"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := distribution.GetApplicationScriptContent(ordinaryContext, bodyRequest); status.Code(err) != codes.NotFound {
+		t.Fatal("old slot survived target revalidation", err)
+	}
+	// An approved empty dependency set is explicit on the real HTTP wire.
+	emptyVersionInput := proto.Clone(appVersion).(*appversionv1.CreateApplicationVersionRequest)
+	emptyVersionInput.VersionLabel = "without-scripts"
+	emptyVersionInput.ScriptReferences = &appversionv1.ScriptReferences{Items: []*appversionv1.ScriptReference{}}
+	emptyVersion, err := appVersionClient.CreateApplicationVersion(developerContext, emptyVersionInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptySubmission, err := appReviewClient.SubmitApplicationVersionReview(developerContext, &appreviewv1.SubmitApplicationVersionReviewRequest{ApplicationId: application.GetId(), VersionId: emptyVersion.GetVersionId(), Command: &appreviewv1.SubmitApplicationVersionReviewCommand{ExpectedRevision: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyApprove := proto.Clone(appApprove).(*appreviewv1.DecideApplicationVersionReviewRequest)
+	emptyApprove.VersionId = emptyVersion.GetVersionId()
+	emptyApprove.ReviewId = emptySubmission.GetReview().GetReviewId()
+	if _, err := appReviewClient.DecideApplicationVersionReview(appReviewerContext, emptyApprove); err != nil {
+		t.Fatal(err)
+	}
+	expectedRevision := int64(2)
+	if _, err := appPublications.SetApprovedVersionInStableSlot(developerContext, &apppubv1.SetApprovedVersionInStableSlotRequest{ApplicationId: application.GetId(), RpcApiMajor: 1, Command: &apppubv1.SetApprovedVersionInStableSlotCommand{VersionId: emptyVersion.GetVersionId(), ExpectedPublicationRevision: &expectedRevision}}); err != nil {
+		t.Fatal(err)
+	}
+	emptyInput := &distributionv1.ResolveApplicationScriptManifestInput{Runtime: &distributionv1.ScriptRuntimeQuery{Mode: distributionv1.ScriptRuntimeMode_SCRIPT_RUNTIME_MODE_UNIFIED, HostRpcApiMajor: 1}}
+	emptyRaw := httpCall(http.MethodPost, appPath+"/versions/"+emptyVersion.GetVersionId()+"/scripts:resolve", ordinary, marshal(emptyInput), http.StatusOK, manifest)
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(emptyRaw, &fields) != nil || string(bytes.TrimSpace(fields["scripts"])) != "[]" {
+		t.Fatal("empty dependency list omitted on HTTP wire")
+	}
+	// Prove the maximum escaped body using the formal generated HTTP client.
+	maxText := strings.Repeat("\x01", domain.MaxContentBytes)
+	maxInput := &versionv1.CreateScriptVersionDraftRequest{ResourceId: resource.GetResourceId(), Draft: &versionv1.CreateScriptVersionDraftInput{VersionLabel: "max-distribution", ContentFormat: "json", ContentText: maxText}}
+	header = http.Header{transport.IdentityHeader: []string{maintainer}}
+	maxVersion, err := versionv1.NewScriptVersionServiceHTTPClient(httpClient).CreateScriptVersionDraft(ctx, maxInput, khttp.Header(&header))
+	if err != nil {
+		t.Fatal("maximum generated upload", err)
+	}
+	maxSubmission, err := versionClient.SubmitScriptVersionReview(maintainerContext, &versionv1.SubmitScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxApprove := proto.Clone(approve).(*reviewv1.DecideScriptVersionReviewInput)
+	maxApprove.ExpectedVersionRevision = maxSubmission.GetRevision()
+	if _, err := reviewv1.NewScriptReviewServiceClient(connection).DecideScriptVersionReview(reviewerContext, &reviewv1.DecideScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), ReviewId: maxSubmission.GetReviewId(), Command: maxApprove}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := publications.PublishScriptVersion(publisherContext, &publicationv1.PublishScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	maxGet := &distributionv1.GetPublishedScriptContentRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), ExpectedDigest: maxVersion.GetDigest()}
+	header = http.Header{transport.IdentityHeader: []string{ordinary}}
+	maxHTTP, err := generated.GetPublishedScriptContent(ctx, maxGet, khttp.Header(&header))
+	if err != nil || maxHTTP.GetContentText() != maxText || maxHTTP.GetByteLength() != domain.MaxContentBytes {
+		t.Fatal("maximum escaped HTTP response", err)
+	}
+	maxGRPC, err := distribution.GetPublishedScriptContent(ordinaryContext, maxGet)
+	if err != nil || maxGRPC.GetContentText() != maxText {
+		t.Fatal("maximum native protobuf response", err)
+	}
 
 }
 

@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
+	distributionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_distribution"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
@@ -28,9 +30,10 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	scriptdomain "iwut-app-center/internal/script/domain"
 )
 
-func TestE2E_UCAPP041_042_043_044_045_046_ScriptManagementLocalImages(t *testing.T) {
+func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *testing.T) {
 	forwardAuthAddress := os.Getenv("UC041_ADMIN_FORWARD_AUTH_ADDR")
 	if forwardAuthAddress == "" {
 		t.Skip("run scripts/test-uc002-gateway-auth-integration.sh --script-management")
@@ -90,7 +93,11 @@ func TestE2E_UCAPP041_042_043_044_045_046_ScriptManagementLocalImages(t *testing
 			}
 			req.Host = host
 			req.Header.Set("Content-Type", "application/json")
-			req.AddCookie(&http.Cookie{Name: "iwut_uc041_fixture", Value: session})
+			if host == "api.uc002.test" {
+				req.Header.Set("X-Iwut-Session", session)
+			} else {
+				req.AddCookie(&http.Cookie{Name: "iwut_uc041_fixture", Value: session})
+			}
 			// The Console edge must scrub this untrusted caller-supplied identity.
 			req.Header.Set("X-Iwut-Identity", "forged-test-identity")
 			response, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
@@ -378,5 +385,86 @@ func TestE2E_UCAPP041_042_043_044_045_046_ScriptManagementLocalImages(t *testing
 	setPermission(restorePermission, revokePermission)
 	e2eAssertCollectionCount(t, database, "script_published_versions", 1)
 	e2eAssertCollectionCount(t, database, "script_publication_events", 3)
+
+	const publicHost = "api.uc002.test"
+	publicContentPath := "/app-center/v1/scripts/" + resource.GetResourceId() + "/versions/" + draft.GetVersionId() + "/content?expectedDigest=" + modified.GetDigest()
+	var publicContent distributionv1.ScriptContent
+	publicHeader := httpCall(publicHost, http.MethodGet, publicContentPath, maintainer.session, nil, &publicContent, http.StatusOK)
+	if publicContent.GetContentText() != edited || publicHeader.Get("Cache-Control") != "private, no-store" {
+		t.Fatal("ordinary real USER independent content")
+	}
+	httpCall(publicHost, http.MethodGet, publicContentPath, "", nil, nil, http.StatusUnauthorized)
+	httpCall(adminHost, http.MethodGet, publicContentPath, maintainer.session, nil, nil, http.StatusNotFound)
+	httpCall("developer.uc002.test", http.MethodGet, publicContentPath, maintainer.session, nil, nil, http.StatusNotFound)
+	var library distributionv1.PublishedScriptPage
+	httpCall(publicHost, http.MethodGet, "/app-center/v1/scripts", maintainer.session, nil, &library, http.StatusOK)
+	if len(library.GetItems()) != 1 || library.GetItems()[0].GetHead().GetVersionId() != draft.GetVersionId() {
+		t.Fatal("independent recommendation")
+	}
+	distribution := distributionv1.NewScriptDistributionServiceClient(edge)
+	getPublic := &distributionv1.GetPublishedScriptContentRequest{ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), ExpectedDigest: modified.GetDigest()}
+	if got, err := distribution.GetPublishedScriptContent(maintainerRPC, getPublic); err != nil || got.GetContentText() != edited {
+		t.Fatal("native independent distribution", err)
+	}
+	if code := gatewayWeb(t, ctx, maintainer.session, distributionv1.ScriptDistributionService_GetPublishedScriptContent_FullMethodName, getPublic, &publicContent); code != int(codes.OK) || publicContent.GetContentText() != edited {
+		t.Fatal("gRPC-Web independent distribution", code)
+	}
+	// The associated positive paths are covered by normal-Wire App E2E and
+	// the real Mongo qualification matrix. Here all four PUBLIC routes also
+	// prove real Session exchange and App's uniform missing-target boundary.
+	runtime := &distributionv1.ScriptRuntimeQuery{Mode: distributionv1.ScriptRuntimeMode_SCRIPT_RUNTIME_MODE_UNIFIED, HostRpcApiMajor: 1}
+	missingManifest := &distributionv1.ResolveApplicationScriptManifestRequest{ApplicationId: resource.GetResourceId(), ApplicationVersionId: draft.GetVersionId(), Query: &distributionv1.ResolveApplicationScriptManifestInput{Runtime: runtime}}
+	if _, err := distribution.ResolveApplicationScriptManifest(maintainerRPC, missingManifest); status.Code(err) != codes.NotFound {
+		t.Fatal("associated manifest route", err)
+	}
+	missingContent := &distributionv1.GetApplicationScriptContentRequest{ApplicationId: resource.GetResourceId(), ApplicationVersionId: draft.GetVersionId(), ScriptVersionId: draft.GetVersionId(), Query: &distributionv1.GetApplicationScriptContentInput{Runtime: runtime, ExpectedDigest: modified.GetDigest()}}
+	if code := gatewayWeb(t, ctx, maintainer.session, distributionv1.ScriptDistributionService_GetApplicationScriptContent_FullMethodName, missingContent, &distributionv1.ApplicationScriptContent{}); code != int(codes.NotFound) {
+		t.Fatal("associated content route", code)
+	}
+	// Independently grant maintain/publish for a new maximum-sized version,
+	// then revoke both before the ordinary USER reads its exact bytes.
+	setPermission(permissionsv1.ScriptPermission_SCRIPT_PERMISSION_MAINTAIN, grantPermission)
+	maxText := strings.Repeat("\x01", scriptdomain.MaxContentBytes)
+	maxVersion, err := versionv1.NewScriptVersionServiceClient(edge).CreateScriptVersionDraft(maintainerRPC, &versionv1.CreateScriptVersionDraftRequest{ResourceId: resource.GetResourceId(), Draft: &versionv1.CreateScriptVersionDraftInput{VersionLabel: "max-distribution", ContentFormat: "json", ContentText: maxText}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxSubmission, err := versionv1.NewScriptVersionServiceClient(edge).SubmitScriptVersionReview(maintainerRPC, &versionv1.SubmitScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxReview, err := queryClient.GetScriptReview(reviewerRPC, &queryv1.GetScriptReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), ReviewId: maxSubmission.GetReviewId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	maxChecks := []string{}
+	for _, check := range maxReview.GetChecks() {
+		if check.GetMandatory() {
+			maxChecks = append(maxChecks, check.GetId())
+		}
+	}
+	if _, err := reviewv1.NewScriptReviewServiceClient(edge).DecideScriptVersionReview(reviewerRPC, &reviewv1.DecideScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), ReviewId: maxSubmission.GetReviewId(), Command: &reviewv1.DecideScriptVersionReviewInput{ExpectedVersionRevision: maxReview.GetVersion().GetRevision(), PolicyVersion: maxReview.GetPolicyVersion(), Decision: reviewv1.ScriptReviewAction_SCRIPT_REVIEW_ACTION_APPROVE, ConfirmedCheckIds: maxChecks}}); err != nil {
+		t.Fatal(err)
+	}
+	setPermission(publishPermission, grantPermission)
+	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).PublishScriptVersion(maintainerRPC, &publicationv1.PublishScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	setPermission(permissionsv1.ScriptPermission_SCRIPT_PERMISSION_MAINTAIN, revokePermission)
+	setPermission(publishPermission, revokePermission)
+	maxGet := &distributionv1.GetPublishedScriptContentRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), ExpectedDigest: maxVersion.GetDigest()}
+	maxPath := "/app-center/v1/scripts/" + resource.GetResourceId() + "/versions/" + maxVersion.GetVersionId() + "/content?expectedDigest=" + maxVersion.GetDigest()
+	httpCall(publicHost, http.MethodGet, maxPath, maintainer.session, nil, &publicContent, http.StatusOK)
+	if publicContent.GetContentText() != maxText || publicContent.GetByteLength() != scriptdomain.MaxContentBytes {
+		t.Fatal("maximum HTTP JSON bytes through three images")
+	}
+	if got, err := distribution.GetPublishedScriptContent(maintainerRPC, maxGet); err != nil || got.GetContentText() != maxText {
+		t.Fatal("maximum native bytes through three images", err)
+	}
+	if code := gatewayWeb(t, ctx, maintainer.session, distributionv1.ScriptDistributionService_GetPublishedScriptContent_FullMethodName, maxGet, &publicContent); code != int(codes.OK) || publicContent.GetContentText() != maxText {
+		t.Fatal("maximum gRPC-Web bytes through three images", code)
+	}
+	e2eAssertCollectionCount(t, database, "script_published_versions", 2)
+	e2eAssertCollectionCount(t, database, "script_publication_events", 4)
 
 }

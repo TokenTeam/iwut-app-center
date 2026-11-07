@@ -102,6 +102,8 @@ func myTestItemResource(item *cd.MyTestApplicationItem) *v1.MyTestApplicationIte
 		resource.Availability = v1.TestAvailability_TEST_AVAILABILITY_PROFILE_REQUIRED
 	case cd.MyTestTargetUnavailable:
 		resource.Availability = v1.TestAvailability_TEST_AVAILABILITY_TEST_TARGET_UNAVAILABLE
+	case cd.MyTestScriptDependencyUnavailable:
+		resource.Availability = v1.TestAvailability_TEST_AVAILABILITY_SCRIPT_DEPENDENCY_UNAVAILABLE
 	case cd.MyTestCapabilitiesInsufficient:
 		resource.Availability = v1.TestAvailability_TEST_AVAILABILITY_HOST_CAPABILITIES_INSUFFICIENT
 	}

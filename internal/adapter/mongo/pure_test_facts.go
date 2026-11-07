@@ -172,15 +172,16 @@ func (p pureTestPublication) document() applicationPublicationDocument {
 }
 
 type pureTestFacts struct {
-	publications map[string]applicationPublicationDocument
-	history      map[string]applicationPublicationHistoryDocument
-	versions     map[string]applicationVersionDocument
-	oauth        map[string]applicationVersionOAuthConfigDocument
-	reviews      map[string]applicationReviewDocument
+	publications  map[string]applicationPublicationDocument
+	history       map[string]applicationPublicationHistoryDocument
+	versions      map[string]applicationVersionDocument
+	oauth         map[string]applicationVersionOAuthConfigDocument
+	reviews       map[string]applicationReviewDocument
+	scriptResults map[string]error
 }
 
 func loadPureTestFacts(ctx context.Context, db *m.Database, appIDs []string, major int32) (*pureTestFacts, error) {
-	f := &pureTestFacts{map[string]applicationPublicationDocument{}, map[string]applicationPublicationHistoryDocument{}, map[string]applicationVersionDocument{}, map[string]applicationVersionOAuthConfigDocument{}, map[string]applicationReviewDocument{}}
+	f := &pureTestFacts{map[string]applicationPublicationDocument{}, map[string]applicationPublicationHistoryDocument{}, map[string]applicationVersionDocument{}, map[string]applicationVersionOAuthConfigDocument{}, map[string]applicationReviewDocument{}, nil}
 	if len(appIDs) == 0 {
 		return f, nil
 	}
@@ -298,7 +299,7 @@ func fmtInt(v int64) string { return strconv.FormatInt(v, 10) }
 
 // Both UC012 and UC038 use this pure resolver. Absence and missing capabilities
 // remain distinct from corruption; only the consumer selects RPC vs card form.
-func resolvePureTest(app shared.ApplicationID, major int32, host []cd.CapabilityName, f *pureTestFacts) (*cd.TestLaunchDescriptor, []cd.CapabilityName, error) {
+func resolvePureTestCandidate(app shared.ApplicationID, major int32, host []cd.CapabilityName, f *pureTestFacts) (*cd.TestLaunchDescriptor, []cd.CapabilityName, error) {
 	bad := cd.ErrMyTestApplicationStateInconsistent
 	p, ok := f.publications[app.String()]
 	if !ok || p.TestVersionID == nil {
