@@ -82,33 +82,56 @@ func TestE2E_UCAPP041_042_043_044_045_046_ScriptManagementLocalImages(t *testing
 				t.Fatal(err)
 			}
 		}
-		req, err := http.NewRequestWithContext(ctx, method, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+path, bytes.NewReader(payload))
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Host = host
-		req.Header.Set("Content-Type", "application/json")
-		req.AddCookie(&http.Cookie{Name: "iwut_uc041_fixture", Value: session})
-		// The Console edge must scrub this untrusted caller-supplied identity.
-		req.Header.Set("X-Iwut-Identity", "forged-test-identity")
-		response, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		body, err := io.ReadAll(io.LimitReader(response.Body, 7<<20))
-		if err != nil || response.StatusCode != wantStatus {
-			t.Fatalf("%s %s on %s returned %d, want %d (%v)", method, path, host, response.StatusCode, wantStatus, err)
-		}
-		if response.Header.Get("X-Iwut-Identity") != "" || bytes.Contains(body, []byte(session)) {
-			t.Fatal("edge response leaked credentials")
-		}
-		if result != nil {
-			if err := protojson.Unmarshal(body, result); err != nil {
-				t.Fatal("decode business response:", err)
+		permissionRetryUntil := time.Now().Add(70 * time.Second)
+		for {
+			req, err := http.NewRequestWithContext(ctx, method, "http://"+os.Getenv("UC002_EDGE_HTTP_ADDR")+path, bytes.NewReader(payload))
+			if err != nil {
+				t.Fatal(err)
 			}
+			req.Host = host
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(&http.Cookie{Name: "iwut_uc041_fixture", Value: session})
+			// The Console edge must scrub this untrusted caller-supplied identity.
+			req.Header.Set("X-Iwut-Identity", "forged-test-identity")
+			response, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(io.LimitReader(response.Body, 7<<20))
+			_ = response.Body.Close()
+			if response.Header.Get("X-Iwut-Identity") != "" || bytes.Contains(body, []byte(session)) {
+				t.Fatal("edge response leaked credentials")
+			}
+			// Auth permits ten permission writes per actor per minute. A rate
+			// rejection happens before mutation, so retry only that exact error
+			// with the original payload and OCC revision, within a bounded wait.
+			var failure struct {
+				Reason string `json:"reason"`
+			}
+			if err == nil && response.StatusCode == http.StatusTooManyRequests && wantStatus == http.StatusOK &&
+				method == http.MethodPost && path == "/auth-center/v1/script-permissions:manage" &&
+				json.Unmarshal(body, &failure) == nil && failure.Reason == "SCRIPT_PERMISSION_RATE_LIMITED" &&
+				time.Now().Add(5*time.Second).Before(permissionRetryUntil) {
+				t.Log("Auth permission write limited; retrying the same command after five seconds")
+				timer := time.NewTimer(5 * time.Second)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					t.Fatal("waiting for Auth permission write budget:", ctx.Err())
+				case <-timer.C:
+				}
+				continue
+			}
+			if err != nil || response.StatusCode != wantStatus {
+				t.Fatalf("%s %s on %s returned %d, want %d (%v)", method, path, host, response.StatusCode, wantStatus, err)
+			}
+			if result != nil {
+				if err := protojson.Unmarshal(body, result); err != nil {
+					t.Fatal("decode business response:", err)
+				}
+			}
+			return response.Header
 		}
-		return response.Header
 	}
 	edge, err := grpc.NewClient(os.Getenv("UC002_EDGE_GRPC_ADDR"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
