@@ -106,7 +106,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 			}
 			body, err := io.ReadAll(io.LimitReader(response.Body, 7<<20))
 			_ = response.Body.Close()
-			if response.Header.Get("X-Iwut-Identity") != "" || bytes.Contains(body, []byte(session)) {
+			if response.Header.Get("X-Iwut-Identity") != "" || (session != "" && bytes.Contains(body, []byte(session))) {
 				t.Fatal("edge response leaked credentials")
 			}
 			// Auth permits ten permission writes per actor per minute. A rate
