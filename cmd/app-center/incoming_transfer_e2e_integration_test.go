@@ -12,6 +12,8 @@ import (
 	appv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application"
 	pb "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_admin_transfer"
 	developerstatusv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/developer_status"
+	khttp "github.com/go-kratos/kratos/v2/transport/http"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -100,6 +102,16 @@ func TestE2E_UCAPP050_IncomingApplicationTransfersHTTPAndGRPC(t *testing.T) {
 				t.Fatal("private field disclosed", private)
 			}
 		}
+	}
+	httpClient, err := khttp.NewClient(ctx, khttp.WithEndpoint("http://"+addresses[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer httpClient.Close()
+	clientHeaders := http.Header{transport.IdentityHeader: []string{target}}
+	typedPage, err := pb.NewApplicationAdminTransferServiceHTTPClient(httpClient).ListIncomingApplicationAdminTransfers(ctx, &pb.ListIncomingApplicationAdminTransfersRequest{Query: &pb.IncomingApplicationAdminTransferQuery{}}, khttp.Header(&clientHeaders))
+	if err != nil || len(typedPage.GetItems()) != 1 || typedPage.Items[0].GetTransferId() != submitted.GetTransfer().GetTransferId() || clientHeaders.Get("Cache-Control") != "private, no-store" {
+		t.Fatal("generated HTTP client/default query", err)
 	}
 	if auth.calls.Load() != authReads {
 		t.Fatal("incoming read called Auth")
