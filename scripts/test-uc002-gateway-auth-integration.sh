@@ -5,10 +5,12 @@ integration_init
 script_management=false
 local_images=false
 incoming_transfers=false
+platform_applications=false
 case "${1:-}" in
   "") ;;
   --script-management) script_management=true; local_images=true ;;
   --incoming-transfers) incoming_transfers=true; local_images=true ;;
+  --platform-applications) platform_applications=true; local_images=true ;;
   *) echo "Unknown integration mode" >&2; exit 2 ;;
 esac
 if [[ "${local_images}" == true ]]; then
@@ -131,6 +133,7 @@ docker run --detach --name "${auth_container_name}" --network host --user "$(id 
  --env AUTH_PROFILE_CATALOG_FILE=/run/iwut-uc002/profile-catalog.json --env AUTH_USER_IDENTITY_ISSUER=https://auth.e2e.test \
  --env 'AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON={"uc002-auth":"/run/iwut-uc002/auth-identity.pub.pem"}' \
  --env AUTH_USER_IDENTITY_SIGNING_KID=uc002-auth --env "AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64=$(base64 -w0 < "${temporary_dir}/auth-identity.pem")" \
+ --env "AUTH_APPLICATION_OPERATIONS_PERMISSION_ENDPOINTS_ENABLED=${platform_applications}" \
  --env "AUTH_SCRIPT_MAINTAINER_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
  --env "AUTH_SCRIPT_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
  --env AUTH_CENTER_OAUTH_CONFIG_FILE=/run/iwut-uc002/oauth.json "${auth_image_id}" >/dev/null
@@ -146,7 +149,7 @@ export GATEWAY_PUBLIC_API_HOST=api.uc002.test GATEWAY_DEVELOPER_CONSOLE_HOST=dev
 export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth
 if [[ "${local_images}" == true ]]; then
   export GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL="http://${UC041_ADMIN_FORWARD_AUTH_ADDR}/internal/forward-auth"
-  if [[ "${incoming_transfers}" == true ]]; then export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL="${GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL}"; fi
+  if [[ "${incoming_transfers}" == true || "${platform_applications}" == true ]]; then export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL="${GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL}"; fi
   gateway_image_id="$(docker image inspect --format '{{.Id}}' "${GATEWAY_LOCAL_IMAGE}")"
   app_image_id="$(docker image inspect --format '{{.Id}}' "${APP_CENTER_LOCAL_IMAGE}")"
   printf 'App %s\nGateway %s\nAuth %s\n' "${app_image_id}" "${gateway_image_id}" "${auth_image_id}" \
@@ -167,6 +170,7 @@ if [[ "${local_images}" == true ]]; then
 
   export UC041_APP_DATABASE=iwut_app_uc041
   if [[ "${incoming_transfers}" == true ]]; then export UC050_LOCAL_IMAGES=1 UC050_APP_DATABASE=iwut_app_uc050; UC041_APP_DATABASE="${UC050_APP_DATABASE}"; fi
+  if [[ "${platform_applications}" == true ]]; then export UC051_LOCAL_IMAGES=1 UC051_APP_DATABASE=iwut_app_uc051; UC041_APP_DATABASE="${UC051_APP_DATABASE}"; fi
   auth_public="$(base64 -w0 < "${temporary_dir}/auth-service.pub.pem")"
   app_callers="$(printf '{"iwut-auth-center":{"status":"ACTIVE","keys":{"uc002-auth-service":{"publicKeyPemB64":"%s"}},"permissions":["app.oauth.client.read"]}}' "${auth_public}" | base64 -w0)"
   app_mongo=(--env "APP_CENTER_MONGO_URI=${MONGODB_INTEGRATION_URI}" --env "APP_CENTER_MONGO_DATABASE=${UC041_APP_DATABASE}")
@@ -178,6 +182,7 @@ if [[ "${local_images}" == true ]]; then
     --env APP_CENTER_IDENTITY_PUBLIC_KEYS=uc002-auth=/run/auth-identity.pem \
     --env "APP_CENTER_AUTH_SCOPE_CATALOG_GRPC_TARGET=${AUTH_CENTER_INTEGRATION_TARGET}" \
     --env APP_CENTER_SERVICE_IDENTITY_ID --env APP_CENTER_SERVICE_IDENTITY_KID --env APP_CENTER_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64 \
+    --env "APP_CENTER_APPLICATION_OPERATIONS_ENABLED=${platform_applications}" \
     --env "APP_CENTER_SERVICE_CALLERS_B64=${app_callers}" "${app_image_id}" >/dev/null
 else
   "${temporary_dir}/gateway-config" --render --routes "${GATEWAY_ROUTES_FILE}" --traefik "${temporary_dir}/dynamic.yaml"
@@ -201,7 +206,9 @@ for port in map(int,sys.argv[1:-1]):
 PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
-if [[ "${incoming_transfers}" == true ]]; then
+if [[ "${platform_applications}" == true ]]; then
+  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP051_PlatformApplicationsLocalImages$' ./cmd/app-center
+elif [[ "${incoming_transfers}" == true ]]; then
   go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP050_IncomingTransfersLocalImages$' ./cmd/app-center
 elif [[ "${script_management}" == true ]]; then
   go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages$' ./cmd/app-center

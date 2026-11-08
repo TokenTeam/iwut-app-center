@@ -31,6 +31,7 @@ import (
 	filterv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_filter"
 	applicationmanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_management"
 	applicationoperationsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_operations"
+	platformqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_platform_query"
 	profilereviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review"
 	applicationprofilereviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_review_query"
 	profilev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_profile_revision"
@@ -233,8 +234,8 @@ func NewServersWithRuntimeResolutionAndOAuthProvider(
 	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, runtimeResolutionService, filterService, serviceVerifier, oauthProviderService)
 }
 
-func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, testerManagementService *ApplicationTesterManagementService, testCatalogService *TestApplicationCatalogService, scripts *ScriptManagementService, scriptQueries *ScriptQueryService, scriptDistribution *ScriptDistributionService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
-	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, testerManagementService, testCatalogService, scripts, scriptQueries, scriptDistribution, serviceVerifier, oauthProviderService)
+func NewServersWithApplicationCatalogAndOAuthProvider(config ServerConfig, verifier *IdentityVerifier, service *ApplicationService, versionService *ApplicationVersionService, reviewService *ApplicationReviewService, reviewQueryService *ApplicationReviewQueryService, publicationService *ApplicationPublicationService, testerJoinLinkService *TesterJoinLinkService, testerMembershipService *TesterMembershipService, catalogService *CatalogService, runtimeResolutionService *RuntimeResolutionService, applicationCatalogService *ApplicationCatalogService, managementService *ApplicationManagementQueryService, profileService *ApplicationProfileRevisionService, profileReviewService *ApplicationProfileReviewService, profileReviewQueryService *ApplicationProfileReviewQueryService, oauthClientService *OAuthClientService, filterService *ApplicationFilterService, transferService *ApplicationAdminTransferService, closureService *ApplicationClosureService, operationsService *ApplicationOperationsService, archivalService *ApplicationArchivalService, testerManagementService *ApplicationTesterManagementService, testCatalogService *TestApplicationCatalogService, scripts *ScriptManagementService, scriptQueries *ScriptQueryService, scriptDistribution *ScriptDistributionService, platformQueries *ApplicationPlatformQueryService, serviceVerifier *ServiceIdentityVerifier, oauthProviderService *OAuthClientProviderService) (*Servers, error) {
+	return NewServers(config, verifier, service, versionService, reviewService, publicationService, testerJoinLinkService, testerMembershipService, catalogService, profileService, profileReviewService, oauthClientService, reviewQueryService, profileReviewQueryService, runtimeResolutionService, applicationCatalogService, managementService, filterService, transferService, closureService, operationsService, archivalService, testerManagementService, testCatalogService, scripts, scriptQueries, scriptDistribution, platformQueries, serviceVerifier, oauthProviderService)
 }
 
 func NewServers(
@@ -303,8 +304,14 @@ func NewServers(
 	var scripts *ScriptManagementService
 	var scriptQueries *ScriptQueryService
 	var scriptDistribution *ScriptDistributionService
+	var platformQueries *ApplicationPlatformQueryService
 	for _, runtime := range providerRuntime {
 		switch value := runtime.(type) {
+		case *ApplicationPlatformQueryService:
+			if value == nil || platformQueries != nil {
+				return nil, errors.New("transport servers: platform application query service is invalid")
+			}
+			platformQueries = value
 		case *ScriptDistributionService:
 			if value == nil || scriptDistribution != nil {
 				return nil, errors.New("transport servers: script distribution service is invalid")
@@ -410,6 +417,9 @@ func NewServers(
 		})
 	}
 	filters := []khttp.FilterFunc{testerMembershipCredentialFilter(verifier)}
+	if platformQueries != nil {
+		filters = append(filters, platformApplicationHTTPFilter(verifier))
+	}
 	if transferService != nil {
 		filters = append(filters, incomingTransferHTTPFilter(verifier))
 	}
@@ -469,6 +479,9 @@ func NewServers(
 	testerjoinlinkv1.RegisterTesterJoinLinkHTTPServer(httpServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationHTTPServer(httpServer, publicationService)
 	applicationv1.RegisterApplicationHTTPServer(httpServer, service)
+	if platformQueries != nil {
+		platformqueryv1.RegisterApplicationPlatformQueryServiceHTTPServer(httpServer, platformQueries)
+	}
 	applicationversionv1.RegisterApplicationVersionHTTPServer(httpServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewHTTPServer(httpServer, reviewService)
 	if reviewQueryService != nil {
@@ -525,6 +538,9 @@ func NewServers(
 	testerjoinlinkv1.RegisterTesterJoinLinkServer(grpcServer, testerJoinLinkService)
 	publicationv1.RegisterApplicationPublicationServer(grpcServer, publicationService)
 	applicationv1.RegisterApplicationServer(grpcServer, service)
+	if platformQueries != nil {
+		platformqueryv1.RegisterApplicationPlatformQueryServiceServer(grpcServer, platformQueries)
+	}
 	applicationversionv1.RegisterApplicationVersionServer(grpcServer, versionService)
 	applicationreviewv1.RegisterApplicationReviewServer(grpcServer, reviewService)
 	if reviewQueryService != nil {
@@ -589,6 +605,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 	case *runtimev1.LaunchTargetDescriptor:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationcatalogv1.PublicApplicationCatalogPage, *applicationcatalogv1.PublicApplicationCatalogItem:
+		w.Header().Set("Cache-Control", "private, no-store")
+	case *platformqueryv1.PlatformApplicationPage, *platformqueryv1.PlatformApplicationSummary:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationadmintransferv1.IncomingApplicationAdminTransferPage:
 		w.Header().Set("Cache-Control", "private, no-store")
@@ -685,6 +703,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if platformApplicationHTTPOperation(r) != "" {
+		platformApplicationHTTPError(w, r, err)
+		return
+	}
 	if r.URL.Path == incomingTransferPath {
 		incomingTransferHTTPError(w, r, err)
 		return

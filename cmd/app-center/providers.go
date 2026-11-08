@@ -235,3 +235,7 @@ func provideProfileManagementCursorKey(configuration config.Config) (mongo.Profi
 func provideIncomingTransferCursorKey(configuration config.Config) (mongo.IncomingTransferCursorKey, error) {
 	return mongo.DeriveIncomingTransferCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
 }
+
+func providePlatformApplicationCursorKey(configuration config.Config) (mongo.PlatformApplicationCursorKey, error) {
+	return mongo.DerivePlatformApplicationCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
+}
