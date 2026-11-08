@@ -305,6 +305,7 @@ func TestMigratorIntegration_IsIdempotentAndCreatesNamedSchema(t *testing.T) {
 	assertCollectionCount(t, database, migrationLedgerCollectionName, len(expectedIntegrationMigrationIDs()))
 	assertIndexNames(t, database.Collection(applicationsCollectionName), []string{
 		"_id_", applicationIDUniqueIndexName, applicationAdminNameUniqueIndexName, applicationManagementIndexName,
+		platformApplicationQueryIndexName, platformApplicationAdminQueryIndexName,
 	})
 	assertIndexNames(t, database.Collection(applicationTesterMembershipsCollectionName), []string{
 		"_id_", testerMembershipIDUniqueIndexName, testerMembershipActiveUniqueIndexName, testerMembershipApplicationAuditIndexName, testerMembershipUserAuditIndexName,
