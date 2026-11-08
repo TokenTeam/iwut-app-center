@@ -225,7 +225,16 @@ func wireAppWithResolver(configuration config.Config, resolver preflight.Resolve
 	}
 	applicationAdminTransferUUIDv7Generator := generator.NewApplicationAdminTransferUUIDv7Generator()
 	applicationAdminTransferHandlers := usecase.NewApplicationAdminTransferHandlers(applicationAdminTransferRepository, grpcDeveloperLifecycleDirectory, applicationAdminTransferUUIDv7Generator, systemClock)
-	applicationAdminTransferService := transport.NewApplicationAdminTransferService(applicationAdminTransferHandlers)
+	incomingTransferCursorKey, err := provideIncomingTransferCursorKey(configuration)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	incomingApplicationAdminTransferRepository := mongo.NewIncomingApplicationAdminTransferRepository(database, incomingTransferCursorKey)
+	incomingApplicationAdminTransfers := usecase.NewIncomingApplicationAdminTransfers(incomingApplicationAdminTransferRepository, systemClock)
+	applicationAdminTransferService := transport.NewApplicationAdminTransferService(applicationAdminTransferHandlers, incomingApplicationAdminTransfers)
 	applicationClosureRepository := mongo.NewApplicationClosureRepository(database)
 	applicationClosureUUIDv7Generator := generator.NewApplicationClosureUUIDv7Generator()
 	applicationClosureHandlers := usecase.NewApplicationClosureHandlers(applicationClosureRepository, grpcDeveloperLifecycleDirectory, applicationClosureUUIDv7Generator, systemClock)

@@ -231,3 +231,7 @@ func provideTesterJoinURLPrefix(configuration config.Config) string {
 func provideProfileManagementCursorKey(configuration config.Config) (mongo.ProfileManagementCursorKey, error) {
 	return mongo.DeriveProfileManagementCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
 }
+
+func provideIncomingTransferCursorKey(configuration config.Config) (mongo.IncomingTransferCursorKey, error) {
+	return mongo.DeriveIncomingTransferCursorKey(configuration.ServiceIdentityPrivateKeyPEM)
+}

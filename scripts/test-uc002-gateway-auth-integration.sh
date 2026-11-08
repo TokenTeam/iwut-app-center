@@ -3,12 +3,15 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/integration-lib.sh"
 integration_init
 script_management=false
+local_images=false
+incoming_transfers=false
 case "${1:-}" in
   "") ;;
-  --script-management) script_management=true ;;
+  --script-management) script_management=true; local_images=true ;;
+  --incoming-transfers) incoming_transfers=true; local_images=true ;;
   *) echo "Unknown integration mode" >&2; exit 2 ;;
 esac
-if [[ "${script_management}" == true ]]; then
+if [[ "${local_images}" == true ]]; then
   : "${AUTH_CENTER_IMAGE:?set the locally built Auth image}"
   : "${GATEWAY_LOCAL_IMAGE:?set the locally built Gateway image}"
   : "${APP_CENTER_LOCAL_IMAGE:?set the locally built App image}"
@@ -23,14 +26,14 @@ gateway_api_head="$(git -C "${gateway_source}" rev-parse "${gateway_head}:api")"
 mkdir -p "${temporary_dir}/gateway-source/api"
 git -C "${gateway_source}" archive "${gateway_head}" | tar -x -C "${temporary_dir}/gateway-source"
 git -C "${gateway_source}/api" archive "${gateway_api_head}" | tar -x -C "${temporary_dir}/gateway-source/api"
-if [[ "${script_management}" == false ]]; then
+if [[ "${local_images}" == false ]]; then
   (cd "${temporary_dir}/gateway-source" && go build -o "${temporary_dir}/gateway" ./cmd/gateway && go build -o "${temporary_dir}/gateway-config" ./cmd/gateway-config)
 fi
 echo "Gateway source: ${gateway_head}; API: ${gateway_api_head}"
 printf '%s\n' "${gateway_head}" "${gateway_api_head}" >"${integration_log_dir}/gateway-inputs.txt"
 
 auth_image="${AUTH_CENTER_IMAGE:-docker.cnb.cool/tokenteam/iwut-auth-center:latest}"
-if [[ "${script_management}" == false ]]; then timeout 300s docker pull "${auth_image}"; fi
+if [[ "${local_images}" == false ]]; then timeout 300s docker pull "${auth_image}"; fi
 auth_image_id="$(docker image inspect --format '{{.Id}}' "${auth_image}")"
 echo "Auth Center image: ${auth_image} (${auth_image_id})"
 traefik_image="$(sed -n 's/^image=//p' "${temporary_dir}/gateway-source/deploy/traefik/image.lock")"
@@ -44,7 +47,7 @@ cleanup_uc002() {
   local code=$?
   set +e
   if [[ -n "${gateway_pid}" ]]; then kill "${gateway_pid}" 2>/dev/null; wait "${gateway_pid}" 2>/dev/null; fi
-  if [[ "${script_management}" == true ]]; then
+  if [[ "${local_images}" == true ]]; then
     timeout 10s docker logs "${app_container_name}" >"${integration_log_dir}/app.log" 2>&1
     timeout 10s docker logs "${gateway_container_name}" >"${integration_log_dir}/gateway.log" 2>&1
     timeout 15s docker rm -f "${app_container_name}" "${gateway_container_name}" >/dev/null 2>&1
@@ -69,7 +72,7 @@ auth_http="${ports[0]}"; auth_grpc="${ports[1]}"
 export UC002_APP_HTTP_ADDR="127.0.0.1:${ports[2]}" UC002_APP_GRPC_ADDR="127.0.0.1:${ports[3]}"
 gateway_http="${ports[4]}"; gateway_grpc="${ports[5]}"
 export UC002_EDGE_HTTP_ADDR="127.0.0.1:${ports[6]}" UC002_EDGE_GRPC_ADDR="127.0.0.1:${ports[7]}"
-if [[ "${script_management}" == true ]]; then
+if [[ "${local_images}" == true ]]; then
   export UC041_ADMIN_FORWARD_AUTH_ADDR="127.0.0.1:${ports[9]}"
 fi
 for name in app-service gateway-service auth-identity auth-service oidc delegation; do
@@ -141,12 +144,13 @@ export GATEWAY_APP_CENTER_HTTP_URL="http://${UC002_APP_HTTP_ADDR}" GATEWAY_APP_C
 export GATEWAY_INTERNAL_HTTP_URL="http://${GATEWAY_HTTP_ADDR}" GATEWAY_INTERNAL_GRPC_URL="h2c://${GATEWAY_GRPC_ADDR}"
 export GATEWAY_PUBLIC_API_HOST=api.uc002.test GATEWAY_DEVELOPER_CONSOLE_HOST=developer.uc002.test GATEWAY_ADMIN_CONSOLE_HOST=admin.uc002.test
 export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth
-if [[ "${script_management}" == true ]]; then
+if [[ "${local_images}" == true ]]; then
   export GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL="http://${UC041_ADMIN_FORWARD_AUTH_ADDR}/internal/forward-auth"
+  if [[ "${incoming_transfers}" == true ]]; then export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL="${GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL}"; fi
   gateway_image_id="$(docker image inspect --format '{{.Id}}' "${GATEWAY_LOCAL_IMAGE}")"
   app_image_id="$(docker image inspect --format '{{.Id}}' "${APP_CENTER_LOCAL_IMAGE}")"
   printf 'App %s\nGateway %s\nAuth %s\n' "${app_image_id}" "${gateway_image_id}" "${auth_image_id}" \
-    >"${integration_log_dir}/script-management-image-ids.txt"
+    >"${integration_log_dir}/local-image-ids.txt"
   gateway_env=(
     --env GATEWAY_HTTP_ADDR --env GATEWAY_GRPC_ADDR
     --env GATEWAY_SERVICE_IDENTITY_ID --env GATEWAY_SERVICE_IDENTITY_KID --env GATEWAY_SERVICE_IDENTITY_PRIVATE_KEY_PEM_B64
@@ -162,6 +166,7 @@ if [[ "${script_management}" == true ]]; then
   docker run --detach --name "${gateway_container_name}" --network host "${gateway_env[@]}" "${gateway_image_id}" >/dev/null
 
   export UC041_APP_DATABASE=iwut_app_uc041
+  if [[ "${incoming_transfers}" == true ]]; then export UC050_LOCAL_IMAGES=1 UC050_APP_DATABASE=iwut_app_uc050; UC041_APP_DATABASE="${UC050_APP_DATABASE}"; fi
   auth_public="$(base64 -w0 < "${temporary_dir}/auth-service.pub.pem")"
   app_callers="$(printf '{"iwut-auth-center":{"status":"ACTIVE","keys":{"uc002-auth-service":{"publicKeyPemB64":"%s"}},"permissions":["app.oauth.client.read"]}}' "${auth_public}" | base64 -w0)"
   app_mongo=(--env "APP_CENTER_MONGO_URI=${MONGODB_INTEGRATION_URI}" --env "APP_CENTER_MONGO_DATABASE=${UC041_APP_DATABASE}")
@@ -182,7 +187,7 @@ fi
 docker run --detach --name "${traefik_container_name}" --network host --user "$(id -u):$(id -g)" \
  --mount "type=bind,src=${temporary_dir},dst=/run/iwut-uc002,readonly" "${traefik_image}" --configFile=/run/iwut-uc002/traefik.yaml >/dev/null
 listener_ports=("${auth_grpc}" "${gateway_http}" "${ports[6]}")
-if [[ "${script_management}" == true ]]; then listener_ports+=("${ports[2]}" "${ports[3]}" "${ports[7]}"); fi
+if [[ "${local_images}" == true ]]; then listener_ports+=("${ports[2]}" "${ports[3]}" "${ports[7]}"); fi
 python3 - "${listener_ports[@]}" "${startup_timeout}" <<'PY'
 import socket,sys,time
 end=time.monotonic()+int(sys.argv[-1])
@@ -196,7 +201,9 @@ for port in map(int,sys.argv[1:-1]):
 PY
 # This gate has its own disposable Auth/Mongo/Gateway/Traefik inputs; the normal
 # backend tier still runs the unfiltered Mongo/HTTP/gRPC suite first.
-if [[ "${script_management}" == true ]]; then
+if [[ "${incoming_transfers}" == true ]]; then
+  go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP050_IncomingTransfersLocalImages$' ./cmd/app-center
+elif [[ "${script_management}" == true ]]; then
   go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages$' ./cmd/app-center
 else
   go test -v -count=1 -race -timeout=5m -run '^TestE2E_UCAPP00(2GatewayAuthIntegration|3_004_005_BR_VER_010_017_BR_REV_001_020_GatewayAuthIntegration)$' ./cmd/app-center

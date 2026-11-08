@@ -103,6 +103,7 @@ func (migrator *Migrator) Migrate(ctx context.Context) error {
 		{id: scriptDependencyMigrationID, apply: migrator.applyScriptDependencyMigration},
 		{id: scriptDecisionMigrationID, apply: migrator.applyScriptDecisionMigration},
 		{id: scriptPublicationMigrationID, apply: migrator.applyScriptPublicationMigration},
+		{id: incomingTransferMigrationID, apply: migrator.applyIncomingTransferMigration},
 	}
 	for _, migration := range migrations {
 		if err := migrator.applyMigration(ctx, migration.id, migration.apply); err != nil {

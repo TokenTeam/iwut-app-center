@@ -24,10 +24,11 @@ type ApplicationAdminTransferHandlers interface {
 type ApplicationAdminTransferService struct {
 	pb.UnimplementedApplicationAdminTransferServiceServer
 	handlers ApplicationAdminTransferHandlers
+	incoming IncomingApplicationAdminTransfersHandler
 }
 
-func NewApplicationAdminTransferService(handlers ApplicationAdminTransferHandlers) *ApplicationAdminTransferService {
-	return &ApplicationAdminTransferService{handlers: handlers}
+func NewApplicationAdminTransferService(handlers ApplicationAdminTransferHandlers, incoming IncomingApplicationAdminTransfersHandler) *ApplicationAdminTransferService {
+	return &ApplicationAdminTransferService{handlers: handlers, incoming: incoming}
 }
 
 func transferIdentityFromContext(ctx context.Context) (shared.DeveloperIdentity, error) {

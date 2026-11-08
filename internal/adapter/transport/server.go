@@ -410,6 +410,9 @@ func NewServers(
 		})
 	}
 	filters := []khttp.FilterFunc{testerMembershipCredentialFilter(verifier)}
+	if transferService != nil {
+		filters = append(filters, incomingTransferHTTPFilter(verifier))
+	}
 	if scripts != nil {
 		filters = append(filters, scriptManagementHTTPFilter(verifier))
 	}
@@ -587,6 +590,8 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationcatalogv1.PublicApplicationCatalogPage, *applicationcatalogv1.PublicApplicationCatalogItem:
 		w.Header().Set("Cache-Control", "private, no-store")
+	case *applicationadmintransferv1.IncomingApplicationAdminTransferPage:
+		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationmanagementv1.OwnedApplicationPage, *applicationmanagementv1.OwnedApplicationManagementDetail:
 		w.Header().Set("Cache-Control", "private, no-store")
 	case *applicationreviewqueryv1.PendingApplicationVersionReviewPage, *applicationreviewqueryv1.ApplicationVersionReviewDetail:
@@ -680,6 +685,10 @@ func createdResponseEncoder(w http.ResponseWriter, r *http.Request, v any) error
 // HTTP binding failures occur before the service and can include raw JSON
 // values. Never return those parser details on the credential-bearing route.
 func credentialSafeErrorEncoder(w http.ResponseWriter, r *http.Request, err error) {
+	if r.URL.Path == incomingTransferPath {
+		incomingTransferHTTPError(w, r, err)
+		return
+	}
 	if operation, _, _ := scriptDistributionHTTPRoute(r); operation != "" {
 		scriptDistributionHTTPError(w, r, err)
 		return
