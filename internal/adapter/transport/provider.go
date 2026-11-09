@@ -6,6 +6,7 @@ import "github.com/goforj/wire"
 // internally; callers only construct the verifier and the service.
 var ProviderSet = wire.NewSet(
 	NewApplicationPlatformQueryService,
+	NewApplicationManagementActivityService,
 	NewScriptManagementService,
 	NewTestApplicationCatalogService,
 	NewApplicationTesterManagementService,

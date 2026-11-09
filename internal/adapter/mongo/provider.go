@@ -20,6 +20,8 @@ import (
 // validated configuration.
 var ProviderSet = wire.NewSet(
 	NewPlatformApplicationQueryRepository,
+	NewManagementActivityRepository,
+	wire.Bind(new(port.ManagementActivityRepository), new(*ManagementActivityRepository)),
 	wire.Bind(new(port.PlatformApplicationQueryRepository), new(*PlatformApplicationQueryRepository)),
 	NewIncomingApplicationAdminTransferRepository,
 	wire.Bind(new(port.IncomingApplicationAdminTransferRepository), new(*IncomingApplicationAdminTransferRepository)),

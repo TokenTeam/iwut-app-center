@@ -11,7 +11,7 @@ import (
 
 // RequiredMigrationID is the newest migration the running service requires
 // before it will serve traffic. It mirrors the last entry of Migrator.Migrate.
-const RequiredMigrationID = platformApplicationQueryMigrationID
+const RequiredMigrationID = managementActivityMigrationID
 
 // MigrationLedgerCollectionName is the read-only ledger written by Migrator.
 // Startup only reads it; it never creates the collection or an index.
