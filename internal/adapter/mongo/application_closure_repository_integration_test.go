@@ -20,7 +20,14 @@ func TestApplicationClosureRepositoryIntegration_BR_APP_020_028(t *testing.T) {
 	client := integrationClient(t)
 	database := migratedIntegrationDatabase(t, client)
 	ctx := t.Context()
-	now := time.Now().UTC().Truncate(time.Millisecond)
+	now := time.Date(2026, 11, 11, 15, 0, 0, 123456789, time.FixedZone("UTC+08", 8*60*60))
+	wantStartedAt := time.Date(2026, 11, 11, 7, 0, 0, 123000000, time.UTC)
+	assertStartedAt := func(label string, got time.Time) {
+		t.Helper()
+		if !got.Equal(wantStartedAt) || got.Location() != time.UTC {
+			t.Errorf("%s = %s, want %s", label, got.Format(time.RFC3339Nano), wantStartedAt.Format(time.RFC3339Nano))
+		}
+	}
 	application := integrationApplication(t, "auth-close-owner", "close_me")
 	if err := NewApplicationRepository(database).CreateWithinQuota(ctx, application, 10); err != nil {
 		t.Fatal(err)
@@ -52,11 +59,40 @@ func TestApplicationClosureRepositoryIntegration_BR_APP_020_028(t *testing.T) {
 	repository := NewApplicationClosureRepository(database)
 	closureID, _ := applicationdomain.ParseApplicationClosureID("01890f47-0000-7000-8000-000000002702")
 	proof := applicationdomain.ApplicationCloseProof{Subject: application.AdminID(), ApplicationID: application.ID(), JTI: "01890f47-0000-7000-8000-000000002703", AuthTime: now, IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
+	if _, err := repository.Start(ctx, application.ID(), application.AdminID(), 2, 1, proof, closureID, now); !errors.Is(err, applicationdomain.ErrApplicationOwnershipChanged) {
+		t.Fatalf("stale ownership Start() error = %v", err)
+	}
+	if _, err := repository.Start(ctx, application.ID(), application.AdminID(), 1, 2, proof, closureID, now); !errors.Is(err, applicationdomain.ErrApplicationLifecycleChanged) {
+		t.Fatalf("stale lifecycle Start() error = %v", err)
+	}
+	assertQuota(t, database, application.AdminID().String(), 10, 1, 1)
 	closure, err := repository.Start(ctx, application.ID(), application.AdminID(), 1, 1, proof, closureID, now)
 	if err != nil || closure.Status != applicationdomain.ApplicationClosureClosing || closure.LifecycleRevision != 2 {
 		t.Fatalf("Start() = %#v, %v", closure, err)
 	}
+	assertStartedAt("Start closingStartedAt", closure.ClosingStartedAt)
+	readback, err := repository.Get(ctx, application.ID(), application.AdminID())
+	if err != nil || readback.ClosureID != closure.ClosureID || readback.LifecycleRevision != closure.LifecycleRevision {
+		t.Fatalf("Get after Start() = %#v, %v", readback, err)
+	}
+	if !readback.ClosingStartedAt.Equal(closure.ClosingStartedAt) {
+		t.Errorf("Start and Get closingStartedAt differ: %s, %s", closure.ClosingStartedAt.Format(time.RFC3339Nano), readback.ClosingStartedAt.Format(time.RFC3339Nano))
+	}
+	assertStartedAt("Get closingStartedAt", readback.ClosingStartedAt)
 	assertQuota(t, database, application.AdminID().String(), 10, 0, 2)
+	var storedClosure applicationClosureDocument
+	if err := database.Collection(applicationClosuresCollectionName).FindOne(ctx, bson.M{"closureId": closureID.String()}).Decode(&storedClosure); err != nil {
+		t.Fatal(err)
+	}
+	assertStartedAt("stored closingStartedAt", storedClosure.ClosingStartedAt)
+	if storedClosure.NextAttemptAt == nil || !storedClosure.NextAttemptAt.Equal(wantStartedAt.Add(time.Second)) {
+		t.Errorf("nextAttemptAt = %v, want %s", storedClosure.NextAttemptAt, wantStartedAt.Add(time.Second))
+	}
+	var quota applicationCreationQuotaDocument
+	if err := database.Collection(applicationCreationQuotasCollectionName).FindOne(ctx, bson.M{"adminId": application.AdminID().String()}).Decode(&quota); err != nil {
+		t.Fatal(err)
+	}
+	assertStartedAt("quota updatedAt", quota.UpdatedAt)
 
 	var app applicationDocument
 	if err := database.Collection(applicationsCollectionName).FindOne(ctx, bson.M{"id": application.ID().String()}).Decode(&app); err != nil || app.LifecycleStatus != "CLOSING" || app.LifecycleRevision != 2 {
@@ -78,6 +114,10 @@ func TestApplicationClosureRepositoryIntegration_BR_APP_020_028(t *testing.T) {
 	if err := database.Collection(applicationAdminTransfersCollectionName).FindOne(ctx, bson.M{"transferId": transferID.String()}).Decode(&transfer); err != nil || transfer.Status != "CANCELLED" || transfer.ResolutionCause == nil || *transfer.ResolutionCause != "APPLICATION_CLOSURE" {
 		t.Fatalf("transfer = %#v err=%v", transfer, err)
 	}
+	if transfer.ResolvedAt == nil {
+		t.Fatal("cancelled transfer has no resolvedAt")
+	}
+	assertStartedAt("transfer resolvedAt", *transfer.ResolvedAt)
 	transferRepository := NewApplicationAdminTransferRepository(database, transferSecretFactory{}, 10)
 	if _, err = transferRepository.Cancel(ctx, transferID, application.AdminID(), now.Add(time.Second)); !errors.Is(err, applicationdomain.ErrApplicationNotFound) {
 		t.Fatalf("cancel closure-resolved transfer error = %v", err)
@@ -92,10 +132,17 @@ func TestApplicationClosureRepositoryIntegration_BR_APP_020_028(t *testing.T) {
 	if storedLink.Status != "REVOKED" || storedLink.RevocationReason == nil || *storedLink.RevocationReason != "APPLICATION_CLOSURE" {
 		t.Fatalf("link = %#v", storedLink)
 	}
+	if storedLink.RevokedAt == nil {
+		t.Fatal("revoked link has no revokedAt")
+	}
+	assertStartedAt("join link revokedAt", *storedLink.RevokedAt)
 	var registration applicationOAuthRegistrationDocument
 	if err := database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(ctx, bson.M{"applicationId": application.ID().String(), "channel": "TEST"}).Decode(&registration); err != nil || registration.PublicClient.Status != "DISABLED" || registration.PublicClient.AuthorizationEpoch != 2 || registration.ConfidentialClient.Status != "DISABLED" || registration.ConfidentialClient.AuthorizationEpoch != 2 || registration.RegistrationRevision != 3 {
 		t.Fatalf("registration = %#v err=%v", registration, err)
 	}
+	assertStartedAt("OAuth updatedAt", registration.UpdatedAt)
+	assertStartedAt("public client statusUpdatedAt", registration.PublicClient.StatusUpdatedAt)
+	assertStartedAt("confidential client statusUpdatedAt", registration.ConfidentialClient.StatusUpdatedAt)
 	if err := database.Collection(applicationOAuthRegistrationsCollectionName).FindOne(ctx, bson.M{"applicationId": application.ID().String(), "channel": "GREY"}).Decode(&registration); err != nil || registration.PublicClient.Status != "DISABLED" || registration.PublicClient.AuthorizationEpoch != 2 || registration.RegistrationRevision != 2 {
 		t.Fatalf("unchanged disabled registration = %#v err=%v", registration, err)
 	}
@@ -120,18 +167,96 @@ func TestApplicationClosureRepositoryIntegration_BR_APP_020_028(t *testing.T) {
 	if err != nil || retry.ClosureID != closureID {
 		t.Fatalf("idempotent Start() = %#v, %v", retry, err)
 	}
+	assertStartedAt("repeated Start closingStartedAt", retry.ClosingStartedAt)
+	if !retry.ClosingStartedAt.Equal(closure.ClosingStartedAt) || retry.LifecycleRevision != closure.LifecycleRevision {
+		t.Errorf("idempotent Start changed the original result: first=%#v retry=%#v", closure, retry)
+	}
 	freshProof := proof
 	freshProof.JTI = "01890f47-0000-7000-8000-000000002705"
 	if _, err = repository.Start(ctx, application.ID(), application.AdminID(), 1, 2, freshProof, "01890f47-0000-7000-8000-000000002706", now.Add(time.Second)); !errors.Is(err, applicationdomain.ErrApplicationLifecycleChanged) {
 		t.Fatalf("fresh proof against closing application error = %v", err)
 	}
-	appliedAt := now.Add(2 * time.Second)
+	appliedAt := wantStartedAt.Add(2 * time.Second)
 	closed, err := repository.Complete(ctx, closureID, "auth-receipt-2701", appliedAt)
 	if err != nil || closed.Status != applicationdomain.ApplicationClosureClosed || closed.LifecycleRevision != 3 {
 		t.Fatalf("Complete() = %#v, %v", closed, err)
 	}
 	if _, err = repository.Complete(ctx, closureID, "different", appliedAt); err == nil {
 		t.Fatal("mismatched terminal receipt accepted")
+	}
+}
+
+func TestApplicationClosureRepositoryIntegration_BR_APP_026_028_CompleteTimeMatchesReadbackAndRetry(t *testing.T) {
+	database := migratedIntegrationDatabase(t, integrationClient(t))
+	ctx := t.Context()
+	application := integrationApplication(t, "auth-close-applied-time", "close_applied_time")
+	if err := NewApplicationRepository(database).CreateWithinQuota(ctx, application, 10); err != nil {
+		t.Fatal(err)
+	}
+	repository := NewApplicationClosureRepository(database)
+	startedAt := time.Date(2026, 11, 11, 7, 0, 0, 0, time.UTC)
+	closureID := applicationdomain.ApplicationClosureID("01890f47-0000-7000-8000-000000002740")
+	proof := applicationdomain.ApplicationCloseProof{Subject: application.AdminID(), ApplicationID: application.ID(), JTI: "01890f47-0000-7000-8000-000000002741", AuthTime: startedAt, IssuedAt: startedAt, ExpiresAt: startedAt.Add(5 * time.Minute)}
+	if _, err := repository.Start(ctx, application.ID(), application.AdminID(), 1, 1, proof, closureID, startedAt); err != nil {
+		t.Fatal(err)
+	}
+	appliedAt := time.Date(2026, 11, 11, 2, 0, 2, 987654321, time.FixedZone("UTC-05", -5*60*60))
+	wantAppliedAt := time.Date(2026, 11, 11, 7, 0, 2, 987000000, time.UTC)
+	assertClosed := func(label string, closure applicationdomain.ApplicationClosure) {
+		t.Helper()
+		if closure.ClosureID != closureID || closure.Status != applicationdomain.ApplicationClosureClosed || closure.AuthRevocationState != applicationdomain.AuthRevocationApplied || closure.AuthReceiptID != "auth-receipt-2740" || closure.LifecycleRevision != 3 || !closure.ClosingStartedAt.Equal(startedAt) {
+			t.Errorf("%s = %#v", label, closure)
+		}
+		for field, value := range map[string]*time.Time{"authAppliedAt": closure.AuthAppliedAt, "closedAt": closure.ClosedAt} {
+			if value == nil || !value.Equal(wantAppliedAt) || value.Location() != time.UTC {
+				t.Errorf("%s %s = %v, want %s", label, field, value, wantAppliedAt.Format(time.RFC3339Nano))
+			}
+		}
+	}
+	closed, err := repository.Complete(ctx, closureID, "auth-receipt-2740", appliedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertClosed("Complete", closed)
+	readback, err := repository.Get(ctx, application.ID(), application.AdminID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertClosed("Get after Complete", readback)
+	if closed.AuthAppliedAt == nil || readback.AuthAppliedAt == nil || !closed.AuthAppliedAt.Equal(*readback.AuthAppliedAt) || closed.ClosedAt == nil || readback.ClosedAt == nil || !closed.ClosedAt.Equal(*readback.ClosedAt) {
+		t.Errorf("Complete and Get times differ: complete=%#v get=%#v", closed, readback)
+	}
+	repeated, err := repository.Complete(ctx, closureID, "auth-receipt-2740", appliedAt)
+	if err != nil {
+		t.Errorf("repeated identical Auth receipt rejected: %v", err)
+	} else {
+		assertClosed("repeated Complete", repeated)
+	}
+	for _, tc := range []struct {
+		name      string
+		receipt   string
+		appliedAt time.Time
+	}{
+		{"different receipt", "different", appliedAt},
+		{"different time", "auth-receipt-2740", appliedAt.Add(time.Millisecond)},
+		{"missing receipt", "", appliedAt},
+		{"missing time", "auth-receipt-2740", time.Time{}},
+	} {
+		if _, err := repository.Complete(ctx, closureID, tc.receipt, tc.appliedAt); !errors.Is(err, applicationdomain.ErrApplicationClosureStateInconsistent) {
+			t.Errorf("%s Complete() error = %v", tc.name, err)
+		}
+	}
+	final, err := repository.Get(ctx, application.ID(), application.AdminID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertClosed("Get after repeated and invalid receipts", final)
+	var stored applicationClosureDocument
+	if err := database.Collection(applicationClosuresCollectionName).FindOne(ctx, bson.M{"closureId": closureID.String()}).Decode(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.AuthAppliedAt == nil || !stored.AuthAppliedAt.Equal(wantAppliedAt) || stored.ClosedAt == nil || !stored.ClosedAt.Equal(wantAppliedAt) || stored.NextAttemptAt != nil {
+		t.Errorf("stored completion timestamps = %#v", stored)
 	}
 }
 
@@ -170,7 +295,8 @@ func TestApplicationClosureRepositoryIntegration_ConcurrentSameProofIsIdempotent
 	client := integrationClient(t)
 	database := migratedIntegrationDatabase(t, client)
 	ctx := t.Context()
-	now := time.Now().UTC().Truncate(time.Millisecond)
+	now := time.Date(2026, 11, 11, 15, 0, 0, 123456789, time.FixedZone("UTC+08", 8*60*60))
+	wantStartedAt := time.Date(2026, 11, 11, 7, 0, 0, 123000000, time.UTC)
 	application := integrationApplication(t, "auth-close-concurrent", "close_concurrent")
 	if err := NewApplicationRepository(database).CreateWithinQuota(ctx, application, 10); err != nil {
 		t.Fatal(err)
@@ -202,6 +328,9 @@ func TestApplicationClosureRepositoryIntegration_ConcurrentSameProofIsIdempotent
 	for result := range results {
 		if result.err != nil {
 			t.Fatalf("concurrent Start() error = %v", result.err)
+		}
+		if !result.closure.ClosingStartedAt.Equal(wantStartedAt) || result.closure.ClosingStartedAt.Location() != time.UTC {
+			t.Errorf("concurrent Start closingStartedAt = %s, want %s", result.closure.ClosingStartedAt.Format(time.RFC3339Nano), wantStartedAt.Format(time.RFC3339Nano))
 		}
 		if first == "" {
 			first = result.closure.ClosureID

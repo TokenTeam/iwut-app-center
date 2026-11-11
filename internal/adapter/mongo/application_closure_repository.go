@@ -166,6 +166,9 @@ func (r *ApplicationClosureRepository) transaction(ctx context.Context, fn func(
 }
 
 func (r *ApplicationClosureRepository) Start(ctx context.Context, appID shared.ApplicationID, actor shared.AuthID, expectedOwnership, expectedLifecycle int64, proof domain.ApplicationCloseProof, closureID domain.ApplicationClosureID, now time.Time) (domain.ApplicationClosure, error) {
+	// BSON Date persists milliseconds; use one instant for every write and ACK,
+	// including transaction retries and later reads of the same closure.
+	now = time.UnixMilli(now.UnixMilli()).UTC()
 	value, err := r.transaction(ctx, func(tx context.Context) (any, error) {
 		var existing applicationClosureDocument
 		existingErr := r.database.Collection(applicationClosuresCollectionName).FindOne(tx, bson.M{"applicationId": appID.String()}).Decode(&existing)
@@ -390,6 +393,8 @@ func (r *ApplicationClosureRepository) Complete(ctx context.Context, id domain.A
 	if receipt == "" || appliedAt.IsZero() {
 		return domain.ApplicationClosure{}, domain.ErrApplicationClosureStateInconsistent
 	}
+	// Compare repeated receipts at the same precision used to persist them.
+	appliedAt = time.UnixMilli(appliedAt.UnixMilli()).UTC()
 	value, err := r.transaction(ctx, func(tx context.Context) (any, error) {
 		var d applicationClosureDocument
 		if err := r.database.Collection(applicationClosuresCollectionName).FindOne(tx, bson.M{"closureId": id.String()}).Decode(&d); err != nil {
