@@ -13,6 +13,9 @@ import (
 
 func (r *ScriptQueryRepository) GetPublication(ctx context.Context, resourceID domain.ResourceID) (domain.PublicationState, error) {
 	return withScriptTransaction(ctx, r.db, func(tx context.Context) (domain.PublicationState, error) {
+		if _, err := r.visibleResource(tx, resourceID); err != nil {
+			return domain.PublicationState{}, err
+		}
 		state, _, err := NewScriptPublicationRepository(r.db).loadState(tx, resourceID)
 		return state, err
 	})
@@ -26,6 +29,9 @@ func (r *ScriptQueryRepository) ListPublicationHistory(ctx context.Context, scop
 		return empty, err
 	}
 	return withScriptTransaction(ctx, r.db, func(tx context.Context) (port.ScriptPage[port.PublicationHistoryItem], error) {
+		if _, err := r.visibleResource(tx, resourceID); err != nil {
+			return empty, err
+		}
 		publication := NewScriptPublicationRepository(r.db)
 		if _, _, err := publication.loadState(tx, resourceID); err != nil {
 			return empty, err

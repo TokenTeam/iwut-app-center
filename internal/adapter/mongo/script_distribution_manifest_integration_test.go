@@ -60,7 +60,7 @@ func TestScriptDistributionManifestIntegration_UCAPP047_BRSCR019021(t *testing.T
 	// A different published head has different bytes. The application remains
 	// pinned to its approved dependency and cannot request the other version.
 	content, _ := sd.NewContent(sd.JSONFormat, "different opaque head")
-	alternative, err := sd.NewDraft(sd.VersionID(nextIntegrationApplicationID(t)), script.ResourceID, "other-head", content, "other-author", at)
+	alternative, err := sd.NewDraft(sd.VersionID(nextIntegrationApplicationID(t)), script.ResourceID, "other-head", content, script.CreatedBy, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestScriptDistributionManifestIntegration_UCAPP047_BRSCR019021(t *testing.T
 		t.Fatal(err)
 	}
 	reviewID := sd.ReviewID(nextIntegrationApplicationID(t))
-	if _, err := writer.SubmitDraft(t.Context(), sp.SubmitDraft{ResourceID: script.ResourceID, VersionID: alternative.ID, ReviewID: reviewID, ExpectedRevision: 1, Actor: "other-submitter", At: at.Add(time.Second)}); err != nil {
+	if _, err := writer.SubmitDraft(t.Context(), sp.SubmitDraft{ResourceID: script.ResourceID, VersionID: alternative.ID, ReviewID: reviewID, ExpectedRevision: 1, Actor: script.CreatedBy, At: at.Add(time.Second)}); err != nil {
 		t.Fatal(err)
 	}
 	seedTerminalScriptDependency(t, db, string(alternative.ID), string(reviewID), "APPROVED", at.Add(2*time.Second))

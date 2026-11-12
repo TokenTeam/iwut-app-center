@@ -20,7 +20,7 @@ func TestScriptQueryIntegration_UCAPP045_BRSCR014(t *testing.T) {
 	}
 	repo := NewScriptQueryRepository(db, key)
 	ctx := t.Context()
-	maintainer := port.ScriptReadScope{Actor: "maintainer", Maintain: true}
+	owner := port.ScriptReadScope{Actor: draft.CreatedBy, Own: true}
 	reviewer := port.ScriptReadScope{Actor: "reviewer", Review: true}
 	publisher := port.ScriptReadScope{Actor: "publisher", Publish: true}
 	second, err := domain.NewDraft(domain.VersionID(nextIntegrationApplicationID(t)), draft.ResourceID, "release-2", draft.Content, draft.CreatedBy, draft.CreatedAt)
@@ -35,31 +35,31 @@ func TestScriptQueryIntegration_UCAPP045_BRSCR014(t *testing.T) {
 	}
 
 	limit := port.ScriptPageRequest{Limit: 1}
-	first, err := repo.ListVersions(ctx, maintainer, draft.ResourceID, "", limit)
+	first, err := repo.ListVersions(ctx, owner, draft.ResourceID, "", limit)
 	if err != nil || len(first.Items) != 1 || first.NextCursor == "" {
 		t.Fatalf("first version page: %+v %v", first, err)
 	}
 	limit.Cursor = first.NextCursor
-	next, err := repo.ListVersions(ctx, maintainer, draft.ResourceID, "", limit)
+	next, err := repo.ListVersions(ctx, owner, draft.ResourceID, "", limit)
 	if err != nil || len(next.Items) != 1 || next.NextCursor != "" || first.Items[0].ID <= next.Items[0].ID ||
 		!first.Items[0].CreatedAt.Equal(next.Items[0].CreatedAt) {
 		t.Fatalf("second version page: %+v %v", next, err)
 	}
-	changed := maintainer
-	changed.Review = true
+	changed := owner
+	changed.Actor = "another-author"
 	for _, scope := range []port.ScriptReadScope{changed, reviewer} {
 		if _, err := repo.ListVersions(ctx, scope, draft.ResourceID, "", limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
 			t.Fatal("cursor accepted for a different read scope", err)
 		}
 	}
-	if _, err := repo.ListVersions(ctx, maintainer, draft.ResourceID, domain.VersionDraft, limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
+	if _, err := repo.ListVersions(ctx, owner, draft.ResourceID, domain.VersionDraft, limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
 		t.Fatal("cursor accepted for another filter", err)
 	}
-	if _, err := repo.ListResources(ctx, maintainer, limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
+	if _, err := repo.ListResources(ctx, owner, limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
 		t.Fatal("cursor accepted for another list", err)
 	}
 	limit.Cursor += "a"
-	if _, err := repo.ListVersions(ctx, maintainer, draft.ResourceID, "", limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
+	if _, err := repo.ListVersions(ctx, owner, draft.ResourceID, "", limit); !errors.Is(err, port.ErrInvalidScriptCursor) {
 		t.Fatal("tampered cursor accepted", err)
 	}
 	if _, err := repo.GetVersion(ctx, reviewer, draft.ResourceID, second.ID); !errors.Is(err, domain.ErrVersionNotFound) {

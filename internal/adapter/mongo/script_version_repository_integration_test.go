@@ -11,7 +11,6 @@ import (
 
 	"iwut-app-center/internal/script/domain"
 	"iwut-app-center/internal/script/port"
-	"iwut-app-center/internal/shared"
 )
 
 func TestScriptVersionRepositoryIntegration_UCAPP042_BRSCR004006(t *testing.T) {
@@ -28,7 +27,7 @@ func TestScriptVersionRepositoryIntegration_UCAPP042_BRSCR004006(t *testing.T) {
 	secondResource := domain.ResourceID(nextIntegrationApplicationID(t))
 	metadata := domain.Metadata{Name: "Crawler", Purpose: "Description"}
 	for _, id := range []domain.ResourceID{firstResource, secondResource} {
-		resource, err := domain.NewResource(id, metadata, "resource-creator", at)
+		resource, err := domain.NewResource(id, metadata, "creator", at)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,7 +102,7 @@ func TestScriptVersionRepositoryIntegration_UCAPP042_BRSCR004006(t *testing.T) {
 
 	cmd := port.ReplaceDraft{
 		ResourceID: firstResource, VersionID: created.ID, ExpectedRevision: 1,
-		Content: content, Actor: "no-op-editor", At: at.Add(time.Second),
+		Content: content, Actor: "creator", At: at.Add(time.Second),
 	}
 	if noop, err := versions.ReplaceDraft(t.Context(), cmd); err != nil || !reflect.DeepEqual(noop, created) {
 		t.Fatalf("no-op altered draft or contributors: %v", err)
@@ -115,17 +114,15 @@ func TestScriptVersionRepositoryIntegration_UCAPP042_BRSCR004006(t *testing.T) {
 		t.Fatalf("wrong resource did not hide version: %v", err)
 	}
 	edits := []string{"{\"a\":1,\"b\":2}", "{\"b\":2,\"a\":1}"}
-	editors := []shared.AuthID{"editor-a", "editor-b"}
 	runRace(func(index int) error {
 		edit := cmd
 		edit.Content, _ = domain.NewContent(domain.JSONFormat, edits[index])
-		edit.Actor = editors[index]
 		_, err := versions.ReplaceDraft(t.Context(), edit)
 		return err
 	}, domain.ErrRevisionConflict)
 	winner, err := versions.loadVersion(t.Context(), firstResource, created.ID)
-	if err != nil || winner.Revision != 2 || len(winner.Contributors) != 2 ||
-		winner.Contributors[0] != "creator" || winner.Contributors[1] != winner.UpdatedBy || winner.Validate() != nil {
+	if err != nil || winner.Revision != 2 || len(winner.Contributors) != 1 ||
+		winner.Contributors[0] != "creator" || winner.Contributors[0] != winner.UpdatedBy || winner.Validate() != nil {
 		t.Fatalf("replacement snapshot is inconsistent: %v", err)
 	}
 	var audit scriptVersionAuditDocument

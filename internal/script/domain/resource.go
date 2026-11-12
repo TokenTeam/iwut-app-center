@@ -10,18 +10,16 @@ import (
 	"iwut-app-center/internal/shared"
 )
 
-const MaintainPermission = "app.script.maintain"
-
 var (
-	ErrIdentityRequired  = errors.New("user identity required")
-	ErrMaintainForbidden = errors.New("script maintenance permission required")
-	ErrInvalidResourceID = errors.New("invalid script resource id")
-	ErrInvalidName       = errors.New("invalid script resource name")
-	ErrInvalidPurpose    = errors.New("invalid script resource purpose")
-	ErrInvalidRevision   = errors.New("invalid script resource revision")
-	ErrNotFound          = errors.New("script resource not found")
-	ErrRevisionConflict  = errors.New("script resource revision conflict")
-	ErrInternal          = errors.New("script resource operation failed")
+	ErrIdentityRequired          = errors.New("user identity required")
+	ErrDeveloperApprovalRequired = errors.New("approved developer required for script authoring")
+	ErrInvalidResourceID         = errors.New("invalid script resource id")
+	ErrInvalidName               = errors.New("invalid script resource name")
+	ErrInvalidPurpose            = errors.New("invalid script resource purpose")
+	ErrInvalidRevision           = errors.New("invalid script resource revision")
+	ErrNotFound                  = errors.New("script resource not found")
+	ErrRevisionConflict          = errors.New("script resource revision conflict")
+	ErrInternal                  = errors.New("script resource operation failed")
 )
 
 type ResourceID string
@@ -54,19 +52,20 @@ func validText(value string, max int) bool {
 }
 
 type Resource struct {
-	ID        ResourceID
-	Metadata  Metadata
-	Revision  int64
-	CreatedBy shared.AuthID
-	CreatedAt time.Time
-	UpdatedBy shared.AuthID
-	UpdatedAt time.Time
+	ID          ResourceID
+	Metadata    Metadata
+	Revision    int64
+	OwnerAuthID shared.AuthID
+	CreatedBy   shared.AuthID
+	CreatedAt   time.Time
+	UpdatedBy   shared.AuthID
+	UpdatedAt   time.Time
 }
 
 func NewResource(id ResourceID, metadata Metadata, actor shared.AuthID, at time.Time) (Resource, error) {
 	resource := Resource{
 		ID: id, Metadata: metadata, Revision: 1,
-		CreatedBy: actor, CreatedAt: at.UTC(), UpdatedBy: actor, UpdatedAt: at.UTC(),
+		OwnerAuthID: actor, CreatedBy: actor, CreatedAt: at.UTC(), UpdatedBy: actor, UpdatedAt: at.UTC(),
 	}
 	return resource, resource.Validate()
 }
@@ -75,7 +74,7 @@ func (r Resource) Validate() error {
 	id, idErr := ParseResourceID(string(r.ID))
 	metadata, metadataErr := NewMetadata(r.Metadata.Name, r.Metadata.Purpose)
 	if idErr != nil || id != r.ID || metadataErr != nil || metadata != r.Metadata ||
-		r.Revision < 1 || !r.CreatedBy.IsValid() || !r.UpdatedBy.IsValid() ||
+		r.Revision < 1 || !r.OwnerAuthID.IsValid() || r.CreatedBy != r.OwnerAuthID || r.UpdatedBy != r.OwnerAuthID ||
 		!validTime(r.CreatedAt) || !validTime(r.UpdatedAt) || r.UpdatedAt.Before(r.CreatedAt) ||
 		(r.Revision == 1 && (r.CreatedBy != r.UpdatedBy || !r.CreatedAt.Equal(r.UpdatedAt))) {
 		return ErrInternal
@@ -90,6 +89,9 @@ func validTime(at time.Time) bool {
 func (r Resource) Replace(expectedRevision int64, metadata Metadata, actor shared.AuthID, at time.Time) (Resource, bool, error) {
 	if err := r.Validate(); err != nil {
 		return Resource{}, false, err
+	}
+	if r.OwnerAuthID != actor {
+		return Resource{}, false, ErrNotFound
 	}
 	if expectedRevision < 1 {
 		return Resource{}, false, ErrInvalidRevision

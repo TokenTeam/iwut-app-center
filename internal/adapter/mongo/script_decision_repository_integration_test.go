@@ -33,7 +33,7 @@ func TestScriptDecisionIntegration_UCAPP044_BRSCR010011012(t *testing.T) {
 		t.Fatal(err)
 	}
 	approve := scriptDecisionCommand(t, draft, submission, "APPROVE")
-	for _, actor := range []string{"author", "submitter"} {
+	for _, actor := range []string{draft.CreatedBy.String()} {
 		input := approve
 		input.Actor = shared.AuthID(actor)
 		if _, err := repo.DecideReview(t.Context(), input); !errors.Is(err, domain.ErrReviewConflict) {

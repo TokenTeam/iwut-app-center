@@ -36,7 +36,7 @@ func NewDraftHandlers(ids port.VersionIDGenerator, clock port.Clock, repo port.D
 }
 
 func (h *DraftHandlers) Create(ctx context.Context, identity shared.TrustedIdentity, cmd CreateDraftCommand) (domain.Version, error) {
-	if err := RequireMaintainer(identity); err != nil {
+	if err := RequireScriptAuthor(identity); err != nil {
 		return domain.Version{}, err
 	}
 	resourceID, err := domain.ParseResourceID(cmd.ResourceID)
@@ -66,7 +66,7 @@ func (h *DraftHandlers) Create(ctx context.Context, identity shared.TrustedIdent
 }
 
 func (h *DraftHandlers) Replace(ctx context.Context, identity shared.TrustedIdentity, cmd ReplaceDraftCommand) (domain.Version, error) {
-	if err := RequireMaintainer(identity); err != nil {
+	if err := RequireScriptAuthor(identity); err != nil {
 		return domain.Version{}, err
 	}
 	resourceID, err := domain.ParseResourceID(cmd.ResourceID)
@@ -95,7 +95,7 @@ func (h *DraftHandlers) Replace(ctx context.Context, identity shared.TrustedIden
 }
 
 func draftWriteError(err error) error {
-	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrVersionNotFound) ||
+	if errors.Is(err, shared.ErrAccountExitBlocked) || errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrVersionNotFound) ||
 		errors.Is(err, domain.ErrRevisionConflict) || errors.Is(err, domain.ErrVersionLabelConflict) ||
 		errors.Is(err, domain.ErrVersionNotDraft) {
 		return err

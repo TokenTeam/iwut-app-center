@@ -107,13 +107,16 @@ func toScriptReviewDocument(r domain.Review) scriptReviewDocument {
 func (r *ScriptVersionRepository) SubmitDraft(ctx context.Context, cmd port.SubmitDraft) (domain.Submission, error) {
 	at := cmd.At.UTC().Truncate(time.Millisecond)
 	return withScriptTransaction(ctx, r.database, func(tx context.Context) (domain.Submission, error) {
-		resource, err := loadScriptResource(tx, r.database, cmd.ResourceID)
+		resource, err := requireScriptOwnerWritable(tx, r.database, cmd.ResourceID, cmd.Actor)
 		if err != nil {
 			return domain.Submission{}, err
 		}
 		current, err := r.loadVersion(tx, cmd.ResourceID, cmd.VersionID)
 		if err != nil {
 			return domain.Submission{}, err
+		}
+		if !current.AuthoredBy(resource.OwnerAuthID) {
+			return domain.Submission{}, domain.ErrInternal
 		}
 		if err := current.CheckDraftRevision(cmd.ExpectedRevision); err != nil {
 			return domain.Submission{}, err

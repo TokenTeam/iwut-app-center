@@ -30,7 +30,7 @@ func (r *publicationRepositoryStub) ApplyPublication(_ context.Context, command 
 
 func TestBRSCR002018PublicationRequiresIndependentPermissionBeforeLookup(t *testing.T) {
 	for _, action := range []string{domain.PublishScript, domain.ClearScriptHead, domain.SuspendScript, domain.RestoreScript} {
-		for _, permission := range []string{domain.MaintainPermission, "app.script.review", "app.script.publish", "app.script.suspend", "app.script.restore", "app.version.review", "auth.platform-admin.manage"} {
+		for _, permission := range []string{"app.script.review", "app.script.publish", "app.script.suspend", "app.script.restore", "app.version.review", "auth.platform-admin.manage"} {
 			identity := shared.TrustedIdentity{AuthID: "actor", Permissions: []string{permission}}
 			err := RequirePublicationPermission(identity, action)
 			if (err == nil) != (permission == domain.PublicationPermission(action)) {
@@ -40,7 +40,7 @@ func TestBRSCR002018PublicationRequiresIndependentPermissionBeforeLookup(t *test
 	}
 	repo := &publicationRepositoryStub{}
 	handler := NewPublicationHandler(publicationIDStub{}, resourceClock(time.Now()), repo)
-	if _, err := handler.Apply(t.Context(), shared.TrustedIdentity{AuthID: "actor", Permissions: []string{domain.MaintainPermission}}, PublicationCommand{ResourceID: "invalid", Action: domain.PublishScript}); !errors.Is(err, domain.ErrPublicationForbidden) || repo.calls != 0 {
+	if _, err := handler.Apply(t.Context(), shared.TrustedIdentity{AuthID: "actor", DeveloperStatus: shared.DeveloperStatusApproved}, PublicationCommand{ResourceID: "invalid", Action: domain.PublishScript}); !errors.Is(err, domain.ErrPublicationForbidden) || repo.calls != 0 {
 		t.Fatal("looked up unauthorized target", err)
 	}
 	if err := RequirePublicationPermission(shared.TrustedIdentity{Permissions: []string{"app.script.publish"}}, domain.PublishScript); !errors.Is(err, domain.ErrIdentityRequired) {

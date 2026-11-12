@@ -13,14 +13,15 @@ import (
 	"testing"
 	"time"
 
+	authoringv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_authoring"
 	distributionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_distribution"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
-	permissionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/script_maintainer_permission"
 	permissionsv1 "github.com/TokenTeam/iwut-api-proto/gen/go/auth_center/v1/script_permission"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"google.golang.org/grpc"
@@ -41,7 +42,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	manager := registerAuthFixture(t, ctx)
-	maintainer := registerAuthFixture(t, ctx)
+	author := registerAuthFixture(t, ctx)
 	reviewer := registerAuthFixture(t, ctx)
 
 	output, err := exec.CommandContext(ctx, "docker", "exec", os.Getenv("UC002_AUTH_CONTAINER_NAME"),
@@ -65,7 +66,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	}
 	forwardAuth := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("iwut_uc041_fixture")
-		if r.URL.Path != "/internal/forward-auth" || err != nil || (cookie.Value != manager.session && cookie.Value != maintainer.session && cookie.Value != reviewer.session) {
+		if r.URL.Path != "/internal/forward-auth" || err != nil || (cookie.Value != manager.session && cookie.Value != author.session && cookie.Value != reviewer.session) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -145,39 +146,37 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 		t.Fatal(err)
 	}
 	defer edge.Close()
-	managerRPC := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", manager.session))
-	maintainerRPC := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", maintainer.session))
+	authorRPC := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-iwut-session", author.session))
 
 	const adminHost = "admin.uc002.test"
+	const developerHost = "developer.uc002.test"
 	const appResources = "/app-center/v1/script-resources"
+	const authorResources = "/app-center/v1/users/me/script-resources"
 	create := &resourcev1.CreateScriptResourceRequest{Name: "Crawler", Purpose: "Controlled fixture"}
-	for _, session := range []string{maintainer.session, manager.session} {
-		httpCall(adminHost, http.MethodPost, appResources, session, create, nil, http.StatusForbidden)
+	httpCall(developerHost, http.MethodPost, authorResources, author.session, create, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodPost, appResources, manager.session, create, nil, http.StatusNotFound)
+	authClient, err := mongo.Connect(options.Client().ApplyURI(os.Getenv(mongoIntegrationURIEnv)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	var before permissionv1.ScriptMaintainerPermission
-	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-maintainer-permissions:get", manager.session,
-		&permissionv1.GetScriptMaintainerPermissionRequest{SubjectAuthId: maintainer.authID}, &before, http.StatusOK)
-	if before.GetGranted() || before.GetEffective() || before.GetPermissionRevision() < 1 {
-		t.Fatal("maintainer permission should start absent")
+	defer authClient.Disconnect(context.Background())
+	principals := authClient.Database(os.Getenv("AUTH_CENTER_INTEGRATION_DATABASE")).Collection("auth_principals")
+	setDeveloper := func(state string) {
+		t.Helper()
+		result, err := principals.UpdateOne(ctx, bson.M{"authId": author.authID}, bson.M{"$set": bson.M{"developerStatus": state, "updatedAt": time.Now().UTC().Truncate(time.Millisecond)}, "$inc": bson.M{"developerRevision": int64(1)}})
+		if err != nil || result.ModifiedCount != 1 {
+			t.Fatal("set developer fixture state", err)
+		}
 	}
-	grant := &permissionv1.ManageScriptMaintainerPermissionRequest{
-		SubjectAuthId: maintainer.authID, ExpectedPermissionRevision: proto.Int64(before.GetPermissionRevision()),
-		Action: permissionv1.ScriptMaintainerPermissionAction_SCRIPT_MAINTAINER_PERMISSION_ACTION_GRANT,
-		Reason: "local script management integration",
-	}
-	var granted permissionv1.ScriptMaintainerPermission
-	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-maintainer-permissions:manage", manager.session, grant, &granted, http.StatusOK)
-	if !granted.GetGranted() || !granted.GetEffective() || granted.GetPermissionRevision() != before.GetPermissionRevision()+1 {
-		t.Fatal("real Auth grant did not take effect")
-	}
+	setDeveloper("APPROVED")
 	var resource resourcev1.ScriptResource
-	header := httpCall(adminHost, http.MethodPost, appResources, maintainer.session, create, &resource, http.StatusOK)
+	header := httpCall(developerHost, http.MethodPost, authorResources, author.session, create, &resource, http.StatusOK)
 	if resource.GetResourceId() == "" || resource.GetRevision() != 1 || header.Get("Cache-Control") != "private, no-store" {
 		t.Fatal("unexpected resource response")
 	}
-	httpCall("developer.uc002.test", http.MethodPost, appResources, maintainer.session, create, nil, http.StatusNotFound)
-	resourceRPC := resourcev1.NewScriptResourceServiceClient(edge)
-	updatedResource, err := resourceRPC.ReplaceScriptResourceMetadata(maintainerRPC, &resourcev1.ReplaceScriptResourceMetadataRequest{
+	httpCall(adminHost, http.MethodPost, authorResources, author.session, create, nil, http.StatusNotFound)
+	resourceRPC := authoringv1.NewScriptAuthoringServiceClient(edge)
+	updatedResource, err := resourceRPC.ReplaceOwnScriptResourceMetadata(authorRPC, &resourcev1.ReplaceScriptResourceMetadataRequest{
 		ResourceId: resource.GetResourceId(),
 		Command:    &resourcev1.ReplaceScriptResourceMetadataCommand{Name: "Crawler", Purpose: "Updated fixture", ExpectedRevision: 1},
 	})
@@ -188,7 +187,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	const original = "\ufeff{\r\n \"z\":2,\"a\":1\r\n}\r\n"
 	createDraft := &versionv1.CreateScriptVersionDraftInput{VersionLabel: "draft-1", ContentFormat: "json", ContentText: original}
 	var draft versionv1.ScriptVersion
-	httpCall(adminHost, http.MethodPost, appResources+"/"+resource.GetResourceId()+"/versions", maintainer.session, createDraft, &draft, http.StatusOK)
+	httpCall(developerHost, http.MethodPost, authorResources+"/"+resource.GetResourceId()+"/versions", author.session, createDraft, &draft, http.StatusOK)
 	assertScriptDraftBytes(t, &draft, original, 1)
 	const edited = "{\"a\":1,\"z\":2}"
 	update := &versionv1.ReplaceScriptVersionDraftRequest{
@@ -196,33 +195,33 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 		Command: &versionv1.ReplaceScriptVersionDraftInput{ExpectedRevision: 1, ContentFormat: "json", ContentText: edited},
 	}
 	var modified versionv1.ScriptVersion
-	if code := gatewayWeb(t, ctx, maintainer.session, versionv1.ScriptVersionService_ReplaceScriptVersionDraft_FullMethodName, update, &modified); code != int(codes.OK) {
+	if code := gatewayWeb(t, ctx, author.session, authoringv1.ScriptAuthoringService_ReplaceOwnScriptVersionDraft_FullMethodName, update, &modified); code != int(codes.OK) {
 		t.Fatalf("gRPC-Web draft replacement returned %d", code)
 	}
 	assertScriptDraftBytes(t, &modified, edited, 2)
-	httpCall(adminHost, http.MethodPut, appResources+"/"+resource.GetResourceId()+"/versions/"+draft.GetVersionId()+"/draft",
-		maintainer.session, update.GetCommand(), nil, http.StatusConflict)
+	httpCall(developerHost, http.MethodPut, authorResources+"/"+resource.GetResourceId()+"/versions/"+draft.GetVersionId()+"/draft",
+		author.session, update.GetCommand(), nil, http.StatusConflict)
 	versionPath := appResources + "/" + resource.GetResourceId() + "/versions/" + draft.GetVersionId()
+	ownVersionPath := authorResources + "/" + resource.GetResourceId() + "/versions/" + draft.GetVersionId()
 	submit := &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 2}
 	var submission versionv1.ScriptVersionReviewSubmission
-	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, &submission, http.StatusOK)
+	httpCall(developerHost, http.MethodPost, ownVersionPath+"/reviews", author.session, submit, &submission, http.StatusOK)
 	assertScriptSubmission(t, &submission, 3)
-	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, nil, http.StatusConflict)
+	httpCall(developerHost, http.MethodPost, ownVersionPath+"/reviews", author.session, submit, nil, http.StatusConflict)
 	update.Command.ExpectedRevision = 3
-	httpCall(adminHost, http.MethodPut, versionPath+"/draft", maintainer.session, update.GetCommand(), nil, http.StatusConflict)
+	httpCall(developerHost, http.MethodPut, ownVersionPath+"/draft", author.session, update.GetCommand(), nil, http.StatusConflict)
 
-	grant.Action = permissionv1.ScriptMaintainerPermissionAction_SCRIPT_MAINTAINER_PERMISSION_ACTION_REVOKE
-	grant.ExpectedPermissionRevision = proto.Int64(granted.GetPermissionRevision())
-	revoked, err := permissionv1.NewScriptMaintainerPermissionServiceClient(edge).ManageScriptMaintainerPermission(managerRPC, grant)
-	if err != nil || revoked.GetGranted() || revoked.GetEffective() || revoked.GetPermissionRevision() != granted.GetPermissionRevision()+1 {
-		t.Fatal("real Auth native gRPC revoke failed", status.Code(err))
+	setDeveloper("SUSPENDED")
+	httpCall(developerHost, http.MethodPost, authorResources, author.session, create, nil, http.StatusForbidden)
+	if _, err := resourceRPC.ReplaceOwnScriptVersionDraft(authorRPC, update); status.Code(err) != codes.PermissionDenied {
+		t.Fatal("author could write after suspension", err)
 	}
-	httpCall(adminHost, http.MethodPost, appResources, maintainer.session, create, nil, http.StatusForbidden)
-	update.Command.ContentText = "{}"
-	if _, err := versionv1.NewScriptVersionServiceClient(edge).ReplaceScriptVersionDraft(maintainerRPC, update); status.Code(err) != codes.PermissionDenied {
-		t.Fatal("the same Session could write after revoke", status.Code(err))
+	var ownReview authoringv1.OwnScriptReviewResult
+	httpCall(developerHost, http.MethodGet, ownVersionPath+"/reviews/"+submission.GetReviewId(), author.session, nil, &ownReview, http.StatusOK)
+	if ownReview.GetReviewId() != submission.GetReviewId() {
+		t.Fatal("suspended author lost review read")
 	}
-	httpCall(adminHost, http.MethodPost, versionPath+"/reviews", maintainer.session, submit, nil, http.StatusForbidden)
+	setDeveloper("APPROVED")
 
 	const queuePath = "/app-center/v1/script-reviews/pending"
 	reviewPath := versionPath + "/reviews/" + submission.GetReviewId()
@@ -232,12 +231,12 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	reviewQuery := &queryv1.GetScriptReviewRequest{
 		ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), ReviewId: submission.GetReviewId(),
 	}
-	httpCall(adminHost, http.MethodGet, queuePath, maintainer.session, nil, nil, http.StatusForbidden)
-	httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodGet, queuePath, author.session, nil, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodGet, resourcePath, author.session, nil, nil, http.StatusForbidden)
 	scriptPermissions := new(permissionsv1.ScriptPermissions)
 	httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:get", manager.session,
-		&permissionsv1.GetScriptPermissionsRequest{SubjectAuthId: maintainer.authID}, scriptPermissions, http.StatusOK)
-	if len(scriptPermissions.GetPermissions()) != 5 || scriptPermissions.GetPermissionRevision() != revoked.GetPermissionRevision() {
+		&permissionsv1.GetScriptPermissionsRequest{SubjectAuthId: author.authID}, scriptPermissions, http.StatusOK)
+	if len(scriptPermissions.GetPermissions()) != 4 || scriptPermissions.GetPermissionRevision() < 1 {
 		t.Fatal("Auth did not return current independent permissions")
 	}
 	setPermission := func(permission permissionsv1.ScriptPermission, action permissionsv1.ScriptPermissionAction) {
@@ -245,7 +244,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 		result := new(permissionsv1.ScriptPermissions)
 		httpCall(adminHost, http.MethodPost, "/auth-center/v1/script-permissions:manage", manager.session,
 			&permissionsv1.ManageScriptPermissionRequest{
-				SubjectAuthId: maintainer.authID, Permission: permission, Action: action,
+				SubjectAuthId: author.authID, Permission: permission, Action: action,
 				ExpectedPermissionRevision: proto.Int64(scriptPermissions.GetPermissionRevision()),
 				Reason:                     "UC045 role isolation",
 			}, result, http.StatusOK)
@@ -260,37 +259,37 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	const reviewPermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_REVIEW
 	const publishPermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_PUBLISH
 	setPermission(publishPermission, grantPermission)
-	publisherView, err := queryClient.GetScriptVersion(maintainerRPC, versionQuery)
+	publisherView, err := queryClient.GetScriptVersion(authorRPC, versionQuery)
 	if err != nil || publisherView.ContentText != nil || publisherView.GetVersion().GetDigest() != modified.GetDigest() {
 		t.Fatal("native publisher read exposed content or lost summary", err)
 	}
-	httpCall(adminHost, http.MethodGet, reviewPath, maintainer.session, nil, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodGet, reviewPath, author.session, nil, nil, http.StatusForbidden)
 	setPermission(reviewPermission, grantPermission)
 
 	var resources queryv1.ListScriptResourcesResponse
-	httpCall(adminHost, http.MethodGet, appResources, maintainer.session, nil, &resources, http.StatusOK)
+	httpCall(adminHost, http.MethodGet, appResources, author.session, nil, &resources, http.StatusOK)
 	if len(resources.GetItems()) != 1 {
 		t.Fatal("resource query failed")
 	}
 	var versions queryv1.ListScriptVersionsResponse
-	httpCall(adminHost, http.MethodGet, resourcePath+"/versions", maintainer.session, nil, &versions, http.StatusOK)
+	httpCall(adminHost, http.MethodGet, resourcePath+"/versions", author.session, nil, &versions, http.StatusOK)
 	if len(versions.GetItems()) != 1 {
 		t.Fatal("version query failed")
 	}
 	var queue queryv1.ListPendingScriptReviewsResponse
-	header = httpCall(adminHost, http.MethodGet, queuePath, maintainer.session, nil, &queue, http.StatusOK)
+	header = httpCall(adminHost, http.MethodGet, queuePath, author.session, nil, &queue, http.StatusOK)
 	if len(queue.GetItems()) != 1 || header.Get("Cache-Control") != "private, no-store" {
 		t.Fatal("Admin pending queue lost result or cache policy")
 	}
-	httpCall("developer.uc002.test", http.MethodGet, queuePath, maintainer.session, nil, nil, http.StatusNotFound)
+	httpCall("developer.uc002.test", http.MethodGet, queuePath, author.session, nil, nil, http.StatusNotFound)
 	var detail queryv1.GetScriptReviewResponse
-	if code := gatewayWeb(t, ctx, maintainer.session, queryv1.ScriptQueryService_GetScriptReview_FullMethodName, reviewQuery, &detail); code != int(codes.OK) ||
+	if code := gatewayWeb(t, ctx, author.session, queryv1.ScriptQueryService_GetScriptReview_FullMethodName, reviewQuery, &detail); code != int(codes.OK) ||
 		detail.GetContentText() != edited || len(detail.GetChecks()) != 4 || detail.GetCanDecide() || len(detail.GetConflicts()) != 2 {
 		t.Fatal("gRPC-Web reviewer could not retrieve snapshot and conflicts", code)
 	}
 	setPermission(reviewPermission, revokePermission)
-	httpCall(adminHost, http.MethodGet, reviewPath, maintainer.session, nil, nil, http.StatusForbidden)
-	if view, err := queryClient.GetScriptVersion(maintainerRPC, versionQuery); err != nil || view.ContentText != nil {
+	httpCall(adminHost, http.MethodGet, reviewPath, author.session, nil, nil, http.StatusForbidden)
+	if view, err := queryClient.GetScriptVersion(authorRPC, versionQuery); err != nil || view.ContentText != nil {
 		t.Fatal("review revoke changed independent publisher access", err)
 	}
 	setPermission(publishPermission, revokePermission)
@@ -301,14 +300,14 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	} {
 		setPermission(permission, grantPermission)
 		var resourceView resourcev1.ScriptResource
-		httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, &resourceView, http.StatusOK)
+		httpCall(adminHost, http.MethodGet, resourcePath, author.session, nil, &resourceView, http.StatusOK)
 		if resourceView.GetResourceId() != resource.GetResourceId() {
 			t.Fatal("operator cannot read resource")
 		}
-		httpCall(adminHost, http.MethodGet, versionPath, maintainer.session, nil, nil, http.StatusForbidden)
+		httpCall(adminHost, http.MethodGet, versionPath, author.session, nil, nil, http.StatusForbidden)
 		setPermission(permission, revokePermission)
 	}
-	httpCall(adminHost, http.MethodGet, resourcePath, maintainer.session, nil, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodGet, resourcePath, author.session, nil, nil, http.StatusForbidden)
 
 	client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv(mongoIntegrationURIEnv)))
 	if err != nil {
@@ -347,36 +346,36 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	publicationPath := publicationBase + resource.GetResourceId() + "/publication"
 	publishPath := versionPath + "/publication"
 	publishInput := &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 1}
-	httpCall(adminHost, http.MethodPost, publishPath, maintainer.session, publishInput, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodPost, publishPath, author.session, publishInput, nil, http.StatusForbidden)
 	setPermission(publishPermission, grantPermission)
 	var published publicationv1.ScriptPublicationCommandResult
-	httpCall(adminHost, http.MethodPost, publishPath, maintainer.session, publishInput, &published, http.StatusOK)
+	httpCall(adminHost, http.MethodPost, publishPath, author.session, publishInput, &published, http.StatusOK)
 	if published.GetState().GetHead().GetVersionId() != draft.GetVersionId() || !published.GetChanged() {
 		t.Fatal("real Auth publish permission")
 	}
-	httpCall("developer.uc002.test", http.MethodPost, publishPath, maintainer.session, publishInput, nil, http.StatusNotFound)
+	httpCall("developer.uc002.test", http.MethodPost, publishPath, author.session, publishInput, nil, http.StatusNotFound)
 	var history queryv1.ListScriptPublicationHistoryResponse
-	if code := gatewayWeb(t, ctx, maintainer.session, queryv1.ScriptQueryService_ListScriptPublicationHistory_FullMethodName, &queryv1.ListScriptPublicationHistoryRequest{ResourceId: resource.GetResourceId()}, &history); code != int(codes.OK) || len(history.GetItems()) != 1 {
+	if code := gatewayWeb(t, ctx, author.session, queryv1.ScriptQueryService_ListScriptPublicationHistory_FullMethodName, &queryv1.ListScriptPublicationHistoryRequest{ResourceId: resource.GetResourceId()}, &history); code != int(codes.OK) || len(history.GetItems()) != 1 {
 		t.Fatal("publication history through gRPC-Web", code)
 	}
 	setPermission(publishPermission, revokePermission)
-	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).ClearScriptHead(maintainerRPC, &publicationv1.ClearScriptHeadRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); status.Code(err) != codes.PermissionDenied {
+	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).ClearScriptHead(authorRPC, &publicationv1.ClearScriptHeadRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); status.Code(err) != codes.PermissionDenied {
 		t.Fatal("same Session retained publication permission", err)
 	}
 	const suspendPermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_SUSPEND
 	const restorePermission = permissionsv1.ScriptPermission_SCRIPT_PERMISSION_RESTORE
 	setPermission(suspendPermission, grantPermission)
-	httpCall(adminHost, http.MethodPost, publicationBase+resource.GetResourceId()+"/distribution/suspend", maintainer.session, &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 1, Reason: "real suspension"}, &published, http.StatusOK)
+	httpCall(adminHost, http.MethodPost, publicationBase+resource.GetResourceId()+"/distribution/suspend", author.session, &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 1, Reason: "real suspension"}, &published, http.StatusOK)
 	if published.GetState().GetAvailability() != publicationv1.ScriptDistributionAvailability_SCRIPT_DISTRIBUTION_AVAILABILITY_SUSPENDED {
 		t.Fatal("real suspend")
 	}
-	httpCall(adminHost, http.MethodGet, publicationPath+"/history", maintainer.session, nil, nil, http.StatusForbidden)
+	httpCall(adminHost, http.MethodGet, publicationPath+"/history", author.session, nil, nil, http.StatusForbidden)
 	setPermission(suspendPermission, revokePermission)
 	setPermission(restorePermission, grantPermission)
-	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).SuspendScriptDistribution(maintainerRPC, &publicationv1.SuspendScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "not a suspender"}}); status.Code(err) != codes.PermissionDenied {
+	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).SuspendScriptDistribution(authorRPC, &publicationv1.SuspendScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "not a suspender"}}); status.Code(err) != codes.PermissionDenied {
 		t.Fatal("restore implied suspend", err)
 	}
-	if code := gatewayWeb(t, ctx, maintainer.session, publicationv1.ScriptPublicationService_RestoreScriptDistribution_FullMethodName, &publicationv1.RestoreScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "real restore"}}, &published); code != int(codes.OK) {
+	if code := gatewayWeb(t, ctx, author.session, publicationv1.ScriptPublicationService_RestoreScriptDistribution_FullMethodName, &publicationv1.RestoreScriptDistributionRequest{ResourceId: resource.GetResourceId(), Command: &publicationv1.ScriptAvailabilityInput{ExpectedAvailabilityRevision: 2, Reason: "real restore"}}, &published); code != int(codes.OK) {
 		t.Fatal("real restore through gRPC-Web", code)
 	}
 	if published.GetState().GetHead().GetVersionId() != draft.GetVersionId() || published.GetState().GetPublicationRevision() != 2 || published.GetState().GetAvailabilityRevision() != 3 {
@@ -389,24 +388,24 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	const publicHost = "api.uc002.test"
 	publicContentPath := "/app-center/v1/scripts/" + resource.GetResourceId() + "/versions/" + draft.GetVersionId() + "/content?expectedDigest=" + modified.GetDigest()
 	var publicContent distributionv1.ScriptContent
-	publicHeader := httpCall(publicHost, http.MethodGet, publicContentPath, maintainer.session, nil, &publicContent, http.StatusOK)
+	publicHeader := httpCall(publicHost, http.MethodGet, publicContentPath, author.session, nil, &publicContent, http.StatusOK)
 	if publicContent.GetContentText() != edited || publicHeader.Get("Cache-Control") != "private, no-store" {
 		t.Fatal("ordinary real USER independent content")
 	}
 	httpCall(publicHost, http.MethodGet, publicContentPath, "", nil, nil, http.StatusUnauthorized)
-	httpCall(adminHost, http.MethodGet, publicContentPath, maintainer.session, nil, nil, http.StatusNotFound)
-	httpCall("developer.uc002.test", http.MethodGet, publicContentPath, maintainer.session, nil, nil, http.StatusNotFound)
+	httpCall(adminHost, http.MethodGet, publicContentPath, author.session, nil, nil, http.StatusNotFound)
+	httpCall("developer.uc002.test", http.MethodGet, publicContentPath, author.session, nil, nil, http.StatusNotFound)
 	var library distributionv1.PublishedScriptPage
-	httpCall(publicHost, http.MethodGet, "/app-center/v1/scripts", maintainer.session, nil, &library, http.StatusOK)
+	httpCall(publicHost, http.MethodGet, "/app-center/v1/scripts", author.session, nil, &library, http.StatusOK)
 	if len(library.GetItems()) != 1 || library.GetItems()[0].GetHead().GetVersionId() != draft.GetVersionId() {
 		t.Fatal("independent recommendation")
 	}
 	distribution := distributionv1.NewScriptDistributionServiceClient(edge)
 	getPublic := &distributionv1.GetPublishedScriptContentRequest{ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(), ExpectedDigest: modified.GetDigest()}
-	if got, err := distribution.GetPublishedScriptContent(maintainerRPC, getPublic); err != nil || got.GetContentText() != edited {
+	if got, err := distribution.GetPublishedScriptContent(authorRPC, getPublic); err != nil || got.GetContentText() != edited {
 		t.Fatal("native independent distribution", err)
 	}
-	if code := gatewayWeb(t, ctx, maintainer.session, distributionv1.ScriptDistributionService_GetPublishedScriptContent_FullMethodName, getPublic, &publicContent); code != int(codes.OK) || publicContent.GetContentText() != edited {
+	if code := gatewayWeb(t, ctx, author.session, distributionv1.ScriptDistributionService_GetPublishedScriptContent_FullMethodName, getPublic, &publicContent); code != int(codes.OK) || publicContent.GetContentText() != edited {
 		t.Fatal("gRPC-Web independent distribution", code)
 	}
 	// The associated positive paths are covered by normal-Wire App E2E and
@@ -414,22 +413,20 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 	// prove real Session exchange and App's uniform missing-target boundary.
 	runtime := &distributionv1.ScriptRuntimeQuery{Mode: distributionv1.ScriptRuntimeMode_SCRIPT_RUNTIME_MODE_UNIFIED, HostRpcApiMajor: 1}
 	missingManifest := &distributionv1.ResolveApplicationScriptManifestRequest{ApplicationId: resource.GetResourceId(), ApplicationVersionId: draft.GetVersionId(), Query: &distributionv1.ResolveApplicationScriptManifestInput{Runtime: runtime}}
-	if _, err := distribution.ResolveApplicationScriptManifest(maintainerRPC, missingManifest); status.Code(err) != codes.NotFound {
+	if _, err := distribution.ResolveApplicationScriptManifest(authorRPC, missingManifest); status.Code(err) != codes.NotFound {
 		t.Fatal("associated manifest route", err)
 	}
 	missingContent := &distributionv1.GetApplicationScriptContentRequest{ApplicationId: resource.GetResourceId(), ApplicationVersionId: draft.GetVersionId(), ScriptVersionId: draft.GetVersionId(), Query: &distributionv1.GetApplicationScriptContentInput{Runtime: runtime, ExpectedDigest: modified.GetDigest()}}
-	if code := gatewayWeb(t, ctx, maintainer.session, distributionv1.ScriptDistributionService_GetApplicationScriptContent_FullMethodName, missingContent, &distributionv1.ApplicationScriptContent{}); code != int(codes.NotFound) {
+	if code := gatewayWeb(t, ctx, author.session, distributionv1.ScriptDistributionService_GetApplicationScriptContent_FullMethodName, missingContent, &distributionv1.ApplicationScriptContent{}); code != int(codes.NotFound) {
 		t.Fatal("associated content route", code)
 	}
-	// Independently grant maintain/publish for a new maximum-sized version,
-	// then revoke both before the ordinary USER reads its exact bytes.
-	setPermission(permissionsv1.ScriptPermission_SCRIPT_PERMISSION_MAINTAIN, grantPermission)
+	// The author submits a maximum-sized version. Publishing remains an independent grant.
 	maxText := strings.Repeat("\x01", scriptdomain.MaxContentBytes)
-	maxVersion, err := versionv1.NewScriptVersionServiceClient(edge).CreateScriptVersionDraft(maintainerRPC, &versionv1.CreateScriptVersionDraftRequest{ResourceId: resource.GetResourceId(), Draft: &versionv1.CreateScriptVersionDraftInput{VersionLabel: "max-distribution", ContentFormat: "json", ContentText: maxText}})
+	maxVersion, err := authoringv1.NewScriptAuthoringServiceClient(edge).CreateOwnScriptVersionDraft(authorRPC, &versionv1.CreateScriptVersionDraftRequest{ResourceId: resource.GetResourceId(), Draft: &versionv1.CreateScriptVersionDraftInput{VersionLabel: "max-distribution", ContentFormat: "json", ContentText: maxText}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	maxSubmission, err := versionv1.NewScriptVersionServiceClient(edge).SubmitScriptVersionReview(maintainerRPC, &versionv1.SubmitScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1}})
+	maxSubmission, err := authoringv1.NewScriptAuthoringServiceClient(edge).SubmitOwnScriptVersionReview(authorRPC, &versionv1.SubmitScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,21 +444,20 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_ScriptManagementLocalImages(t *tes
 		t.Fatal(err)
 	}
 	setPermission(publishPermission, grantPermission)
-	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).PublishScriptVersion(maintainerRPC, &publicationv1.PublishScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); err != nil {
+	if _, err := publicationv1.NewScriptPublicationServiceClient(edge).PublishScriptVersion(authorRPC, &publicationv1.PublishScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 2}}); err != nil {
 		t.Fatal(err)
 	}
-	setPermission(permissionsv1.ScriptPermission_SCRIPT_PERMISSION_MAINTAIN, revokePermission)
 	setPermission(publishPermission, revokePermission)
 	maxGet := &distributionv1.GetPublishedScriptContentRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), ExpectedDigest: maxVersion.GetDigest()}
 	maxPath := "/app-center/v1/scripts/" + resource.GetResourceId() + "/versions/" + maxVersion.GetVersionId() + "/content?expectedDigest=" + maxVersion.GetDigest()
-	httpCall(publicHost, http.MethodGet, maxPath, maintainer.session, nil, &publicContent, http.StatusOK)
+	httpCall(publicHost, http.MethodGet, maxPath, author.session, nil, &publicContent, http.StatusOK)
 	if publicContent.GetContentText() != maxText || publicContent.GetByteLength() != scriptdomain.MaxContentBytes {
 		t.Fatal("maximum HTTP JSON bytes through three images")
 	}
-	if got, err := distribution.GetPublishedScriptContent(maintainerRPC, maxGet); err != nil || got.GetContentText() != maxText {
+	if got, err := distribution.GetPublishedScriptContent(authorRPC, maxGet); err != nil || got.GetContentText() != maxText {
 		t.Fatal("maximum native bytes through three images", err)
 	}
-	if code := gatewayWeb(t, ctx, maintainer.session, distributionv1.ScriptDistributionService_GetPublishedScriptContent_FullMethodName, maxGet, &publicContent); code != int(codes.OK) || publicContent.GetContentText() != maxText {
+	if code := gatewayWeb(t, ctx, author.session, distributionv1.ScriptDistributionService_GetPublishedScriptContent_FullMethodName, maxGet, &publicContent); code != int(codes.OK) || publicContent.GetContentText() != maxText {
 		t.Fatal("maximum gRPC-Web bytes through three images", code)
 	}
 	e2eAssertCollectionCount(t, database, "script_published_versions", 2)

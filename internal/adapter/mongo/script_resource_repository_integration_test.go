@@ -17,7 +17,7 @@ func TestScriptResourceRepositoryIntegration_UCAPP041_BRSCR001003(t *testing.T) 
 	repo := NewScriptResourceRepository(db)
 	resources := db.Collection(scriptResourcesCollectionName)
 	audits := db.Collection(scriptResourceAuditsCollectionName)
-	assertIndexNames(t, resources, []string{"_id_", scriptResourceIDIndexName, "ix_script_resources_created"})
+	assertIndexNames(t, resources, []string{"_id_", scriptResourceIDIndexName, "ix_script_resources_created", scriptOwnerIndexName})
 	assertIndexNames(t, audits, []string{"_id_", scriptResourceAuditIndexName})
 	if _, err := resources.InsertOne(t.Context(), bson.D{{Key: "name", Value: "missing required fields"}}); err == nil {
 		t.Fatal("incomplete resource passed validator")
@@ -51,7 +51,7 @@ func TestScriptResourceRepositoryIntegration_UCAPP041_BRSCR001003(t *testing.T) 
 	assertCollectionCount(t, db, scriptResourceAuditsCollectionName, 2)
 
 	cmd := port.ReplaceMetadata{
-		ID: id, ExpectedRevision: 1, Metadata: metadata, Actor: "editor", At: at.Add(time.Second),
+		ID: id, ExpectedRevision: 1, Metadata: metadata, Actor: "creator", At: at.Add(time.Second),
 	}
 	noop, err := repo.ReplaceResourceMetadata(t.Context(), cmd)
 	if err != nil || noop != created {
@@ -88,7 +88,7 @@ func TestScriptResourceRepositoryIntegration_UCAPP041_BRSCR001003(t *testing.T) 
 	if err := audits.FindOne(t.Context(), bson.M{"resourceId": id, "revision": int64(2)}).Decode(&audit); err != nil {
 		t.Fatal(err)
 	}
-	if current.Revision != 2 || current.CreatedBy != "creator" || current.UpdatedBy != "editor" ||
+	if current.Revision != 2 || current.CreatedBy != "creator" || current.UpdatedBy != "creator" ||
 		current.Purpose != metadata.Purpose || (current.Name != "First edit" && current.Name != "Second edit") ||
 		audit.Action != scriptResourceMetadataReplaced || audit.Actor != current.UpdatedBy ||
 		!audit.ChangedAt.Equal(current.UpdatedAt) || !current.UpdatedAt.Equal(cmd.At.Truncate(time.Millisecond)) {

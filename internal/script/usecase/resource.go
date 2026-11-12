@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"iwut-app-center/internal/script/domain"
 	"iwut-app-center/internal/script/port"
@@ -33,18 +32,18 @@ func NewResourceHandlers(ids port.ResourceIDGenerator, clock port.Clock, repo po
 	return &ResourceHandlers{ids: ids, clock: clock, repo: repo}
 }
 
-func RequireMaintainer(identity shared.TrustedIdentity) error {
+func RequireScriptAuthor(identity shared.TrustedIdentity) error {
 	if !identity.AuthID.IsValid() {
 		return domain.ErrIdentityRequired
 	}
-	if !slices.Contains(identity.Permissions, domain.MaintainPermission) {
-		return domain.ErrMaintainForbidden
+	if identity.DeveloperStatus != shared.DeveloperStatusApproved {
+		return domain.ErrDeveloperApprovalRequired
 	}
 	return nil
 }
 
 func (h *ResourceHandlers) Create(ctx context.Context, identity shared.TrustedIdentity, cmd CreateResourceCommand) (domain.Resource, error) {
-	if err := RequireMaintainer(identity); err != nil {
+	if err := RequireScriptAuthor(identity); err != nil {
 		return domain.Resource{}, err
 	}
 	metadata, err := domain.NewMetadata(cmd.Name, cmd.Purpose)
@@ -61,13 +60,16 @@ func (h *ResourceHandlers) Create(ctx context.Context, identity shared.TrustedId
 	}
 	stored, err := h.repo.CreateResource(ctx, resource)
 	if err != nil {
+		if errors.Is(err, shared.ErrAccountExitBlocked) {
+			return domain.Resource{}, err
+		}
 		return domain.Resource{}, fmt.Errorf("%w: create: %w", domain.ErrInternal, err)
 	}
 	return stored, nil
 }
 
 func (h *ResourceHandlers) ReplaceMetadata(ctx context.Context, identity shared.TrustedIdentity, cmd ReplaceResourceMetadataCommand) (domain.Resource, error) {
-	if err := RequireMaintainer(identity); err != nil {
+	if err := RequireScriptAuthor(identity); err != nil {
 		return domain.Resource{}, err
 	}
 	id, err := domain.ParseResourceID(cmd.ResourceID)
@@ -88,7 +90,7 @@ func (h *ResourceHandlers) ReplaceMetadata(ctx context.Context, identity shared.
 	switch {
 	case err == nil:
 		return stored, nil
-	case errors.Is(err, domain.ErrNotFound), errors.Is(err, domain.ErrRevisionConflict):
+	case errors.Is(err, domain.ErrNotFound), errors.Is(err, domain.ErrRevisionConflict), errors.Is(err, shared.ErrAccountExitBlocked):
 		return domain.Resource{}, err
 	default:
 		return domain.Resource{}, fmt.Errorf("%w: replace metadata: %w", domain.ErrInternal, err)

@@ -367,7 +367,7 @@ func (o *uc033OAuthClient) authorize() string {
 		return string(match[1])
 	}
 	interaction, csrf := field("interaction"), field("csrf")
-	values := url.Values{"interaction": {interaction}, "csrf": {csrf}, "decision": {"approve"}}
+	values := url.Values{"interaction": {interaction}, "csrf": {csrf}, "presentation": {field("presentation")}, "decision": {"approve"}}
 	for _, scope := range []string{"openid", "offline_access", "items.read"} {
 		values.Add("scope", scope)
 	}

@@ -459,6 +459,7 @@ func expectedIntegrationMigrationIDs() []string {
 		incomingTransferMigrationID,
 		platformApplicationQueryMigrationID,
 		managementActivityMigrationID,
+		scriptAuthoringMigrationID,
 	}
 }
 
@@ -524,6 +525,7 @@ func TestMigratorIntegration_FreshMatchesSequentialUpgrade(t *testing.T) {
 		{id: incomingTransferMigrationID, apply: sequential.applyIncomingTransferMigration},
 		{id: platformApplicationQueryMigrationID, apply: sequential.applyPlatformApplicationQueryMigration},
 		{id: managementActivityMigrationID, apply: sequential.applyManagementActivityMigration},
+		{id: scriptAuthoringMigrationID, apply: sequential.applyScriptAuthoringMigration},
 	} {
 		if err := sequential.applyMigration(t.Context(), migration.id, migration.apply); err != nil {
 			t.Fatalf("apply %s sequentially: %v", migration.id, err)

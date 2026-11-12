@@ -18,7 +18,7 @@ import (
 // names otherwise leave snake_case path parameters empty and leak them to query.
 func TestScriptHTTPClientURIParameters_UCAPP041042043044045046047(t *testing.T) {
 	parameter := regexp.MustCompile(`\{([a-z_]+)\}`)
-	for _, name := range []string{"application_publication.ApplicationPublication", "script_resource.ScriptResourceService", "script_version.ScriptVersionService", "script_review.ScriptReviewService", "script_query.ScriptQueryService", "script_publication.ScriptPublicationService", "script_distribution.ScriptDistributionService"} {
+	for _, name := range []string{"application_publication.ApplicationPublication", "script_authoring.ScriptAuthoringService", "script_review.ScriptReviewService", "script_query.ScriptQueryService", "script_publication.ScriptPublicationService", "script_distribution.ScriptDistributionService"} {
 		descriptor, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName("app_center.v1." + name))
 		if err != nil {
 			t.Fatal(err)

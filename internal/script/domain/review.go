@@ -96,6 +96,12 @@ type Submission struct {
 }
 
 func (v Version) Submit(expectedRevision int64, resource Resource, reviewID ReviewID, policy ReviewPolicy, actor shared.AuthID, at time.Time) (Version, Review, error) {
+	if actor != resource.OwnerAuthID {
+		return Version{}, Review{}, ErrNotFound
+	}
+	if !v.AuthoredBy(resource.OwnerAuthID) {
+		return Version{}, Review{}, ErrInternal
+	}
 	if err := v.CheckDraftRevision(expectedRevision); err != nil {
 		return Version{}, Review{}, err
 	}

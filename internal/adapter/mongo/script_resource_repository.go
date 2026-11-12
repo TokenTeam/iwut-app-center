@@ -35,14 +35,15 @@ func NewScriptResourceRepository(database *drivermongo.Database) *ScriptResource
 }
 
 type scriptResourceDocument struct {
-	ResourceID string    `bson:"resourceId"`
-	Name       string    `bson:"name"`
-	Purpose    string    `bson:"purpose"`
-	Revision   int64     `bson:"revision"`
-	CreatedBy  string    `bson:"createdBy"`
-	CreatedAt  time.Time `bson:"createdAt"`
-	UpdatedBy  string    `bson:"updatedBy"`
-	UpdatedAt  time.Time `bson:"updatedAt"`
+	ResourceID  string    `bson:"resourceId"`
+	Name        string    `bson:"name"`
+	Purpose     string    `bson:"purpose"`
+	Revision    int64     `bson:"revision"`
+	OwnerAuthID string    `bson:"ownerAuthId"`
+	CreatedBy   string    `bson:"createdBy"`
+	CreatedAt   time.Time `bson:"createdAt"`
+	UpdatedBy   string    `bson:"updatedBy"`
+	UpdatedAt   time.Time `bson:"updatedAt"`
 }
 
 type scriptResourceAuditDocument struct {
@@ -57,7 +58,7 @@ func (doc scriptResourceDocument) resource() domain.Resource {
 	return domain.Resource{
 		ID:       domain.ResourceID(doc.ResourceID),
 		Metadata: domain.Metadata{Name: doc.Name, Purpose: doc.Purpose},
-		Revision: doc.Revision, CreatedBy: shared.AuthID(doc.CreatedBy), CreatedAt: doc.CreatedAt.UTC(),
+		Revision: doc.Revision, OwnerAuthID: shared.AuthID(doc.OwnerAuthID), CreatedBy: shared.AuthID(doc.CreatedBy), CreatedAt: doc.CreatedAt.UTC(),
 		UpdatedBy: shared.AuthID(doc.UpdatedBy), UpdatedAt: doc.UpdatedAt.UTC(),
 	}
 }
@@ -71,10 +72,13 @@ func (r *ScriptResourceRepository) CreateResource(ctx context.Context, resource 
 	}
 	document := scriptResourceDocument{
 		ResourceID: string(resource.ID), Name: resource.Metadata.Name, Purpose: resource.Metadata.Purpose,
-		Revision: resource.Revision, CreatedBy: string(resource.CreatedBy), CreatedAt: resource.CreatedAt,
+		Revision: resource.Revision, OwnerAuthID: string(resource.OwnerAuthID), CreatedBy: string(resource.CreatedBy), CreatedAt: resource.CreatedAt,
 		UpdatedBy: string(resource.UpdatedBy), UpdatedAt: resource.UpdatedAt,
 	}
 	return withScriptTransaction(ctx, r.database, func(tx context.Context) (domain.Resource, error) {
+		if err := requireOwnerWritable(tx, r.database, resource.OwnerAuthID.String(), false); err != nil {
+			return domain.Resource{}, err
+		}
 		if _, err := r.database.Collection(scriptResourcesCollectionName).InsertOne(tx, document); err != nil {
 			return domain.Resource{}, fmt.Errorf("insert script resource: %w", err)
 		}
@@ -91,8 +95,11 @@ func (r *ScriptResourceRepository) CreateResource(ctx context.Context, resource 
 func (r *ScriptResourceRepository) ReplaceResourceMetadata(ctx context.Context, cmd port.ReplaceMetadata) (domain.Resource, error) {
 	at := cmd.At.UTC().Truncate(time.Millisecond)
 	return withScriptTransaction(ctx, r.database, func(tx context.Context) (domain.Resource, error) {
+		if err := requireOwnerWritable(tx, r.database, cmd.Actor.String(), false); err != nil {
+			return domain.Resource{}, err
+		}
 		collection := r.database.Collection(scriptResourcesCollectionName)
-		filter := bson.D{{Key: "resourceId", Value: string(cmd.ID)}}
+		filter := bson.D{{Key: "resourceId", Value: string(cmd.ID)}, {Key: "ownerAuthId", Value: cmd.Actor.String()}}
 		var doc scriptResourceDocument
 		err := collection.FindOne(tx, filter).Decode(&doc)
 		if errors.Is(err, drivermongo.ErrNoDocuments) {

@@ -24,29 +24,33 @@ const (
 	ScriptReviewRead
 	ScriptPublicationRead
 	ScriptPublicationHistoryRead
+	ScriptOwnRead
 )
 
 func ScriptReadAccess(identity shared.TrustedIdentity, kind ScriptReadKind) (port.ScriptReadScope, error) {
 	if !identity.AuthID.IsValid() {
 		return port.ScriptReadScope{}, domain.ErrIdentityRequired
 	}
+	if kind == ScriptOwnRead {
+		return port.ScriptReadScope{Actor: identity.AuthID, Own: true}, nil
+	}
 	has := func(permission string) bool { return slices.Contains(identity.Permissions, permission) }
 	scope := port.ScriptReadScope{
-		Actor: identity.AuthID, Maintain: has(domain.MaintainPermission), Review: has("app.script.review"),
+		Actor: identity.AuthID, Review: has("app.script.review"),
 		Publish: has("app.script.publish"), Suspend: has("app.script.suspend"), Restore: has("app.script.restore"),
 	}
 	var allowed bool
 	switch kind {
 	case ScriptResourceRead, ScriptPublicationRead:
-		allowed = scope.Maintain || scope.Review || scope.Publish || scope.Suspend || scope.Restore
+		allowed = scope.Review || scope.Publish || scope.Suspend || scope.Restore
 	case ScriptVersionRead:
-		allowed = scope.Maintain || scope.Review || scope.Publish
+		allowed = scope.Review || scope.Publish
 	case ScriptPendingRead:
 		allowed = scope.Review
 	case ScriptPublicationHistoryRead:
 		allowed = scope.Publish
 	case ScriptReviewRead:
-		allowed = scope.Maintain || scope.Review
+		allowed = scope.Review
 	}
 	if !allowed {
 		return port.ScriptReadScope{}, ErrScriptReadForbidden
@@ -106,6 +110,11 @@ func (q *ScriptQuery) ListVersions(ctx context.Context, identity shared.TrustedI
 	if err != nil {
 		return empty, err
 	}
+	return q.listVersions(ctx, scope, resourceID, state, limit, cursor)
+}
+
+func (q *ScriptQuery) listVersions(ctx context.Context, scope port.ScriptReadScope, resourceID string, state domain.VersionState, limit *int32, cursor string) (port.ScriptPage[port.ScriptVersionSummary], error) {
+	var empty port.ScriptPage[port.ScriptVersionSummary]
 	id, err := domain.ParseResourceID(resourceID)
 	if err != nil {
 		return empty, err
@@ -185,9 +194,6 @@ func (q *ScriptQuery) GetReview(ctx context.Context, identity shared.TrustedIden
 	if len(contributors) > 0 && contributors[0] == scope.Actor {
 		result.Conflicts = append(result.Conflicts, "VERSION_CREATOR")
 	}
-	if len(contributors) > 1 && slices.Contains(contributors[1:], scope.Actor) {
-		result.Conflicts = append(result.Conflicts, "CONTENT_EDITOR")
-	}
 	if detail.Review.SubmittedBy == scope.Actor {
 		result.Conflicts = append(result.Conflicts, "REVIEW_SUBMITTER")
 	}
@@ -229,4 +235,59 @@ func (q *ScriptQuery) ListPublicationHistory(ctx context.Context, identity share
 		return empty, err
 	}
 	return q.repo.ListPublicationHistory(ctx, scope, id, page)
+}
+
+func (q *ScriptQuery) ListOwnResources(ctx context.Context, actor shared.AuthID, limit *int32, cursor string) (port.ScriptPage[port.OwnedScriptResource], error) {
+	if !actor.IsValid() {
+		return port.ScriptPage[port.OwnedScriptResource]{}, domain.ErrIdentityRequired
+	}
+	page, err := scriptPage(limit, cursor)
+	if err != nil {
+		return port.ScriptPage[port.OwnedScriptResource]{}, err
+	}
+	return q.repo.ListOwnResources(ctx, actor, page)
+}
+
+func (q *ScriptQuery) GetOwnResource(ctx context.Context, actor shared.AuthID, rawID string) (port.OwnedScriptResource, error) {
+	if !actor.IsValid() {
+		return port.OwnedScriptResource{}, domain.ErrIdentityRequired
+	}
+	id, err := domain.ParseResourceID(rawID)
+	if err != nil {
+		return port.OwnedScriptResource{}, err
+	}
+	return q.repo.GetOwnResource(ctx, actor, id)
+}
+
+func (q *ScriptQuery) ListOwnVersions(ctx context.Context, actor shared.AuthID, resourceID string, state domain.VersionState, limit *int32, cursor string) (port.ScriptPage[port.ScriptVersionSummary], error) {
+	if !actor.IsValid() {
+		return port.ScriptPage[port.ScriptVersionSummary]{}, domain.ErrIdentityRequired
+	}
+	return q.listVersions(ctx, port.ScriptReadScope{Actor: actor, Own: true}, resourceID, state, limit, cursor)
+}
+
+func (q *ScriptQuery) GetOwnVersion(ctx context.Context, actor shared.AuthID, resourceID, versionID string) (port.ScriptVersionDetail, error) {
+	if !actor.IsValid() {
+		return port.ScriptVersionDetail{}, domain.ErrIdentityRequired
+	}
+	resource, version, err := scriptQueryIDs(resourceID, versionID)
+	if err != nil {
+		return port.ScriptVersionDetail{}, err
+	}
+	return q.repo.GetVersion(ctx, port.ScriptReadScope{Actor: actor, Own: true}, resource, version)
+}
+
+func (q *ScriptQuery) GetOwnReview(ctx context.Context, actor shared.AuthID, resourceID, versionID, reviewID string) (port.OwnedScriptReviewResult, error) {
+	if !actor.IsValid() {
+		return port.OwnedScriptReviewResult{}, domain.ErrIdentityRequired
+	}
+	resource, version, err := scriptQueryIDs(resourceID, versionID)
+	if err != nil {
+		return port.OwnedScriptReviewResult{}, err
+	}
+	review, ok := domain.ParseReviewID(reviewID)
+	if !ok {
+		return port.OwnedScriptReviewResult{}, ErrInvalidScriptQuery
+	}
+	return q.repo.GetOwnReview(ctx, actor, resource, version, review)
 }

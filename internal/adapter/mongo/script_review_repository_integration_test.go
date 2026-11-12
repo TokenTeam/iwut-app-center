@@ -33,7 +33,7 @@ func newScriptSubmissionFixture(t *testing.T, db *dm.Database) (*ScriptVersionRe
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft, err := domain.NewDraft(domain.VersionID(nextIntegrationApplicationID(t)), resource.ID, "release-1", body, "author", at)
+	draft, err := domain.NewDraft(domain.VersionID(nextIntegrationApplicationID(t)), resource.ID, "release-1", body, resource.OwnerAuthID, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func newScriptSubmissionFixture(t *testing.T, db *dm.Database) (*ScriptVersionRe
 	}
 	return repo, draft, port.SubmitDraft{
 		ResourceID: resource.ID, VersionID: draft.ID, ReviewID: domain.ReviewID(nextIntegrationApplicationID(t)),
-		ExpectedRevision: 1, Actor: "submitter", At: at.Add(time.Second + 123*time.Microsecond),
+		ExpectedRevision: 1, Actor: resource.OwnerAuthID, At: at.Add(time.Second + 123*time.Microsecond),
 	}
 }
 
@@ -105,7 +105,7 @@ func TestScriptReviewSubmissionIntegration_UCAPP043_BRSCR007008(t *testing.T) {
 	}
 	if _, err := repo.ReplaceDraft(t.Context(), port.ReplaceDraft{
 		ResourceID: draft.ResourceID, VersionID: draft.ID, ExpectedRevision: 2, Content: draft.Content,
-		Actor: "editor", At: command.At,
+		Actor: command.Actor, At: command.At,
 	}); !errors.Is(err, domain.ErrVersionNotDraft) {
 		t.Fatal("submitted version accepted edit:", err)
 	}
@@ -176,7 +176,7 @@ func TestScriptReviewSubmissionIntegration_FailClosedAndEditRace(t *testing.T) {
 		<-start
 		_, err := repo.ReplaceDraft(t.Context(), port.ReplaceDraft{
 			ResourceID: draft.ResourceID, VersionID: draft.ID, ExpectedRevision: 1,
-			Content: replacement, Actor: "editor", At: command.At,
+			Content: replacement, Actor: command.Actor, At: command.At,
 		})
 		results <- outcome{err: err}
 	}()

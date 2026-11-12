@@ -10,7 +10,7 @@ import (
 
 func TestBRSCR010011DecisionContributorsAndReasonBytes(t *testing.T) {
 	at := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
-	resource, err := NewResource("018f0000-0000-7000-8000-000000000041", Metadata{Name: "Script", Purpose: "Test"}, "resource-owner", at)
+	resource, err := NewResource("018f0000-0000-7000-8000-000000000041", Metadata{Name: "Script", Purpose: "Test"}, "author", at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,11 +20,11 @@ func TestBRSCR010011DecisionContributorsAndReasonBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	edited, _ := NewContent(JSONFormat, "{ }")
-	version, _, err = version.ReplaceDraft(1, edited, "editor", at.Add(time.Second))
+	version, _, err = version.ReplaceDraft(1, edited, "author", at.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
-	version, review, err := version.Submit(2, resource, "018f0000-0000-7000-8000-000000000043", InitialReviewPolicy(), "submitter", at.Add(2*time.Second))
+	version, review, err := version.Submit(2, resource, "018f0000-0000-7000-8000-000000000043", InitialReviewPolicy(), "author", at.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestBRSCR010011DecisionContributorsAndReasonBytes(t *testing.T) {
 		_, _, err := review.Decide(version, input, "018f0000-0000-7000-8000-000000000044", actor, at.Add(3*time.Second))
 		return err
 	}
-	for _, actor := range []shared.AuthID{"author", "editor", "submitter"} {
+	for _, actor := range []shared.AuthID{"author"} {
 		if err := decide(actor, input); !errors.Is(err, ErrReviewConflict) {
 			t.Fatalf("conflict %s: %v", actor, err)
 		}

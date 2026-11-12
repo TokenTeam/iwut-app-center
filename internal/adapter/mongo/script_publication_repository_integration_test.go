@@ -31,14 +31,14 @@ func approvedPublicationFixture(t *testing.T, db *dm.Database) (domain.Version, 
 	}
 	at := submission.At.Add(time.Second).Truncate(time.Millisecond)
 	seedTerminalScriptDependency(t, db, string(first.ID), string(submission.ReviewID), "APPROVED", at)
-	second, err := domain.NewDraft(domain.VersionID(nextIntegrationApplicationID(t)), first.ResourceID, "release-2", first.Content, "author-2", at)
+	second, err := domain.NewDraft(domain.VersionID(nextIntegrationApplicationID(t)), first.ResourceID, "release-2", first.Content, first.CreatedBy, at)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.CreateDraft(t.Context(), second); err != nil {
 		t.Fatal(err)
 	}
-	secondSubmission := port.SubmitDraft{ResourceID: first.ResourceID, VersionID: second.ID, ReviewID: domain.ReviewID(nextIntegrationApplicationID(t)), ExpectedRevision: 1, Actor: "submitter-2", At: at.Add(time.Second)}
+	secondSubmission := port.SubmitDraft{ResourceID: first.ResourceID, VersionID: second.ID, ReviewID: domain.ReviewID(nextIntegrationApplicationID(t)), ExpectedRevision: 1, Actor: first.CreatedBy, At: at.Add(time.Second)}
 	if _, err := repo.SubmitDraft(t.Context(), secondSubmission); err != nil {
 		t.Fatal(err)
 	}

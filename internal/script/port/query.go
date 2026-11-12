@@ -16,8 +16,8 @@ var (
 )
 
 type ScriptReadScope struct {
-	Actor                                       shared.AuthID
-	Maintain, Review, Publish, Suspend, Restore bool
+	Actor                                  shared.AuthID
+	Own, Review, Publish, Suspend, Restore bool
 }
 
 type ScriptPageRequest struct {
@@ -34,9 +34,27 @@ type ScriptVersionSummary struct {
 	ResourceID            domain.ResourceID
 	ID                    domain.VersionID
 	Label, Format, Digest string
+	ReviewID              domain.ReviewID
 	State                 domain.VersionState
 	Revision              int64
 	CreatedAt, UpdatedAt  time.Time
+}
+
+type OwnedScriptResource struct {
+	Resource      domain.Resource
+	LatestVersion *ScriptVersionSummary
+}
+
+type OwnedScriptReviewResult struct {
+	ResourceID                                   domain.ResourceID
+	VersionID                                    domain.VersionID
+	ID                                           domain.ReviewID
+	Status, Label, Format, Digest, PolicyVersion string
+	SubmittedAt                                  time.Time
+	SourceRevision, ResourceRevision             int64
+	Metadata                                     domain.Metadata
+	DecisionID, Outcome, Reason                  string
+	DecidedAt                                    time.Time
 }
 
 type ScriptVersionDetail struct {
@@ -73,6 +91,9 @@ type ScriptQueryRepository interface {
 	GetPublication(context.Context, domain.ResourceID) (domain.PublicationState, error)
 	ListPublicationHistory(context.Context, ScriptReadScope, domain.ResourceID, ScriptPageRequest) (ScriptPage[PublicationHistoryItem], error)
 	ListResources(context.Context, ScriptReadScope, ScriptPageRequest) (ScriptPage[domain.Resource], error)
+	ListOwnResources(context.Context, shared.AuthID, ScriptPageRequest) (ScriptPage[OwnedScriptResource], error)
+	GetOwnResource(context.Context, shared.AuthID, domain.ResourceID) (OwnedScriptResource, error)
+	GetOwnReview(context.Context, shared.AuthID, domain.ResourceID, domain.VersionID, domain.ReviewID) (OwnedScriptReviewResult, error)
 	GetResource(context.Context, domain.ResourceID) (domain.Resource, error)
 	ListVersions(context.Context, ScriptReadScope, domain.ResourceID, domain.VersionState, ScriptPageRequest) (ScriptPage[ScriptVersionSummary], error)
 	GetVersion(context.Context, ScriptReadScope, domain.ResourceID, domain.VersionID) (ScriptVersionDetail, error)

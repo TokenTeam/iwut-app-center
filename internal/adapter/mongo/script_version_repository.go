@@ -84,7 +84,7 @@ func (r *ScriptVersionRepository) CreateDraft(ctx context.Context, draft domain.
 		return domain.Version{}, domain.ErrInternal
 	}
 	return withScriptTransaction(ctx, r.database, func(tx context.Context) (domain.Version, error) {
-		if _, err := loadScriptResource(tx, r.database, draft.ResourceID); err != nil {
+		if _, err := requireScriptOwnerWritable(tx, r.database, draft.ResourceID, draft.CreatedBy); err != nil {
 			return domain.Version{}, err
 		}
 		if _, err := r.database.Collection(scriptVersionsCollection).InsertOne(tx, toScriptVersionDocument(draft)); err != nil {
@@ -103,12 +103,15 @@ func (r *ScriptVersionRepository) CreateDraft(ctx context.Context, draft domain.
 func (r *ScriptVersionRepository) ReplaceDraft(ctx context.Context, cmd port.ReplaceDraft) (domain.Version, error) {
 	at := cmd.At.UTC().Truncate(time.Millisecond)
 	return withScriptTransaction(ctx, r.database, func(tx context.Context) (domain.Version, error) {
-		if _, err := loadScriptResource(tx, r.database, cmd.ResourceID); err != nil {
+		if _, err := requireScriptOwnerWritable(tx, r.database, cmd.ResourceID, cmd.Actor); err != nil {
 			return domain.Version{}, err
 		}
 		current, err := r.loadVersion(tx, cmd.ResourceID, cmd.VersionID)
 		if err != nil {
 			return domain.Version{}, err
+		}
+		if !current.AuthoredBy(cmd.Actor) {
+			return domain.Version{}, domain.ErrInternal
 		}
 		next, changed, err := current.ReplaceDraft(cmd.ExpectedRevision, cmd.Content, cmd.Actor, at)
 		if err != nil || !changed {
@@ -132,9 +135,24 @@ func (r *ScriptVersionRepository) ReplaceDraft(ctx context.Context, cmd port.Rep
 	})
 }
 
-func loadScriptResource(ctx context.Context, database *drivermongo.Database, id domain.ResourceID) (domain.Resource, error) {
+func requireScriptOwnerWritable(ctx context.Context, db *drivermongo.Database, id domain.ResourceID, actor shared.AuthID) (domain.Resource, error) {
+	if err := requireOwnerWritable(ctx, db, actor.String(), false); err != nil {
+		return domain.Resource{}, err
+	}
+	return loadOwnedScriptResource(ctx, db, id, actor)
+}
+
+func loadOwnedScriptResource(ctx context.Context, db *drivermongo.Database, id domain.ResourceID, actor shared.AuthID) (domain.Resource, error) {
+	return findScriptResource(ctx, db, bson.D{{Key: "resourceId", Value: id}, {Key: "ownerAuthId", Value: actor}})
+}
+
+func loadScriptResource(ctx context.Context, db *drivermongo.Database, id domain.ResourceID) (domain.Resource, error) {
+	return findScriptResource(ctx, db, bson.D{{Key: "resourceId", Value: id}})
+}
+
+func findScriptResource(ctx context.Context, db *drivermongo.Database, filter bson.D) (domain.Resource, error) {
 	var doc scriptResourceDocument
-	err := database.Collection(scriptResourcesCollectionName).FindOne(ctx, bson.D{{Key: "resourceId", Value: id}}).Decode(&doc)
+	err := db.Collection(scriptResourcesCollectionName).FindOne(ctx, filter).Decode(&doc)
 	if errors.Is(err, drivermongo.ErrNoDocuments) {
 		return domain.Resource{}, domain.ErrNotFound
 	}

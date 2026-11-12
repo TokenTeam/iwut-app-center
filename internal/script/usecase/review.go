@@ -27,7 +27,7 @@ func NewSubmitDraftHandler(ids port.ReviewIDGenerator, clock port.Clock, repo po
 }
 
 func (h *SubmitDraftHandler) Submit(ctx context.Context, identity shared.TrustedIdentity, cmd SubmitDraftCommand) (domain.Submission, error) {
-	if err := RequireMaintainer(identity); err != nil {
+	if err := RequireScriptAuthor(identity); err != nil {
 		return domain.Submission{}, err
 	}
 	resourceID, err := domain.ParseResourceID(cmd.ResourceID)

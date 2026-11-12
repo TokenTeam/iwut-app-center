@@ -34,7 +34,7 @@ func approvedDistributionScript(t *testing.T, db *dm.Database, at time.Time, lab
 	if len(versionIDs) > 0 {
 		versionID = versionIDs[0]
 	}
-	version, err := sd.NewDraft(versionID, resource.ID, label, content, "text-author", at)
+	version, err := sd.NewDraft(versionID, resource.ID, label, content, resource.OwnerAuthID, at)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func approvedDistributionScript(t *testing.T, db *dm.Database, at time.Time, lab
 		t.Fatal(err)
 	}
 	reviewID := sd.ReviewID(nextIntegrationApplicationID(t))
-	if _, err := repo.SubmitDraft(t.Context(), sp.SubmitDraft{ResourceID: resource.ID, VersionID: version.ID, ReviewID: reviewID, ExpectedRevision: 1, Actor: "script-submitter", At: at.Add(time.Second)}); err != nil {
+	if _, err := repo.SubmitDraft(t.Context(), sp.SubmitDraft{ResourceID: resource.ID, VersionID: version.ID, ReviewID: reviewID, ExpectedRevision: 1, Actor: resource.OwnerAuthID, At: at.Add(time.Second)}); err != nil {
 		t.Fatal(err)
 	}
 	seedTerminalScriptDependency(t, db, string(version.ID), string(reviewID), "APPROVED", at.Add(2*time.Second))

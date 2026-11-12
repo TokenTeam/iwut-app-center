@@ -15,8 +15,8 @@ func TestBRSCR002DraftAuthorizationPrecedesValidation(t *testing.T) {
 		want     error
 	}{
 		{shared.TrustedIdentity{}, domain.ErrIdentityRequired},
-		{shared.TrustedIdentity{AuthID: "reviewer", Permissions: []string{"app.script.review"}}, domain.ErrMaintainForbidden},
-		{shared.TrustedIdentity{AuthID: "developer", DeveloperStatus: shared.DeveloperStatusApproved, Permissions: []string{"app.script.maintain.extra"}}, domain.ErrMaintainForbidden},
+		{shared.TrustedIdentity{AuthID: "reviewer", Permissions: []string{"app.script.review"}}, domain.ErrDeveloperApprovalRequired},
+		{shared.TrustedIdentity{AuthID: "developer", DeveloperStatus: shared.DeveloperStatusWithdrawn}, domain.ErrDeveloperApprovalRequired},
 	} {
 		_, createErr := h.Create(t.Context(), tc.identity, CreateDraftCommand{})
 		_, replaceErr := h.Replace(t.Context(), tc.identity, ReplaceDraftCommand{})

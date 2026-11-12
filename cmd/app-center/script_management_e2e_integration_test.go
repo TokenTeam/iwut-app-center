@@ -21,6 +21,7 @@ import (
 	appreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review"
 	appreviewqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_review_query"
 	appversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/application_version"
+	authoringv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_authoring"
 	distributionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_distribution"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
@@ -50,7 +51,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	key, keyPath := e2eIdentity(t)
 	addresses := e2eReserveAddresses(t, 3)
 	_, auth := e2eStartAuthServer(t, addresses[2])
-	auth.SetStatus("developer-without-maintain", developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED)
+	auth.SetStatus("app-developer", developerstatusv1.DeveloperStatus_DEVELOPER_STATUS_APPROVED)
 	configuration, err := config.Load(e2eEnvironment(map[string]string{
 		config.MongoURIEnv:      os.Getenv(mongoIntegrationURIEnv),
 		config.MongoDatabaseEnv: database.Name(),
@@ -91,11 +92,11 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	e2eWaitForHTTPListener(t, ctx, addresses[0], done, &runErr)
 	connection := e2eDialGRPC(t, ctx, addresses[1], done, &runErr)
 	t.Cleanup(func() { _ = connection.Close() })
-	maintainer := e2eSignReviewerIdentity(t, key, "script-maintainer", domain.MaintainPermission)
-	developer := e2eSignIdentity(t, key, "developer-without-maintain", "APPROVED")
-	maintainerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, maintainer))
-	resourceClient := resourcev1.NewScriptResourceServiceClient(connection)
-	versionClient := versionv1.NewScriptVersionServiceClient(connection)
+	author := e2eSignIdentity(t, key, "script-author", "APPROVED")
+	developer := e2eSignIdentity(t, key, "app-developer", "APPROVED")
+	authorContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, author))
+	resourceClient := authoringv1.NewScriptAuthoringServiceClient(connection)
+	versionClient := authoringv1.NewScriptAuthoringServiceClient(connection)
 
 	httpCall := func(method, path, token string, body []byte, expectedStatus int, target proto.Message) []byte {
 		t.Helper()
@@ -134,17 +135,18 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	}
 
 	const resourcePath = "/v1/script-resources"
-	httpCall(http.MethodPost, resourcePath, "", []byte("{"), http.StatusUnauthorized, nil)
-	httpCall(http.MethodPost, resourcePath, developer, []byte("{"), http.StatusForbidden, nil)
-	httpCall(http.MethodPost, resourcePath+"?name=Override", maintainer, []byte(`{"name":"A","purpose":"B"}`), http.StatusBadRequest, nil)
-	httpCall(http.MethodPost, resourcePath, maintainer, []byte(`{"name":"A","name":"B","purpose":"C"}`), http.StatusBadRequest, nil)
-	httpCall(http.MethodPost, resourcePath, maintainer, []byte(`{"name":"A","purpose":"B","permissions":["app.script.maintain"]}`), http.StatusBadRequest, nil)
+	const authorPath = "/v1/users/me/script-resources"
+	httpCall(http.MethodPost, authorPath, "", []byte("{"), http.StatusUnauthorized, nil)
+	httpCall(http.MethodPost, authorPath, e2eSignIdentity(t, key, "unapproved-author", "PENDING"), []byte("{"), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, authorPath+"?name=Override", author, []byte(`{"name":"A","purpose":"B"}`), http.StatusBadRequest, nil)
+	httpCall(http.MethodPost, authorPath, author, []byte(`{"name":"A","name":"B","purpose":"C"}`), http.StatusBadRequest, nil)
+	httpCall(http.MethodPost, authorPath, author, []byte(`{"name":"A","purpose":"B","permissions":["app.script.maintain"]}`), http.StatusBadRequest, nil)
 	var resource resourcev1.ScriptResource
-	httpCall(http.MethodPost, resourcePath, maintainer, []byte(`{"name":"  Crawler  ","purpose":"Purpose"}`), http.StatusOK, &resource)
+	httpCall(http.MethodPost, authorPath, author, []byte(`{"name":"  Crawler  ","purpose":"Purpose"}`), http.StatusOK, &resource)
 	if resource.GetResourceId() == "" || resource.GetName() != "Crawler" || resource.GetRevision() != 1 {
 		t.Fatal("invalid resource creation response")
 	}
-	updated, err := resourceClient.ReplaceScriptResourceMetadata(maintainerContext, &resourcev1.ReplaceScriptResourceMetadataRequest{
+	updated, err := resourceClient.ReplaceOwnScriptResourceMetadata(authorContext, &resourcev1.ReplaceScriptResourceMetadataRequest{
 		ResourceId: resource.GetResourceId(),
 		Command:    &resourcev1.ReplaceScriptResourceMetadataCommand{ExpectedRevision: 1, Name: "Crawler 2", Purpose: "New purpose"},
 	})
@@ -153,76 +155,77 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	}
 
 	versionsPath := resourcePath + "/" + resource.GetResourceId() + "/versions"
+	ownVersionsPath := authorPath + "/" + resource.GetResourceId() + "/versions"
 	const original = "\ufeff{\r\n  \"b\": 2, \"a\":1\r\n}\r\n "
 	body := marshal(&versionv1.CreateScriptVersionDraftInput{VersionLabel: "draft-1", ContentFormat: "json", ContentText: original})
 	var draft versionv1.ScriptVersion
-	httpCall(http.MethodPost, versionsPath, maintainer, body, http.StatusOK, &draft)
+	httpCall(http.MethodPost, ownVersionsPath, author, body, http.StatusOK, &draft)
 	assertScriptDraftBytes(t, &draft, original, 1)
-	httpCall(http.MethodPost, versionsPath, maintainer, body, http.StatusConflict, nil)
-	httpCall(http.MethodPost, versionsPath, maintainer, []byte(`{"versionLabel":"bad","contentFormat":"json","contentText":"\ud800"}`), http.StatusBadRequest, nil)
+	httpCall(http.MethodPost, ownVersionsPath, author, body, http.StatusConflict, nil)
+	httpCall(http.MethodPost, ownVersionsPath, author, []byte(`{"versionLabel":"bad","contentFormat":"json","contentText":"\ud800"}`), http.StatusBadRequest, nil)
 
 	const replacement = "{\"a\":1,\"b\":2}"
 	replace := &versionv1.ReplaceScriptVersionDraftRequest{
 		ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId(),
 		Command: &versionv1.ReplaceScriptVersionDraftInput{ExpectedRevision: 1, ContentFormat: "json", ContentText: replacement},
 	}
-	modified, err := versionClient.ReplaceScriptVersionDraft(maintainerContext, replace)
+	modified, err := versionClient.ReplaceOwnScriptVersionDraft(authorContext, replace)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertScriptDraftBytes(t, modified, replacement, 2)
-	if _, err := versionClient.ReplaceScriptVersionDraft(maintainerContext, replace); status.Code(err) != codes.Aborted {
+	if _, err := versionClient.ReplaceOwnScriptVersionDraft(authorContext, replace); status.Code(err) != codes.Aborted {
 		t.Fatal("stale native replacement did not conflict")
 	}
 	replace.Command.ExpectedRevision = 2
 	var noop versionv1.ScriptVersion
-	httpCall(http.MethodPut, versionsPath+"/"+draft.GetVersionId()+"/draft", maintainer, marshal(replace.Command), http.StatusOK, &noop)
+	httpCall(http.MethodPut, ownVersionsPath+"/"+draft.GetVersionId()+"/draft", author, marshal(replace.Command), http.StatusOK, &noop)
 	if !proto.Equal(&noop, modified) {
 		t.Fatal("no-op did not return persisted response")
 	}
 	forged := proto.CloneOf(replace)
 	forged.Command.ProtoReflect().SetUnknown([]byte{0x20, 0x01})
-	if _, err := versionClient.ReplaceScriptVersionDraft(maintainerContext, forged); status.Code(err) != codes.InvalidArgument {
+	if _, err := versionClient.ReplaceOwnScriptVersionDraft(authorContext, forged); status.Code(err) != codes.InvalidArgument {
 		t.Fatal("unknown gRPC command field accepted")
 	}
 
 	large := strings.Repeat("\x01", domain.MaxContentBytes-1) + "x"
 	var largeDraft versionv1.ScriptVersion
-	httpCall(http.MethodPost, versionsPath, maintainer, marshal(&versionv1.CreateScriptVersionDraftInput{
+	httpCall(http.MethodPost, ownVersionsPath, author, marshal(&versionv1.CreateScriptVersionDraftInput{
 		VersionLabel: "boundary", ContentFormat: "json", ContentText: large,
 	}), http.StatusOK, &largeDraft)
 	assertScriptDraftBytes(t, &largeDraft, large, 1)
 
-	submitPath := versionsPath + "/" + draft.GetVersionId() + "/reviews"
-	httpCall(http.MethodPost, submitPath, maintainer, []byte(`{"expectedRevision":"2","policyVersion":"caller-selected"}`), http.StatusBadRequest, nil)
+	submitPath := ownVersionsPath + "/" + draft.GetVersionId() + "/reviews"
+	httpCall(http.MethodPost, submitPath, author, []byte(`{"expectedRevision":"2","policyVersion":"caller-selected"}`), http.StatusBadRequest, nil)
 	var submitted versionv1.ScriptVersionReviewSubmission
-	httpCall(http.MethodPost, submitPath, maintainer, []byte(`{"expectedRevision":"2"}`), http.StatusOK, &submitted)
+	httpCall(http.MethodPost, submitPath, author, []byte(`{"expectedRevision":"2"}`), http.StatusOK, &submitted)
 	assertScriptSubmission(t, &submitted, 3)
-	httpCall(http.MethodPost, submitPath, maintainer, []byte(`{"expectedRevision":"2"}`), http.StatusConflict, nil)
+	httpCall(http.MethodPost, submitPath, author, []byte(`{"expectedRevision":"2"}`), http.StatusConflict, nil)
 	secondSubmission := &versionv1.SubmitScriptVersionReviewRequest{
 		ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(),
 		Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1},
 	}
 	developerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs(transport.IdentityHeader, developer))
-	if _, err := versionClient.SubmitScriptVersionReview(developerContext, secondSubmission); status.Code(err) != codes.PermissionDenied {
-		t.Fatal("developer without script maintain could submit", status.Code(err))
+	if _, err := versionClient.SubmitOwnScriptVersionReview(developerContext, secondSubmission); status.Code(err) != codes.NotFound {
+		t.Fatal("a different developer could submit this version", status.Code(err))
 	}
-	second, err := versionClient.SubmitScriptVersionReview(maintainerContext, secondSubmission)
+	second, err := versionClient.SubmitOwnScriptVersionReview(authorContext, secondSubmission)
 	if err != nil {
 		t.Fatal("native script submission:", status.Code(err))
 	}
 	assertScriptSubmission(t, second, 2)
 	replace.Command.ExpectedRevision = 3
-	if _, err := versionClient.ReplaceScriptVersionDraft(maintainerContext, replace); status.Code(err) != codes.Aborted {
+	if _, err := versionClient.ReplaceOwnScriptVersionDraft(authorContext, replace); status.Code(err) != codes.Aborted {
 		t.Fatal("submitted script could still be edited", status.Code(err))
 	}
 	reviewer := e2eSignReviewerIdentity(t, key, "script-reviewer", "app.script.review")
-	conflicted := e2eSignReviewerIdentity(t, key, "script-maintainer", "app.script.review")
+	conflicted := e2eSignReviewerIdentity(t, key, "script-author", "app.script.review")
 	publisher := e2eSignReviewerIdentity(t, key, "script-publisher", "app.script.publish")
 	suspender := e2eSignReviewerIdentity(t, key, "script-suspender", "app.script.suspend")
 	publicationRestorer := e2eSignReviewerIdentity(t, key, "script-restorer", "app.script.restore")
-	reviewPath := submitPath + "/" + submitted.GetReviewId()
-	for _, caller := range []string{maintainer, reviewer, publisher, suspender, publicationRestorer} {
+	reviewPath := versionsPath + "/" + draft.GetVersionId() + "/reviews/" + submitted.GetReviewId()
+	for _, caller := range []string{reviewer, publisher, suspender, publicationRestorer} {
 		var metadata resourcev1.ScriptResource
 		httpCall(http.MethodGet, resourcePath+"/"+resource.GetResourceId(), caller, nil, http.StatusOK, &metadata)
 		if metadata.GetResourceId() != resource.GetResourceId() {
@@ -231,10 +234,40 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	}
 	httpCall(http.MethodGet, versionsPath+"?limit=bad", developer, nil, http.StatusForbidden, nil)
 	httpCall(http.MethodGet, versionsPath+"?limit=bad", "", nil, http.StatusUnauthorized, nil)
-	httpCall(http.MethodGet, versionsPath+"?limit=0", maintainer, nil, http.StatusBadRequest, nil)
-	httpCall(http.MethodGet, versionsPath+"?limit=1&limit=2", maintainer, nil, http.StatusBadRequest, nil)
-	httpCall(http.MethodGet, versionsPath+"?cursor%20state=x", maintainer, nil, http.StatusBadRequest, nil)
-	httpCall(http.MethodGet, versionsPath+"?resourceId="+resource.GetResourceId(), maintainer, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, ownVersionsPath+"?limit=0", author, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, ownVersionsPath+"?limit=1&limit=2", author, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, ownVersionsPath+"?cursor%20state=x", author, nil, http.StatusBadRequest, nil)
+	httpCall(http.MethodGet, ownVersionsPath+"?resourceId="+resource.GetResourceId(), author, nil, http.StatusBadRequest, nil)
+
+	suspendedAuthor := e2eSignIdentity(t, key, "script-author", "SUSPENDED")
+	var ownResource authoringv1.OwnScriptResource
+	httpCall(http.MethodGet, authorPath+"/"+resource.GetResourceId(), suspendedAuthor, nil, http.StatusOK, &ownResource)
+	if ownResource.GetLatestVersion() == nil {
+		t.Fatal("owner resource omitted latest version")
+	}
+	httpCall(http.MethodGet, authorPath+"/"+resource.GetResourceId(), developer, nil, http.StatusNotFound, nil)
+	httpCall(http.MethodPut, ownVersionsPath+"/"+draft.GetVersionId()+"/draft", developer, marshal(replace.GetCommand()), http.StatusNotFound, nil)
+	httpCall(http.MethodPost, authorPath, suspendedAuthor, []byte(`{"name":"N","purpose":"P"}`), http.StatusForbidden, nil)
+	var ownReview authoringv1.OwnScriptReviewResult
+	httpCall(http.MethodGet, submitPath+"/"+submitted.GetReviewId(), suspendedAuthor, nil, http.StatusOK, &ownReview)
+	if ownReview.GetDecision() != nil || ownReview.GetReviewId() != submitted.GetReviewId() {
+		t.Fatal("owner review did not reflect pending submission")
+	}
+	httpCall(http.MethodGet, submitPath+"/"+submitted.GetReviewId(), developer, nil, http.StatusNotFound, nil)
+
+	var ownList authoringv1.ListOwnScriptResourcesResponse
+	httpCall(http.MethodGet, authorPath, suspendedAuthor, nil, http.StatusOK, &ownList)
+	if len(ownList.GetItems()) != 1 || ownList.GetItems()[0].GetResourceId() != resource.GetResourceId() {
+		t.Fatal("owner list missing resource")
+	}
+	ownVersion, err := versionClient.GetOwnScriptVersion(authorContext, &queryv1.GetScriptVersionRequest{ResourceId: resource.GetResourceId(), VersionId: draft.GetVersionId()})
+	if err != nil || ownVersion.GetContentText() != replacement || ownVersion.GetVersion().GetReviewId() != submitted.GetReviewId() {
+		t.Fatal("native owner version lost content or review", err)
+	}
+	if err := connection.Invoke(authorContext, "/app_center.v1.script_resource.ScriptResourceService/CreateScriptResource",
+		&resourcev1.CreateScriptResourceRequest{Name: "Legacy", Purpose: "Legacy"}, &resourcev1.ScriptResource{}); status.Code(err) != codes.Unimplemented {
+		t.Fatal("retired script resource write method remains callable", err)
+	}
 
 	var resources queryv1.ListScriptResourcesResponse
 	httpCall(http.MethodGet, resourcePath+"?limit=1", suspender, nil, http.StatusOK, &resources)
@@ -249,7 +282,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	httpCall(http.MethodGet, reviewPath, publisher, nil, http.StatusForbidden, nil)
 	httpCall(http.MethodGet, versionsPath+"/"+draft.GetVersionId(), suspender, nil, http.StatusForbidden, nil)
 	httpCall(http.MethodGet, reviewPath, developer, nil, http.StatusForbidden, nil)
-	httpCall(http.MethodGet, "/v1/script-reviews/pending", maintainer, nil, http.StatusForbidden, nil)
+	httpCall(http.MethodGet, "/v1/script-reviews/pending", author, nil, http.StatusForbidden, nil)
 	var queue queryv1.ListPendingScriptReviewsResponse
 	httpCall(http.MethodGet, "/v1/script-reviews/pending?resourceId="+resource.GetResourceId()+"&limit=1", reviewer, nil, http.StatusOK, &queue)
 	if len(queue.GetItems()) != 1 || queue.GetNextCursor() == "" {
@@ -337,7 +370,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	// Script decisions use the independent review permission and immutable policy.
 	decisionPath := reviewPath + "/decision"
 	httpCall(http.MethodPost, decisionPath, "", []byte("{"), http.StatusUnauthorized, nil)
-	httpCall(http.MethodPost, decisionPath, maintainer, []byte("{"), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, decisionPath, author, []byte("{"), http.StatusForbidden, nil)
 	approve := &reviewv1.DecideScriptVersionReviewInput{ExpectedVersionRevision: 3, PolicyVersion: domain.InitialPolicyVersion, Decision: reviewv1.ScriptReviewAction_SCRIPT_REVIEW_ACTION_APPROVE}
 	for _, check := range detail.GetChecks() {
 		approve.ConfirmedCheckIds = append(approve.ConfirmedCheckIds, check.GetId())
@@ -409,6 +442,13 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	if err != nil || rejected.GetCascade().GetStatus() != reviewv1.ScriptCascadeStatus_SCRIPT_CASCADE_STATUS_PENDING || rejected.GetCascade().GetTotal() != 1 {
 		t.Fatal("rejection task ACK", err)
 	}
+	terminal, err := versionClient.GetOwnScriptReviewResult(authorContext, &queryv1.GetScriptReviewRequest{
+		ResourceId: resource.GetResourceId(), VersionId: largeDraft.GetVersionId(), ReviewId: second.GetReviewId(),
+	})
+	if err != nil || terminal.GetStatus() != queryv1.ScriptReviewStatus_SCRIPT_REVIEW_STATUS_REJECTED || terminal.GetDecision().GetReason() != "private script review reason" {
+		t.Fatal("owner did not receive stored rejection reason", err)
+	}
+
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -442,7 +482,7 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	publishPath := versionsPath + "/" + draft.GetVersionId() + "/publication"
 	publishInput := &publicationv1.ScriptPublicationRevisionInput{ExpectedPublicationRevision: 1}
 	httpCall(http.MethodPost, publishPath, "", []byte("{"), http.StatusUnauthorized, nil)
-	httpCall(http.MethodPost, publishPath, maintainer, []byte("{"), http.StatusForbidden, nil)
+	httpCall(http.MethodPost, publishPath, author, []byte("{"), http.StatusForbidden, nil)
 	httpCall(http.MethodPost, publishPath, reviewer, marshal(publishInput), http.StatusForbidden, nil)
 	httpCall(http.MethodPost, publishPath, publisher, []byte(`{"expectedPublicationRevision":"1","decidedBy":"spoof"}`), http.StatusBadRequest, nil)
 	var publicationResult publicationv1.ScriptPublicationCommandResult
@@ -606,12 +646,12 @@ func TestE2E_UCAPP041_042_043_044_045_046_047_048_049_ScriptManagementHTTPAndGRP
 	// Prove the maximum escaped body using the formal generated HTTP client.
 	maxText := strings.Repeat("\x01", domain.MaxContentBytes)
 	maxInput := &versionv1.CreateScriptVersionDraftRequest{ResourceId: resource.GetResourceId(), Draft: &versionv1.CreateScriptVersionDraftInput{VersionLabel: "max-distribution", ContentFormat: "json", ContentText: maxText}}
-	header = http.Header{transport.IdentityHeader: []string{maintainer}}
-	maxVersion, err := versionv1.NewScriptVersionServiceHTTPClient(httpClient).CreateScriptVersionDraft(ctx, maxInput, khttp.Header(&header))
+	header = http.Header{transport.IdentityHeader: []string{author}}
+	maxVersion, err := authoringv1.NewScriptAuthoringServiceHTTPClient(httpClient).CreateOwnScriptVersionDraft(ctx, maxInput, khttp.Header(&header))
 	if err != nil {
 		t.Fatal("maximum generated upload", err)
 	}
-	maxSubmission, err := versionClient.SubmitScriptVersionReview(maintainerContext, &versionv1.SubmitScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1}})
+	maxSubmission, err := versionClient.SubmitOwnScriptVersionReview(authorContext, &versionv1.SubmitScriptVersionReviewRequest{ResourceId: resource.GetResourceId(), VersionId: maxVersion.GetVersionId(), Command: &versionv1.SubmitScriptVersionReviewInput{ExpectedRevision: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}

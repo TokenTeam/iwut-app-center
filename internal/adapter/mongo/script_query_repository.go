@@ -144,7 +144,14 @@ func (r *ScriptQueryRepository) ListResources(ctx context.Context, reader port.S
 	if err := r.applyCursor(page.Cursor, scope, filter, "createdAt", "resourceId"); err != nil {
 		return empty, err
 	}
-	docs, err := findScriptPage[scriptResourceDocument](ctx, r.db.Collection(scriptResourcesCollectionName), filter, page.Limit, "createdAt", "resourceId", nil)
+	docs, err := readScriptResourceRows[scriptResourceDocument](ctx, r.db, dm.Pipeline{
+		{{Key: "$match", Value: filter}},
+		{{Key: "$sort", Value: bson.D{{Key: "createdAt", Value: -1}, {Key: "resourceId", Value: -1}}}},
+		scriptResourceVersionLookup("visible", true),
+		{{Key: "$match", Value: bson.M{"visible.0": bson.M{"$exists": true}}}},
+		{{Key: "$limit", Value: int64(page.Limit) + 1}},
+		{{Key: "$unset", Value: "visible"}},
+	})
 	if err != nil {
 		return empty, err
 	}
@@ -158,7 +165,30 @@ func (r *ScriptQueryRepository) ListResources(ctx context.Context, reader port.S
 }
 
 func (r *ScriptQueryRepository) GetResource(ctx context.Context, id domain.ResourceID) (domain.Resource, error) {
-	return loadScriptResource(ctx, r.db, id)
+	return withScriptTransaction(ctx, r.db, func(tx context.Context) (domain.Resource, error) {
+		return r.visibleResource(tx, id)
+	})
+}
+
+func (r *ScriptQueryRepository) visibleResource(ctx context.Context, id domain.ResourceID) (domain.Resource, error) {
+	resource, err := loadScriptResource(ctx, r.db, id)
+	if err != nil {
+		return domain.Resource{}, err
+	}
+	err = r.db.Collection(scriptVersionsCollection).FindOne(ctx,
+		bson.M{"resourceId": id, "state": bson.M{"$in": submittedScriptStates}},
+		options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+	if errors.Is(err, dm.ErrNoDocuments) {
+		return domain.Resource{}, domain.ErrNotFound
+	}
+	return resource, err
+}
+
+func (r *ScriptQueryRepository) resourceForRead(ctx context.Context, reader port.ScriptReadScope, id domain.ResourceID) (domain.Resource, error) {
+	if reader.Own {
+		return loadOwnedScriptResource(ctx, r.db, id, reader.Actor)
+	}
+	return r.visibleResource(ctx, id)
 }
 
 func (r *ScriptQueryRepository) ListVersions(ctx context.Context, reader port.ScriptReadScope, resource domain.ResourceID, state domain.VersionState, page port.ScriptPageRequest) (port.ScriptPage[port.ScriptVersionSummary], error) {
@@ -169,26 +199,37 @@ func (r *ScriptQueryRepository) ListVersions(ctx context.Context, reader port.Sc
 		return empty, err
 	}
 	return withScriptTransaction(ctx, r.db, func(tx context.Context) (port.ScriptPage[port.ScriptVersionSummary], error) {
-		if _, err := r.GetResource(tx, resource); err != nil {
+		parent, err := r.resourceForRead(tx, reader, resource)
+		if err != nil {
 			return empty, err
 		}
 		if state != "" {
 			filter["state"] = state
 		}
-		if !reader.Maintain && !reader.Publish {
+		if !reader.Own {
 			if state == domain.VersionDraft {
 				return port.ScriptPage[port.ScriptVersionSummary]{Items: []port.ScriptVersionSummary{}}, nil
 			}
 			if state == "" {
-				filter["state"] = bson.M{"$ne": domain.VersionDraft}
+				filter["state"] = bson.M{"$in": submittedScriptStates}
 			}
 		}
-		docs, err := findScriptPage[scriptVersionDocument](tx, r.db.Collection(scriptVersionsCollection), filter, page.Limit, "createdAt", "versionId", bson.M{"contentText": 0, "contributors": 0, "createdBy": 0, "updatedBy": 0})
+		docs, err := findScriptPage[scriptVersionDocument](tx, r.db.Collection(scriptVersionsCollection), filter, page.Limit, "createdAt", "versionId", bson.M{"contentText": 0})
+		if err != nil {
+			return empty, err
+		}
+		reviews, err := r.ownedVersionReviews(tx, reader, resource, docs)
 		if err != nil {
 			return empty, err
 		}
 		return projectScriptPage(r, docs, page.Limit, scope, func(doc scriptVersionDocument) (port.ScriptVersionSummary, scriptCursorPosition, error) {
 			summary, err := scriptVersionSummary(doc)
+			if !doc.version().AuthoredBy(parent.OwnerAuthID) {
+				return summary, scriptCursorPosition{}, port.ErrScriptQueryInconsistent
+			}
+			if reader.Own {
+				summary.ReviewID = reviews[summary.ID]
+			}
 			return summary, scriptCursorPosition{At: summary.CreatedAt, ID: string(summary.ID)}, err
 		})
 	})
@@ -197,7 +238,7 @@ func (r *ScriptQueryRepository) ListVersions(ctx context.Context, reader port.Sc
 func (r *ScriptQueryRepository) GetVersion(ctx context.Context, reader port.ScriptReadScope, resource domain.ResourceID, versionID domain.VersionID) (port.ScriptVersionDetail, error) {
 	var empty port.ScriptVersionDetail
 	return withScriptTransaction(ctx, r.db, func(tx context.Context) (port.ScriptVersionDetail, error) {
-		parent, err := r.GetResource(tx, resource)
+		parent, err := r.resourceForRead(tx, reader, resource)
 		if err != nil {
 			return empty, err
 		}
@@ -205,10 +246,10 @@ func (r *ScriptQueryRepository) GetVersion(ctx context.Context, reader port.Scri
 		if err != nil {
 			return empty, err
 		}
-		if version.State == domain.VersionDraft && !reader.Maintain && !reader.Publish {
+		if version.State == domain.VersionDraft && !reader.Own {
 			return empty, domain.ErrVersionNotFound
 		}
-		if version.Validate() != nil {
+		if version.Validate() != nil || !version.AuthoredBy(parent.OwnerAuthID) {
 			return empty, port.ErrScriptQueryInconsistent
 		}
 		summary, err := scriptVersionSummary(toScriptVersionDocument(version))
@@ -229,11 +270,12 @@ func (r *ScriptQueryRepository) GetVersion(ctx context.Context, reader port.Scri
 				return empty, err
 			}
 			result.ReviewID = doc.ReviewID
+			result.Version.ReviewID = doc.ReviewID
 			if doc.Decision != nil {
 				result.DecisionID = doc.Decision.ID
 			}
 		}
-		if reader.Maintain || (reader.Review && version.State != domain.VersionDraft) {
+		if reader.Own || reader.Review {
 			result.Text = &version.Content.Text
 		}
 		return result, nil
@@ -252,7 +294,7 @@ func (r *ScriptQueryRepository) ListPendingReviews(ctx context.Context, reader p
 	}
 	return withScriptTransaction(ctx, r.db, func(tx context.Context) (port.ScriptPage[port.ScriptReviewSummary], error) {
 		if resource != "" {
-			if _, err := r.GetResource(tx, resource); err != nil {
+			if _, err := r.visibleResource(tx, resource); err != nil {
 				return empty, err
 			}
 		}
@@ -300,7 +342,7 @@ func (r *ScriptQueryRepository) pendingReviewParents(ctx context.Context, docs [
 		}
 		resources[resource.ID] = resource
 	}
-	versionDocs, err := findScriptPage[scriptVersionDocument](ctx, r.db.Collection(scriptVersionsCollection), bson.M{"versionId": bson.M{"$in": versionIDs}}, len(docs), "createdAt", "versionId", bson.M{"contentText": 0, "contributors": 0})
+	versionDocs, err := findScriptPage[scriptVersionDocument](ctx, r.db.Collection(scriptVersionsCollection), bson.M{"versionId": bson.M{"$in": versionIDs}}, len(docs), "createdAt", "versionId", bson.M{"contentText": 0})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -324,7 +366,7 @@ func (r *ScriptQueryRepository) GetReview(ctx context.Context, resource domain.R
 		if err != nil {
 			return empty, err
 		}
-		parent, err := r.GetResource(tx, resource)
+		parent, err := loadScriptResource(tx, r.db, resource)
 		if errors.Is(err, domain.ErrNotFound) {
 			return empty, port.ErrScriptQueryInconsistent
 		}
@@ -400,7 +442,7 @@ func pendingScriptReviewMatches(doc scriptReviewDocument, resource domain.Resour
 		snapshot.SourceRevision > 0 && snapshot.SourceRevision == version.Revision-1 &&
 		snapshot.ResourceRevision > 0 && snapshot.ResourceRevision <= resource.Revision &&
 		(snapshot.ResourceRevision < resource.Revision || metadata == resource.Metadata) &&
-		doc.SubmittedBy.IsValid() && doc.SubmittedBy == version.UpdatedBy && validScriptQueryTime(doc.SubmittedAt) &&
+		version.AuthoredBy(resource.OwnerAuthID) && doc.SubmittedBy == resource.OwnerAuthID && doc.SubmittedBy == version.UpdatedBy && validScriptQueryTime(doc.SubmittedAt) &&
 		doc.SubmittedAt.Equal(version.UpdatedAt)
 }
 

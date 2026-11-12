@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	authoringv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_authoring"
 	publicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	reviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
@@ -27,18 +28,17 @@ import (
 )
 
 const (
-	createScriptResource  = resourcev1.OperationScriptResourceServiceCreateScriptResource
-	replaceScriptResource = resourcev1.OperationScriptResourceServiceReplaceScriptResourceMetadata
-	createScriptDraft     = versionv1.OperationScriptVersionServiceCreateScriptVersionDraft
-	replaceScriptDraft    = versionv1.OperationScriptVersionServiceReplaceScriptVersionDraft
-	submitScriptReview    = versionv1.OperationScriptVersionServiceSubmitScriptVersionReview
+	createScriptResource  = authoringv1.OperationScriptAuthoringServiceCreateOwnScriptResource
+	replaceScriptResource = authoringv1.OperationScriptAuthoringServiceReplaceOwnScriptResourceMetadata
+	createScriptDraft     = authoringv1.OperationScriptAuthoringServiceCreateOwnScriptVersionDraft
+	replaceScriptDraft    = authoringv1.OperationScriptAuthoringServiceReplaceOwnScriptVersionDraft
+	submitScriptReview    = authoringv1.OperationScriptAuthoringServiceSubmitOwnScriptVersionReview
 	// Every script byte can expand to a six-byte JSON escape.
 	maxScriptJSONBytes = 6*domain.MaxContentBytes + 4096
 )
 
 type ScriptManagementService struct {
-	resourcev1.UnimplementedScriptResourceServiceServer
-	versionv1.UnimplementedScriptVersionServiceServer
+	authoringv1.UnimplementedScriptAuthoringServiceServer
 	reviewv1.UnimplementedScriptReviewServiceServer
 	publicationv1.UnimplementedScriptPublicationServiceServer
 	resources    *scriptuc.ResourceHandlers
@@ -46,22 +46,23 @@ type ScriptManagementService struct {
 	submissions  *scriptuc.SubmitDraftHandler
 	decisions    *scriptuc.DecideReviewHandler
 	publications *scriptuc.PublicationHandler
+	query        *scriptuc.ScriptQuery
 }
 
-func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler, decisions *scriptuc.DecideReviewHandler, publications *scriptuc.PublicationHandler) *ScriptManagementService {
-	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions, decisions: decisions, publications: publications}
+func NewScriptManagementService(resources *scriptuc.ResourceHandlers, drafts *scriptuc.DraftHandlers, submissions *scriptuc.SubmitDraftHandler, decisions *scriptuc.DecideReviewHandler, publications *scriptuc.PublicationHandler, query *scriptuc.ScriptQuery) *ScriptManagementService {
+	return &ScriptManagementService{resources: resources, drafts: drafts, submissions: submissions, decisions: decisions, publications: publications, query: query}
 }
 
-func scriptMaintainer(ctx context.Context, operation string) (shared.TrustedIdentity, error) {
+func scriptAuthor(ctx context.Context, operation string) (shared.TrustedIdentity, error) {
 	identity, _ := trustedIdentityFromContext(ctx)
-	if err := scriptuc.RequireMaintainer(identity); err != nil {
+	if err := scriptuc.RequireScriptAuthor(identity); err != nil {
 		return shared.TrustedIdentity{}, scriptManagementError(operation, err)
 	}
 	return identity, nil
 }
 
-func (s *ScriptManagementService) CreateScriptResource(ctx context.Context, req *resourcev1.CreateScriptResourceRequest) (*resourcev1.ScriptResource, error) {
-	identity, err := scriptMaintainer(ctx, createScriptResource)
+func (s *ScriptManagementService) CreateOwnScriptResource(ctx context.Context, req *resourcev1.CreateScriptResourceRequest) (*resourcev1.ScriptResource, error) {
+	identity, err := scriptAuthor(ctx, createScriptResource)
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +76,8 @@ func (s *ScriptManagementService) CreateScriptResource(ctx context.Context, req 
 	return scriptResourceResponse(resource), nil
 }
 
-func (s *ScriptManagementService) ReplaceScriptResourceMetadata(ctx context.Context, req *resourcev1.ReplaceScriptResourceMetadataRequest) (*resourcev1.ScriptResource, error) {
-	identity, err := scriptMaintainer(ctx, replaceScriptResource)
+func (s *ScriptManagementService) ReplaceOwnScriptResourceMetadata(ctx context.Context, req *resourcev1.ReplaceScriptResourceMetadataRequest) (*resourcev1.ScriptResource, error) {
+	identity, err := scriptAuthor(ctx, replaceScriptResource)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +95,8 @@ func (s *ScriptManagementService) ReplaceScriptResourceMetadata(ctx context.Cont
 	return scriptResourceResponse(resource), nil
 }
 
-func (s *ScriptManagementService) CreateScriptVersionDraft(ctx context.Context, req *versionv1.CreateScriptVersionDraftRequest) (*versionv1.ScriptVersion, error) {
-	identity, err := scriptMaintainer(ctx, createScriptDraft)
+func (s *ScriptManagementService) CreateOwnScriptVersionDraft(ctx context.Context, req *versionv1.CreateScriptVersionDraftRequest) (*versionv1.ScriptVersion, error) {
+	identity, err := scriptAuthor(ctx, createScriptDraft)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +113,8 @@ func (s *ScriptManagementService) CreateScriptVersionDraft(ctx context.Context, 
 	return scriptVersionResponse(version), nil
 }
 
-func (s *ScriptManagementService) ReplaceScriptVersionDraft(ctx context.Context, req *versionv1.ReplaceScriptVersionDraftRequest) (*versionv1.ScriptVersion, error) {
-	identity, err := scriptMaintainer(ctx, replaceScriptDraft)
+func (s *ScriptManagementService) ReplaceOwnScriptVersionDraft(ctx context.Context, req *versionv1.ReplaceScriptVersionDraftRequest) (*versionv1.ScriptVersion, error) {
+	identity, err := scriptAuthor(ctx, replaceScriptDraft)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +132,8 @@ func (s *ScriptManagementService) ReplaceScriptVersionDraft(ctx context.Context,
 	return scriptVersionResponse(version), nil
 }
 
-func (s *ScriptManagementService) SubmitScriptVersionReview(ctx context.Context, req *versionv1.SubmitScriptVersionReviewRequest) (*versionv1.ScriptVersionReviewSubmission, error) {
-	identity, err := scriptMaintainer(ctx, submitScriptReview)
+func (s *ScriptManagementService) SubmitOwnScriptVersionReview(ctx context.Context, req *versionv1.SubmitScriptVersionReviewRequest) (*versionv1.ScriptVersionReviewSubmission, error) {
+	identity, err := scriptAuthor(ctx, submitScriptReview)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +191,9 @@ func scriptVersionOperation(operation string) bool {
 
 func scriptHTTPWriteOperation(r *http.Request) string {
 	p := strings.Split(r.URL.Path, "/")
+	if len(p) >= 5 && p[1] == "v1" && p[2] == "users" && p[3] == "me" && p[4] == "script-resources" {
+		return ownScriptHTTPWriteOperation(r.Method, p[5:])
+	}
 	if len(p) < 3 || p[1] != "v1" || p[2] != "script-resources" {
 		return ""
 	}
@@ -204,15 +208,26 @@ func scriptHTTPWriteOperation(r *http.Request) string {
 		return restoreScriptDistribution
 	case r.Method == http.MethodPost && len(p) == 9 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "reviews" && p[7] != "" && p[8] == "decision":
 		return decideScriptReview
-	case r.Method == http.MethodPost && len(p) == 3:
+	default:
+		return ""
+	}
+}
+
+func ownScriptHTTPWriteOperation(method string, parts []string) string {
+	if method == http.MethodPost && len(parts) == 0 {
 		return createScriptResource
-	case r.Method == http.MethodPut && len(p) == 5 && p[3] != "" && p[4] == "metadata":
+	}
+	if len(parts) < 2 || parts[0] == "" {
+		return ""
+	}
+	switch {
+	case method == http.MethodPut && len(parts) == 2 && parts[1] == "metadata":
 		return replaceScriptResource
-	case r.Method == http.MethodPost && len(p) == 5 && p[3] != "" && p[4] == "versions":
+	case method == http.MethodPost && len(parts) == 2 && parts[1] == "versions":
 		return createScriptDraft
-	case r.Method == http.MethodPut && len(p) == 7 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "draft":
+	case method == http.MethodPut && len(parts) == 4 && parts[1] == "versions" && parts[2] != "" && parts[3] == "draft":
 		return replaceScriptDraft
-	case r.Method == http.MethodPost && len(p) == 7 && p[3] != "" && p[4] == "versions" && p[5] != "" && p[6] == "reviews":
+	case method == http.MethodPost && len(parts) == 4 && parts[1] == "versions" && parts[2] != "" && parts[3] == "reviews":
 		return submitScriptReview
 	default:
 		return ""
@@ -233,7 +248,7 @@ func scriptManagementHTTPFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 				khttp.DefaultErrorEncoder(w, r, toIdentityTransportError(err, operation))
 				return
 			}
-			authorize := scriptuc.RequireMaintainer
+			authorize := scriptuc.RequireScriptAuthor
 			if operation == decideScriptReview {
 				authorize = scriptuc.RequireScriptReviewer
 			}
@@ -320,15 +335,12 @@ func validScriptHTTPBody(w http.ResponseWriter, r *http.Request, operation strin
 func scriptManagementHTTPError(w http.ResponseWriter, r *http.Request, operation string, err error) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	converted := kerrors.FromError(err)
-	reasons := resourcev1.ErrorReason_value
+	reasons := authoringv1.ErrorReason_value
 	if scriptPublicationAction(operation) != "" {
 		reasons = publicationv1.ErrorReason_value
 	}
 	if operation == decideScriptReview {
 		reasons = reviewv1.ErrorReason_value
-	}
-	if scriptVersionOperation(operation) {
-		reasons = versionv1.ErrorReason_value
 	}
 	if _, ok := reasons[converted.Reason]; !ok {
 		if converted.Code == http.StatusBadRequest {
@@ -347,10 +359,7 @@ func invalidScriptRequest(operation string) error {
 	if operation == decideScriptReview {
 		return scriptDecisionError(domain.ErrInvalidDecision)
 	}
-	if scriptVersionOperation(operation) {
-		return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_VERSION_REQUEST", "invalid script version request")
-	}
-	return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_RESOURCE_REQUEST", "invalid script resource request")
+	return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_AUTHORING_REQUEST", "invalid script authoring request")
 }
 
 func scriptManagementError(operation string, err error) error {
@@ -364,11 +373,10 @@ func scriptManagementError(operation string, err error) error {
 	switch {
 	case errors.Is(err, domain.ErrIdentityRequired):
 		return transportStatus(codes.Unauthenticated, ReasonUserIdentityRequired, "user identity is required")
-	case errors.Is(err, domain.ErrMaintainForbidden):
-		if draft {
-			return transportStatus(codes.PermissionDenied, "ERROR_REASON_SCRIPT_MAINTAIN_FORBIDDEN", "script maintenance permission is required")
-		}
-		return transportStatus(codes.PermissionDenied, "ERROR_REASON_SCRIPT_RESOURCE_FORBIDDEN", "script maintenance permission is required")
+	case errors.Is(err, domain.ErrDeveloperApprovalRequired):
+		return transportStatus(codes.PermissionDenied, ReasonDeveloperApprovalRequired, "approved developer is required")
+	case errors.Is(err, shared.ErrAccountExitBlocked):
+		return transportStatus(codes.FailedPrecondition, "ERROR_REASON_ACCOUNT_OWNER_EXIT_IN_PROGRESS", "account lifecycle prevents script changes")
 	case errors.Is(err, domain.ErrInvalidResourceID):
 		return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_RESOURCE_ID", "invalid script resource id")
 	case errors.Is(err, domain.ErrInvalidName):
@@ -388,9 +396,9 @@ func scriptManagementError(operation string, err error) error {
 			return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_VERSION_REVISION", "invalid script version revision")
 		}
 		return transportStatus(codes.InvalidArgument, "ERROR_REASON_INVALID_SCRIPT_RESOURCE_REVISION", "invalid script resource revision")
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, domain.ErrNotFound) && !draft:
 		return transportStatus(codes.NotFound, "ERROR_REASON_SCRIPT_RESOURCE_NOT_FOUND", "script resource not found")
-	case errors.Is(err, domain.ErrVersionNotFound):
+	case errors.Is(err, domain.ErrVersionNotFound), errors.Is(err, domain.ErrNotFound):
 		return transportStatus(codes.NotFound, "ERROR_REASON_SCRIPT_VERSION_NOT_FOUND", "script version not found")
 	case errors.Is(err, domain.ErrRevisionConflict):
 		if draft {

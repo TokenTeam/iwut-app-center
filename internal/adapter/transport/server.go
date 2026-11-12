@@ -43,12 +43,11 @@ import (
 	catalogv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/catalog"
 	oauthclientv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/oauth_client"
 	runtimev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/runtime_resolution"
+	scriptauthoringv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_authoring"
 	scriptdistributionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_distribution"
 	scriptpublicationv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_publication"
 	scriptqueryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
-	scriptresourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	scriptreviewv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_review"
-	scriptversionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
 	testerjoinlinkv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_join_link"
 	testermanagementv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_management"
 	testermembershipv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/tester_membership"
@@ -459,8 +458,7 @@ func NewServers(
 		scriptqueryv1.RegisterScriptQueryServiceHTTPServer(httpServer, scriptQueries)
 	}
 	if scripts != nil {
-		scriptresourcev1.RegisterScriptResourceServiceHTTPServer(httpServer, scripts)
-		scriptversionv1.RegisterScriptVersionServiceHTTPServer(httpServer, scripts)
+		scriptauthoringv1.RegisterScriptAuthoringServiceHTTPServer(httpServer, scripts)
 		scriptreviewv1.RegisterScriptReviewServiceHTTPServer(httpServer, scripts)
 		scriptpublicationv1.RegisterScriptPublicationServiceHTTPServer(httpServer, scripts)
 	}
@@ -582,8 +580,7 @@ func NewServers(
 		oauthclientv1.RegisterOAuthClientProviderServiceServer(grpcServer, oauthProviderService)
 	}
 	if scripts != nil {
-		scriptresourcev1.RegisterScriptResourceServiceServer(grpcServer, scripts)
-		scriptversionv1.RegisterScriptVersionServiceServer(grpcServer, scripts)
+		scriptauthoringv1.RegisterScriptAuthoringServiceServer(grpcServer, scripts)
 		scriptreviewv1.RegisterScriptReviewServiceServer(grpcServer, scripts)
 		scriptpublicationv1.RegisterScriptPublicationServiceServer(grpcServer, scripts)
 	}

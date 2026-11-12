@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	authoringv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_authoring"
 	queryv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_query"
 	resourcev1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_resource"
 	versionv1 "github.com/TokenTeam/iwut-api-proto/gen/go/app_center/v1/script_version"
@@ -159,7 +160,7 @@ func scriptVersionSummaryResponse(v port.ScriptVersionSummary) *queryv1.ScriptVe
 	state := versionv1.ScriptVersionState(versionv1.ScriptVersionState_value["SCRIPT_VERSION_STATE_"+string(v.State)])
 	return &queryv1.ScriptVersionSummary{ResourceId: string(v.ResourceID), VersionId: string(v.ID), VersionLabel: v.Label,
 		ContentFormat: v.Format, Digest: v.Digest, State: state, Revision: v.Revision,
-		CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt)}
+		CreatedAt: timestamppb.New(v.CreatedAt), UpdatedAt: timestamppb.New(v.UpdatedAt), ReviewId: string(v.ReviewID)}
 }
 
 func scriptPendingSummaryResponse(review port.ScriptReviewSummary) *queryv1.PendingScriptReviewSummary {
@@ -191,7 +192,7 @@ func scriptQueryError(err error) error {
 }
 
 func scriptQueryOperation(operation string) bool {
-	return strings.HasPrefix(operation, "/app_center.v1.script_query.ScriptQueryService/")
+	return isOwnScriptQuery(operation) || strings.HasPrefix(operation, "/app_center.v1.script_query.ScriptQueryService/")
 }
 
 func scriptQueryHTTPRoute(r *http.Request) (operation string, kind scriptuc.ScriptReadKind, allowedQuery string) {
@@ -202,6 +203,9 @@ func scriptQueryHTTPRoute(r *http.Request) (operation string, kind scriptuc.Scri
 		return queryv1.OperationScriptQueryServiceListPendingScriptReviews, scriptuc.ScriptPendingRead, "limit cursor resourceId resource_id"
 	}
 	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) >= 5 && parts[1] == "v1" && parts[2] == "users" && parts[3] == "me" && parts[4] == "script-resources" {
+		return ownScriptQueryRoute(parts[5:])
+	}
 	if len(parts) < 3 || parts[1] != "v1" || parts[2] != "script-resources" {
 		return "", 0, ""
 	}
@@ -252,15 +256,23 @@ func scriptQueryHTTPFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 				khttp.DefaultErrorEncoder(w, r, scriptQueryError(err))
 				return
 			}
+			invalid := scriptQueryError(scriptuc.ErrInvalidScriptQuery)
+			if kind == scriptuc.ScriptOwnRead {
+				invalid = ownScriptQueryError(op, scriptuc.ErrInvalidScriptQuery)
+				if !validOwnScriptQueryBody(r) {
+					khttp.DefaultErrorEncoder(w, r, invalid)
+					return
+				}
+			}
 			values, err := url.ParseQuery(r.URL.RawQuery)
 			if err != nil || (values.Has("resourceId") && values.Has("resource_id")) {
-				khttp.DefaultErrorEncoder(w, r, scriptQueryError(scriptuc.ErrInvalidScriptQuery))
+				khttp.DefaultErrorEncoder(w, r, invalid)
 				return
 			}
 			fields := strings.Fields(allowed)
 			for field, items := range values {
 				if !slices.Contains(fields, field) || len(items) != 1 {
-					khttp.DefaultErrorEncoder(w, r, scriptQueryError(scriptuc.ErrInvalidScriptQuery))
+					khttp.DefaultErrorEncoder(w, r, invalid)
 					return
 				}
 			}
@@ -269,9 +281,21 @@ func scriptQueryHTTPFilter(verifier *IdentityVerifier) khttp.FilterFunc {
 	}
 }
 
+func knownAuthoringReason(reason string) bool {
+	_, ok := authoringv1.ErrorReason_value[reason]
+	return ok
+}
+
 func scriptQueryHTTPError(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	converted := kerrors.FromError(err)
+	if operation, _, _ := scriptQueryHTTPRoute(r); isOwnScriptQuery(operation) {
+		if !knownAuthoringReason(converted.Reason) && converted.Code == http.StatusBadRequest {
+			err = ownScriptQueryError(operation, scriptuc.ErrInvalidScriptQuery)
+		}
+		khttp.DefaultErrorEncoder(w, r, err)
+		return
+	}
 	if _, ok := queryv1.ErrorReason_value[converted.Reason]; !ok && converted.Code == http.StatusBadRequest {
 		err = scriptQueryError(scriptuc.ErrInvalidScriptQuery)
 	}

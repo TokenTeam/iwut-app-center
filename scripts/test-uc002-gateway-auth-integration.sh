@@ -134,7 +134,6 @@ docker run --detach --name "${auth_container_name}" --network host --user "$(id 
  --env 'AUTH_USER_IDENTITY_PUBLIC_KEYS_JSON={"uc002-auth":"/run/iwut-uc002/auth-identity.pub.pem"}' \
  --env AUTH_USER_IDENTITY_SIGNING_KID=uc002-auth --env "AUTH_USER_IDENTITY_PRIVATE_KEY_PEM_B64=$(base64 -w0 < "${temporary_dir}/auth-identity.pem")" \
  --env "AUTH_APPLICATION_OPERATIONS_PERMISSION_ENDPOINTS_ENABLED=${platform_applications}" \
- --env "AUTH_SCRIPT_MAINTAINER_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
  --env "AUTH_SCRIPT_PERMISSION_ENDPOINTS_ENABLED=${script_management}" \
  --env AUTH_CENTER_OAUTH_CONFIG_FILE=/run/iwut-uc002/oauth.json "${auth_image_id}" >/dev/null
 
@@ -149,7 +148,7 @@ export GATEWAY_PUBLIC_API_HOST=api.uc002.test GATEWAY_DEVELOPER_CONSOLE_HOST=dev
 export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL=http://127.0.0.1:1/internal/forward-auth
 if [[ "${local_images}" == true ]]; then
   export GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL="http://${UC041_ADMIN_FORWARD_AUTH_ADDR}/internal/forward-auth"
-  if [[ "${incoming_transfers}" == true || "${platform_applications}" == true ]]; then export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL="${GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL}"; fi
+  export GATEWAY_DEVELOPER_BFF_FORWARD_AUTH_URL="${GATEWAY_ADMIN_BFF_FORWARD_AUTH_URL}"
   gateway_image_id="$(docker image inspect --format '{{.Id}}' "${GATEWAY_LOCAL_IMAGE}")"
   app_image_id="$(docker image inspect --format '{{.Id}}' "${APP_CENTER_LOCAL_IMAGE}")"
   printf 'App %s\nGateway %s\nAuth %s\n' "${app_image_id}" "${gateway_image_id}" "${auth_image_id}" \

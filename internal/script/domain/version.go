@@ -6,7 +6,6 @@ import (
 	"errors"
 	"math"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -108,29 +107,28 @@ func (v Version) Validate() error {
 		!validTime(v.CreatedAt) || !validTime(v.UpdatedAt) || v.UpdatedAt.Before(v.CreatedAt) {
 		return ErrInternal
 	}
-	if len(v.Contributors) == 0 || v.Contributors[0] != v.CreatedBy || int64(len(v.Contributors)) > v.Revision {
+	if !v.AuthoredBy(v.CreatedBy) {
 		return ErrInternal
-	}
-	seen := make(map[shared.AuthID]bool, len(v.Contributors))
-	for _, actor := range v.Contributors {
-		if !actor.IsValid() || seen[actor] {
-			return ErrInternal
-		}
-		seen[actor] = true
 	}
 	switch v.State {
 	case VersionDraft:
-		if !seen[v.UpdatedBy] || (v.Revision == 1 && !v.CreatedAt.Equal(v.UpdatedAt)) {
+		if v.Revision == 1 && !v.CreatedAt.Equal(v.UpdatedAt) {
 			return ErrInternal
 		}
 	case VersionSubmitted, VersionApproved, VersionRejected:
-		if v.Revision < 2 || int64(len(v.Contributors)) >= v.Revision {
+		if v.Revision < 2 {
 			return ErrInternal
 		}
 	default:
 		return ErrInternal
 	}
 	return nil
+}
+
+// AuthoredBy checks the version's content provenance against its resource owner.
+func (v Version) AuthoredBy(owner shared.AuthID) bool {
+	return owner.IsValid() && v.CreatedBy == owner && len(v.Contributors) == 1 &&
+		v.Contributors[0] == owner && (v.State != VersionDraft || v.UpdatedBy == owner)
 }
 
 func (v Version) CheckDraftRevision(expected int64) error {
@@ -153,19 +151,19 @@ func (v Version) ReplaceDraft(expected int64, content Content, actor shared.Auth
 	if err := v.CheckDraftRevision(expected); err != nil {
 		return Version{}, false, err
 	}
+	if actor != v.CreatedBy {
+		return Version{}, false, ErrNotFound
+	}
 	if content == v.Content {
 		return v, false, nil
 	}
-	if v.Revision == math.MaxInt64 || !actor.IsValid() || at.Before(v.UpdatedAt) {
+	if v.Revision == math.MaxInt64 || at.Before(v.UpdatedAt) {
 		return Version{}, false, ErrInternal
 	}
 	v.Content = content
 	v.Revision++
 	v.UpdatedBy = actor
 	v.UpdatedAt = at.UTC()
-	if !slices.Contains(v.Contributors, actor) {
-		v.Contributors = append(slices.Clone(v.Contributors), actor)
-	}
 	if err := v.Validate(); err != nil {
 		return Version{}, false, err
 	}

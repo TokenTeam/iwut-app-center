@@ -22,13 +22,7 @@ func (m *Migrator) applyScriptResourceMigration(ctx context.Context) error {
 		indexName  string
 		keys       bson.D
 	}{
-		{scriptResourcesCollectionName, bson.D{
-			scriptResourceIDProperty(), scriptResourceRevisionProperty(),
-			{Key: "name", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: 128}}},
-			{Key: "purpose", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: 2048}}},
-			scriptAuditActorProperty("createdBy"), scriptAuditActorProperty("updatedBy"),
-			scriptAuditDateProperty("createdAt"), scriptAuditDateProperty("updatedAt"),
-		}, scriptResourceIDIndexName, bson.D{{Key: "resourceId", Value: 1}}},
+		{scriptResourcesCollectionName, scriptResourceProperties(), scriptResourceIDIndexName, bson.D{{Key: "resourceId", Value: 1}}},
 		{scriptResourceAuditsCollectionName, bson.D{
 			scriptResourceIDProperty(), scriptResourceRevisionProperty(),
 			{Key: "action", Value: bson.D{{Key: "enum", Value: bson.A{scriptResourceCreated, scriptResourceMetadataReplaced}}}},
@@ -79,4 +73,14 @@ func scriptAuditActorProperty(key string) bson.E {
 
 func scriptAuditDateProperty(key string) bson.E {
 	return bson.E{Key: key, Value: bson.D{{Key: "bsonType", Value: "date"}}}
+}
+
+func scriptResourceProperties() bson.D {
+	return bson.D{
+		scriptResourceIDProperty(), scriptResourceRevisionProperty(),
+		{Key: "name", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: 128}}},
+		{Key: "purpose", Value: bson.D{{Key: "bsonType", Value: "string"}, {Key: "minLength", Value: 1}, {Key: "maxLength", Value: 2048}}},
+		scriptAuditActorProperty("createdBy"), scriptAuditActorProperty("updatedBy"),
+		scriptAuditDateProperty("createdAt"), scriptAuditDateProperty("updatedAt"),
+	}
 }
